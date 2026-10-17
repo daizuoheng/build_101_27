@@ -284,6 +284,36 @@ describe("assess_incident y correcciones", () => {
     expect((await one(pool, "select count(*)::int as n from review_items where kind = 'provider_failure'")).n).toBe(0);
   });
 
+  it("una corrección hecha con una reevaluación pendiente no la pierde: se reencola para la revisión nueva", async () => {
+    const jev = jevAssess({ severity: ch("high") });
+    const incidentId = await incidentWithTwoReports(pool, t, jev); // deja assess_incident pendiente
+    const bache = (await one(pool, "select id from problem_types where slug = 'bache'")).id;
+    await withTx(async (c) => setOverride(c, { incidentId, override: { field: "problem_type_id", value: bache }, reason: "confirmo tipo", actor: operator, expectedRevision: await revisionOf(c as never, incidentId) }), pool);
+    await drain(pool, jev);
+    expect(assessCalls(jev)).toBe(1); // la evidencia nueva sí se evaluó
+    expect((await one(pool, "select severity from incidents where id = $1", [incidentId])).severity).toBe("high");
+  });
+
+  it("sin base guardada, quitar una corrección vuelve a la evaluación del reporte, no a las columnas corregidas", async () => {
+    const jev = jevAssess();
+    const incidentId = await singleReportIncident(pool, t, jev); // la evaluación del reporte dijo severidad media
+    await pool.query("delete from incident_assessments where incident_id = $1", [incidentId]); // incidente creado antes de guardar la base
+    await withTx(async (c) => setOverride(c, { incidentId, override: { field: "severity", value: "high" }, reason: "riesgo visto", actor: operator, expectedRevision: await revisionOf(c as never, incidentId) }), pool);
+    await withTx((c) => removeOverride(c, { incidentId, field: "severity", actor: operator }), pool);
+    expect((await one(pool, "select severity from incidents where id = $1", [incidentId])).severity).toBe("medium");
+  });
+
+  it("no se quitan correcciones de un incidente cerrado", async () => {
+    const jev = jevAssess();
+    const incidentId = await singleReportIncident(pool, t, jev);
+    const r = await withTx(async (c) => setOverride(c, { incidentId, override: { field: "severity", value: "high" }, reason: "riesgo visto", actor: operator, expectedRevision: await revisionOf(c as never, incidentId) }), pool);
+    await withTx((c) => setOverride(c, { incidentId, override: { field: "status", value: "resolved" }, reason: "reparado", actor: operator, expectedRevision: r.revision }), pool);
+    const before = await one(pool, "select revision, severity from incidents where id = $1", [incidentId]);
+    const err = await withTx((c) => removeOverride(c, { incidentId, field: "severity", actor: operator }), pool).catch((e) => e);
+    expect(err.code).toBe("incident_closed");
+    expect(await one(pool, "select revision, severity from incidents where id = $1", [incidentId])).toEqual(before);
+  });
+
   it("las correcciones exigen operador identificado y la revisión vigente", async () => {
     const jev = jevAssess();
     const incidentId = await incidentWithTwoReports(pool, t, jev);

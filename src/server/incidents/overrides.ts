@@ -151,6 +151,7 @@ export async function setOverride(
   }
   const assessed = await latestAssessed(db, incidentId);
   const r = await recomputeEffective(db, incidentId, assessed, { reason: `override:${o.field}`, extraChange: true });
+  await carryPendingAssessment(db, incidentId, inc.territory_id, inc.revision, r.revision);
   await appendEvent(db, {
     entityType: "incident", entityId: incidentId, kind: "override_set", actorType: "operator", actorId,
     data: { field: o.field, value: o.value, reason, discrepancies: r.discrepancies },
@@ -200,12 +201,29 @@ export async function removeOverride(
   const actorId = requireOperator(actor);
   if (field === "status") throw badRequest("cannot_reopen", "Un incidente cerrado no se reabre quitando la corrección; un reporte nuevo crea una recurrencia.");
   if (field === "location") throw badRequest("cannot_unset_location", "La ubicación no se quita: corregila marcando el punto correcto.");
-  await lockIncident(db, incidentId);
+  const inc = await lockIncident(db, incidentId);
+  if (!OPEN_STATUSES.includes(inc.status)) throw conflict("incident_closed", "El incidente ya está cerrado.");
   const res = await db.query("update incident_overrides set removed_at = now(), removed_by = $3 where incident_id = $1 and field = $2 and removed_at is null", [incidentId, field, actorId]);
   if (!res.rowCount) throw notFound("No hay una corrección vigente para ese campo.");
   const r = await recomputeEffective(db, incidentId, await latestAssessed(db, incidentId), { reason: `override_removed:${field}`, extraChange: true });
+  await carryPendingAssessment(db, incidentId, inc.territory_id, inc.revision, r.revision);
   await appendEvent(db, { entityType: "incident", entityId: incidentId, kind: "override_removed", actorType: "operator", actorId, data: { field } });
   return { incidentId, revision: r.revision };
+}
+
+/**
+ * Una corrección sube la revisión: una reevaluación pendiente de la revisión anterior (p. ej. un reporte recién
+ * asociado) quedaría descartada como obsoleta. Se vuelve a encolar para la revisión nueva, así la evidencia se evalúa.
+ */
+async function carryPendingAssessment(db: Db, incidentId: string, territoryId: string, fromRevision: number, toRevision: number) {
+  if (toRevision === fromRevision) return;
+  const pending = await db.query(
+    "select 1 from jobs where kind = 'assess_incident' and entity_id = $1 and status in ('pending', 'running') and entity_revision < $2",
+    [incidentId, toRevision],
+  );
+  if (pending.rows[0]) {
+    await enqueue(db, { kind: "assess_incident", entityType: "incident", entityId: incidentId, entityRevision: toRevision, territoryId, payload: { reason: "carried_after_override" } });
+  }
 }
 
 export async function liveOverrides(db: Db, incidentId: string): Promise<LiveOverride[]> {

@@ -151,10 +151,14 @@ export async function runAssessIncident(deps: IntakeDeps, job: Job): Promise<voi
  * Si el job ya era obsoleto (el incidente cambió o se cerró), no se abre nada: otro job lo reevalúa.
  */
 export async function onAssessIncidentFailed(deps: IntakeDeps, job: Job, error: string): Promise<void> {
-  const inc = await loadIncident(deps.pool, job.entity_id);
-  if (!inc || !OPEN_STATUSES.includes(inc.status) || inc.revision !== job.entity_revision) return;
-  await openReviewItem(deps.pool, {
-    territoryId: job.territory_id, kind: "provider_failure", entityType: "incident", entityId: job.entity_id,
-    reasons: [{ code: "provider_failure", stage: "assess_incident", revision: job.entity_revision, error: error.slice(0, 500) }],
-  });
+  // Verificación y escritura bajo el mismo lock que cualquier otro escritor del incidente.
+  await withTx(async (c) => {
+    if (job.territory_id) await c.query("select pg_advisory_xact_lock(hashtext($1))", [job.territory_id]);
+    const inc = await loadIncident(c, job.entity_id, true);
+    if (!inc || !OPEN_STATUSES.includes(inc.status) || inc.revision !== job.entity_revision) return;
+    await openReviewItem(c, {
+      territoryId: job.territory_id, kind: "provider_failure", entityType: "incident", entityId: job.entity_id,
+      reasons: [{ code: "provider_failure", stage: "assess_incident", revision: job.entity_revision, error: error.slice(0, 500) }],
+    });
+  }, deps.pool);
 }

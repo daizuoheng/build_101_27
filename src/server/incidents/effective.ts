@@ -7,7 +7,9 @@ import { applyOverrides, liveOverrides, markIncompatibleAssignment, type Assesse
 
 /**
  * Último valor evaluado por la IA (sin correcciones humanas): la base sobre la que se aplican los overrides.
- * Se guarda en `incident_assessments.evidence_summary.assessed` (también al crear el incidente). Si no hay, las columnas.
+ * Se guarda en `incident_assessments.evidence_summary.assessed` (también al crear el incidente). Para incidentes
+ * creados antes de guardarla, se reconstruye desde la evaluación del primer reporte (nunca desde las columnas, que
+ * pueden contener correcciones humanas). Solo si tampoco hay evaluación se usan las columnas sin correcciones vigentes.
  */
 export async function latestAssessed(db: Db, incidentId: string): Promise<Assessed> {
   const { rows } = await db.query<{ assessed: Assessed | null }>(
@@ -16,6 +18,21 @@ export async function latestAssessed(db: Db, incidentId: string): Promise<Assess
     [incidentId],
   );
   if (rows[0]?.assessed) return rows[0].assessed;
+
+  const ev = await db.query<{ problem_type_id: string | null; severity: Assessed["severity"]; active_fire: string; photo_fire: number | null; passage: Assessed["passage"]; accessibility: Assessed["accessibility"] }>(
+    `select e.problem_type_id, e.severity, e.active_fire, (e.answers->'fact_photo_shows_fire'->>'noul')::float8 as photo_fire, e.passage, e.accessibility
+     from report_incident_links l join reports r on r.id = l.report_id
+     join report_evaluations e on e.report_id = r.id and e.report_revision = r.confirmed_revision
+     where l.incident_id = $1 order by r.confirmed_at, r.id limit 1`,
+    [incidentId],
+  );
+  const e = ev.rows[0];
+  if (e) {
+    return {
+      problemTypeId: e.problem_type_id, severity: e.severity, passage: e.passage, accessibility: e.accessibility,
+      activeHazard: e.active_fire === "yes" || (e.photo_fire ?? 0) >= 0.5, // misma regla que indicatesActiveHazard
+    };
+  }
   const inc = await db.query<Assessed>(
     `select problem_type_id as "problemTypeId", severity, active_hazard as "activeHazard", passage, accessibility from incidents where id = $1`,
     [incidentId],
