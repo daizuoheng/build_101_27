@@ -21,6 +21,9 @@ export default function Home() {
         <Link className="btn btn-primary text-lg" href={`/reportar/${PILOT_TERRITORY}`}>
           Reportar un problema
         </Link>
+        <Link className="btn text-lg" href="/unidad">
+          Bandeja de unidad
+        </Link>
         <Link className="btn text-lg" href={`/operacion?territory=${PILOT_TERRITORY}`}>
           Operación
         </Link>

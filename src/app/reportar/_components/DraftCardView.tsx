@@ -1,84 +1,90 @@
 "use client";
 
-import type { DraftCard, DraftView } from "@/shared/contracts/intake";
+import type { DraftView } from "@/shared/contracts/intake";
+import { IconAlert, IconCamera, IconEdit, IconEye, IconSend } from "@/app/_components/icons";
 
-const SEVERITY: Record<NonNullable<DraftCard["severity"]>, string> = {
-  low: "Baja",
-  medium: "Media",
-  high: "Alta",
-  undetermined: "Sin determinar",
-};
-
-const MISSING: Record<DraftCard["missing"][number], string> = {
+const MISSING: Record<DraftView["card"]["missing"][number], string> = {
   description: "contar qué pasa",
   location: "confirmar la ubicación",
   evaluation: "terminar el análisis",
 };
 
-export function DraftCardView({
-  card,
-  location,
-  areaLabel,
+/**
+ * Ficha para revisar antes de enviar, dentro del chat. Muestra solo lo que dijo la persona y lo que confirmó;
+ * no muestra prioridad (la calcula el sistema después del envío) ni promete tiempos.
+ */
+export function ReviewCard({
+  draft,
   busy,
   onConfirm,
-  onChangeLocation,
+  onModify,
 }: {
-  card: DraftCard;
-  location: DraftView["location"];
-  areaLabel: string;
+  draft: DraftView;
   busy: boolean;
   onConfirm: () => void;
-  onChangeLocation: () => void;
+  onModify: () => void;
 }) {
+  const { card, location, territory } = draft;
   const place = card.place ?? location?.text ?? null;
+  const area = card.areaName ?? location?.areaName ?? null;
+  const description = card.description;
+
   return (
-    <section aria-label="Ficha del reporte" className="card flex flex-col gap-2 p-3">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-        <dt className="text-ink-2">Problema</dt>
-        <dd className="font-semibold">{card.typeName ?? "Por determinar"}</dd>
-        {card.severity && card.severity !== "undetermined" && (
-          <>
-            <dt className="text-ink-2">Gravedad</dt>
-            <dd>{SEVERITY[card.severity]}</dd>
-          </>
-        )}
-        <dt className="text-ink-2">Lugar</dt>
-        <dd>
-          {location?.confirmed ? (
-            <>
-              {place ?? "Punto marcado en el mapa"}
-              <span className="block text-sm text-ink-2">
-                {areaLabel}: {card.areaName ?? location.areaName ?? "sin determinar"}
+    <section aria-label="Ficha del reporte" className="card flex w-full flex-col gap-4 p-4">
+      <dl className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <dt className="text-xs font-bold uppercase tracking-wide text-ink-2">Problema</dt>
+          <dd className="mt-0.5 text-lg font-bold text-primary">{card.typeName ?? "Por determinar"}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-bold uppercase tracking-wide text-ink-2">Ubicación</dt>
+          <dd className="mt-0.5 font-bold text-ink">
+            {location?.confirmed ? place ?? (location.source === "gps" ? "Tu ubicación compartida" : "Punto confirmado") : <span className="font-normal text-ink-2">Falta confirmar</span>}
+            {location?.confirmed && area && (
+              <span className="mt-1 block">
+                <span className="badge badge-muted">{territory.areaLabel} · {area}</span>
               </span>
-            </>
-          ) : (
-            <span className="text-ink-2">Falta confirmar</span>
-          )}
-        </dd>
-        <dt className="text-ink-2">Fotos</dt>
-        <dd>{card.photoCount === 0 ? "Sin foto" : card.photoCount}</dd>
+            )}
+          </dd>
+        </div>
+        {description && (
+          <div className="sm:col-span-2">
+            <dt className="text-xs font-bold uppercase tracking-wide text-ink-2">Lo que contaste</dt>
+            <dd className="mt-0.5 whitespace-pre-wrap text-ink">{description}</dd>
+          </div>
+        )}
       </dl>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3 text-[15px]">
+        <span className="inline-flex items-center gap-1.5 text-ink-2">
+          <IconCamera className="h-[18px] w-[18px] text-accent" />
+          {card.photoCount === 0 ? "Sin fotos" : card.photoCount === 1 ? "1 foto adjunta" : `${card.photoCount} fotos adjuntas`}
+        </span>
+        <button type="button" onClick={onModify} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 font-semibold text-accent hover:bg-surface-low">
+          <IconEdit className="h-[18px] w-[18px]" /> Modificar datos
+        </button>
+      </div>
+
       {card.activeHazard && (
-        <p className="font-semibold text-danger">⚠ Posible peligro activo: se marca como urgente.</p>
+        <p className="flex items-start gap-2 rounded-lg bg-danger-soft p-3 font-semibold text-danger-strong">
+          <IconAlert className="mt-0.5 h-5 w-5 shrink-0" />
+          Si hay fuego o riesgo para personas ahora, no esperes a este canal{territory.emergencyText ? `: ${territory.emergencyText}` : "."}
+        </p>
       )}
       {card.needsReview && (
-        <p className="rounded-[var(--radius)] bg-warn-soft px-2 py-1 text-warn">
-          Lo va a revisar una persona antes de asignarlo.
+        <p className="flex items-start gap-2 rounded-lg bg-surface-2 p-3 text-ink-2">
+          <IconEye className="mt-0.5 h-5 w-5 shrink-0" />
+          Una persona lo va a revisar antes de asignarlo.
         </p>
       )}
       {!card.ready && card.missing.length > 0 && (
-        <p className="text-sm text-ink-2">Para enviar falta: {card.missing.map((m) => MISSING[m]).join(", ")}.</p>
+        <p className="text-ink-2">Para enviar falta: {card.missing.map((m) => MISSING[m]).join(", ")}.</p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn btn-primary flex-1" disabled={!card.ready || busy} onClick={onConfirm}>
-          {busy ? "Enviando…" : "Enviar reporte"}
-        </button>
-        <button type="button" className="btn" onClick={onChangeLocation}>
-          {location?.confirmed ? "Cambiar ubicación" : "Marcar ubicación"}
-        </button>
-      </div>
+      <button type="button" className="btn btn-success w-full text-[17px]" disabled={!card.ready || busy} onClick={onConfirm}>
+        <IconSend className="h-5 w-5" />
+        {busy ? "Enviando…" : "Enviar reporte"}
+      </button>
     </section>
   );
 }
