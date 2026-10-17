@@ -6,3 +6,16 @@ codedb.snapshot
 .env.*
 !.env.example
 .superpowers/
+.claude/
+
+# dependencias y build
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+.pnpm-debug.log*
+
+# storage local de fotos (desarrollo)
+storage/
