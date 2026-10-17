@@ -27,10 +27,7 @@ export function ReviewCard({
   const { card, location, territory } = draft;
   const place = card.place ?? location?.text ?? null;
   const area = card.areaName ?? location?.areaName ?? null;
-  const description = draft.messages
-    .filter((m) => m.role === "citizen" && !m.attachmentId && m.body !== "[foto]")
-    .map((m) => m.body)
-    .join("\n");
+  const description = card.description;
 
   return (
     <section aria-label="Ficha del reporte" className="card flex w-full flex-col gap-4 p-4">

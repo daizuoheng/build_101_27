@@ -266,7 +266,7 @@ function AssignmentCard({
       {i.citizenTexts.length > 0 && (
         <section aria-label="Lo que reportaron">
           <h3 className="text-xs font-bold uppercase tracking-wide text-ink-2">
-            Lo que reportaron {i.citizenTexts.length > 1 ? `(${i.citizenTexts.length} mensajes)` : ""}
+            Lo que reportaron {i.citizenTexts.length > 1 ? `(${i.citizenTexts.length} reportes)` : ""}
           </h3>
           <ul className="mt-1.5 flex flex-col gap-1.5">
             {i.citizenTexts.slice(0, 4).map((t, idx) => (
