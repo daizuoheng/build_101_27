@@ -3,6 +3,20 @@
 import { useState } from "react";
 import { api, errorMessage } from "../_components/http";
 
+/**
+ * Solo rutas del mismo origen: evita redirecciones abiertas. Se resuelve con URL porque el navegador
+ * trata `/\evil.com` como `//evil.com` (otro host).
+ */
+function safeNext(next: string | null): string | null {
+  if (!next || !next.startsWith("/")) return null;
+  try {
+    const url = new URL(next, window.location.origin);
+    return url.origin === window.location.origin ? url.pathname + url.search + url.hash : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -15,9 +29,7 @@ export default function LoginPage() {
     setError(null);
     try {
       const res = await api<{ home: string }>("/api/auth/login", { method: "POST", json: { username, password } });
-      const next = new URLSearchParams(window.location.search).get("next");
-      // Solo rutas internas relativas: evita redirecciones abiertas.
-      window.location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : res.home;
+      window.location.href = safeNext(new URLSearchParams(window.location.search).get("next")) ?? res.home;
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);

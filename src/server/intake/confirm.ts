@@ -22,7 +22,12 @@ export async function confirmReport(
 ): Promise<{ publicCode: string; jobId: string; alreadyConfirmed: boolean }> {
   const r = await getOwnedReport(c, reportId, sessionId, { forUpdate: true });
   if (r.status === "confirmed") {
+    // Reintento: si el procesamiento había fallado, `enqueue` revive el job y el reporte vuelve a pendiente.
     const job = await enqueue(c, { kind: "process_report", entityType: "report", entityId: r.id, entityRevision: r.confirmed_revision!, territoryId: r.territory_id });
+    if (job.revived) {
+      await c.query("update reports set processing = 'pending', updated_at = now() where id = $1 and processing = 'error'", [r.id]);
+      await appendEvent(c, { entityType: "report", entityId: r.id, kind: "processing_retried", actorType: "citizen", actorId: sessionId });
+    }
     return { publicCode: r.public_code!, jobId: job.id, alreadyConfirmed: true };
   }
   if (!r.description?.trim()) throw badRequest("description_required", "Contame qué pasó antes de enviar.");
