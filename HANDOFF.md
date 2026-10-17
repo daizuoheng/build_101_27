@@ -42,11 +42,53 @@ Visuales compartibles: [diseño de sistema](https://claude.ai/artifact/885kaef8r
 - `.env` (gitignoreado) con `TYPESAFE_API_KEY` y `LLM_API_KEY`. Faltan `LLM_BASE_URL`, `LLM_MODEL`, `DATABASE_URL` (no secretos; los agrega la Tarea 1).
 - Hooks del repo bloquean `cat`/`grep`/`sed`: usar Read/Edit o codedb. Comandos shell con prefijo `rtk`.
 
-## Próximo trabajo
+## Reparto por módulos (desde 17 oct ~16:00)
 
-1. Esperar el ok de los compañeros al plan (pueden comentar en el repo).
-2. Tarea 1 en rama `feat/mvp`: scaffold Next.js 16, migrador, seis migraciones del §6 del diseño, contratos Zod, `.env.example`.
-3. Tarea 2: adaptador Jev y prueba real con `smoke-jev`; registrar modelo devuelto, latencias y observaciones en `docs/superpowers/notes/`.
-4. Seguir el plan por módulo. Hitos: h+3 Tarea 8 desplegada; h+6 Tarea 10; h+9 Tarea 12; h+11 congelar.
+`feat/mvp` es la rama de integración. Cada módulo trabaja en su rama (`feat/recepcion`, `feat/operacion`, `feat/nucleo`) creada desde `feat/mvp` y abre PR contra `feat/mvp`. Mergear seguido, idealmente cada hora, para que el recorrido integrado no se rompa. `main` no se toca hasta congelar.
+
+### Módulo Recepción y superficies móviles
+
+Dueño de `src/app/reportar`, `src/app/unidad`, `src/app/api/reportar`, `src/app/api/unidad`, `src/server/intake/branches.ts` y `src/server/ai/llm/{clarify,interpret-correction}.ts`.
+
+1. Probar `/reportar/montevideo` desde un celular real (LAN con `pnpm dev -H 0.0.0.0`): GPS, cámara, fotos HEIC de iPhone y mapa. Corregir lo que aparezca.
+2. Tarea 13, lo que falta: `clarify` (repregunta redactada por el LLM en `ask_evidence`) e `interpret_correction`, ambos con fallback a plantilla. Extracción de dirección y geocodificación ya están.
+3. Tarea 12, parte UI: bandeja `/unidad` (tarjetas grandes con Aceptar, Rechazar, Iniciar y Completar; polling cada 10 s) y sus rutas API, que llaman a `transitionAssignment` del módulo Operación.
+
+### Módulo Operación
+
+Dueño de `src/app/operacion`, `src/app/api/operacion`, `src/server/planning`, `src/server/dispatch` y `src/server/review` (excepto `openReviewItem`, que ya existe).
+
+1. Tarea 11: `buildPlan` puro con los 8 tests del plan (no depende de nada; arrancar ya) y la vista "Plan de atención".
+2. Tarea 12, dominio: `applyPlan` y `transitionAssignment` con los tests de concurrencia y capacidad.
+3. Tarea 14: cola de revisión, detalle del incidente (fotos, evidencia, historial) y acciones del operador. Las correcciones usan `setOverride` y `linkReport`/`unlinkReport` del Núcleo.
+
+### Módulo Núcleo y pipeline (Claude)
+
+Dueño de `migrations`, `seeds`, `scripts/cli.ts`, `src/server/{db,config,jobs,ai/jev,pipeline,incidents}` y del despliegue. En este orden:
+
+1. Seeds de unidades de demo y usuarios de unidad (Tarea 15, parte de seeds), para que Operación y Recepción tengan unidades. Primero, porque desbloquea a los otros dos.
+2. Despliegue en Railway y Supabase en cuanto lleguen las cuentas.
+3. Tarea 9: agrupación automática con Jev, incluidos `linkReport` y `unlinkReport`.
+4. Tarea 10: `assess_incident`, `setOverride`/`removeOverride` y prioridad. Los jobs `plan` y `dispatch` llaman a `buildPlan`/`applyPlan` de Operación.
+5. Tarea 15: textos generados.
+
+### Reglas de convivencia
+
+- **Esquema:** solo Núcleo agrega migraciones, para evitar choques de numeración. Si necesitás una columna, pedila.
+- **Archivos compartidos:** `src/shared/contracts/*`, `src/server/jobs/handlers.ts` y `scripts/cli.ts` se tocan con PR chico y aviso, y en `handlers.ts` solo se agregan entradas.
+- **Interfaces entre módulos:** las firmas son las de los bloques **Interfaces** del plan. `buildPlan(snapshot, policy, now)` y `applyPlan(pool, planRunId)` son el contrato entre Operación y Núcleo.
+- **Datos operativos:** nada hardcodeado. Unidades, umbrales, plantillas y textos de Jev salen de seeds y políticas.
+- **IA en tests:** los tests usan los dobles de `tests/db/fakes.ts`; las integraciones reales se prueban con `pnpm cli smoke-jev`.
+- **Antes de cada PR:** `pnpm test`, `pnpm typecheck` y `pnpm lint`.
+
+### Puesta en marcha de cada persona
+
+1. `git checkout feat/mvp && pnpm install`.
+2. Postgres con PostGIS local (o la base de desarrollo de Supabase cuando exista); crear las bases `radar_urbano` y `radar_urbano_test`.
+3. Copiar `.env.example` a `.env.local` y completarlo. Las claves de Jev y DeepSeek se pasan por privado, nunca por el repo.
+4. `pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`.
+5. `node --env-file=.env.local scripts/e2e-walkthrough.mjs` para verificar el recorrido.
+
+Hitos (quedan unas 9 h): **20:00** recorrido desplegado y probado desde celular; **22:00** agrupación, reevaluación y plan; **00:00** despacho, bandeja de unidad y cola de revisión; **01:00** congelar y ensayar la demo.
 
 Pendientes del equipo: provisionar Supabase (con PostGIS) y Railway; fotos y mensajes de ejemplo para calibrar (los reúne quien tome la Tarea 2).
