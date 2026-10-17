@@ -6,7 +6,7 @@
 
 **Architecture:** Monolito modular Next.js 16 con un worker Node del mismo repo; PostgreSQL + PostGIS como fuente de verdad; jobs persistidos con lease; Jev decide, LLM redacta bajo demanda, el backend aplica políticas versionadas desde base. Pipeline autónomo; el humano entra por `review_items` y overrides.
 
-**Tech Stack:** TypeScript, Node ≥ 22, Next.js 16.4, React 19, Zod 4, `pg` 8, PostGIS, `@typesafe-ai/sdk` 0.7, `openai` 7, `sharp`, `iron-session`, Leaflet, Vitest, `tsx`. Railway + Supabase.
+**Tech Stack:** TypeScript, Node ≥ 22, Next.js 16.4, React 19, Zod 4, `pg` 8, PostGIS, `@typesafe-ai/sdk` 0.7, `openai` 7 (como cliente de un endpoint compatible: modelo open source en Tenki), `sharp`, `iron-session`, Leaflet, Vitest, `tsx`. Railway + Supabase.
 
 **Spec:** `docs/superpowers/specs/2026-10-17-radar-urbano-design.md` (prevalece) y `ALCANCE-RADAR-URBANO.md`, `ARQUITECTURA-RADAR-URBANO.md`, `INTEGRACION-JEV.md`.
 
@@ -39,7 +39,7 @@ package.json, pnpm-lock.yaml, next.config.ts, tsconfig.json, vitest.config.ts, .
 Dockerfile.web, Dockerfile.worker, railway.json
 migrations/0001_extensions_config.sql … 0006_system.sql
 seeds/catalog.ts  seeds/policies.ts  seeds/templates.ts  seeds/territory-montevideo.ts  seeds/demo-units.ts  seeds/demo-users.ts
-scripts/cli.ts            # migrate | seed | import-areas | seed-demo | reset-demo | refresh-demo-positions | smoke-jev | smoke-openai
+scripts/cli.ts            # migrate | seed | import-areas | seed-demo | reset-demo | refresh-demo-positions | smoke-jev | smoke-llm
 src/worker/index.ts
 src/shared/contracts/*.ts # Zod: report, message, evaluation, incident, plan, assignment, review
 src/server/db/{pool,tx,migrate,sql}.ts
@@ -78,7 +78,7 @@ Reparto sugerido: **A** recepción y bandeja (Tareas 5, 6, 13, 14); **B** datos,
 - Produces: `tests/db/setup.ts` exporta `testDb()` que crea/trunca `radar_urbano_test`, corre `migrate` y devuelve el pool.
 
 - [ ] **Step 1:** Copiar el scaffold de `create-next-app@16.4.2` (ya generado en el scratchpad de la sesión, o regenerar con `--ts --app --src-dir --tailwind --eslint --use-pnpm`). Agregar dependencias: `pg @types/pg zod @typesafe-ai/sdk openai sharp iron-session leaflet react-leaflet @types/leaflet bcryptjs`; dev: `vitest tsx dotenv`. Scripts: `dev`, `build`, `start`, `worker` (`tsx src/worker/index.ts`), `cli` (`tsx scripts/cli.ts`), `test` (`vitest run`).
-- [ ] **Step 2:** `.env.example` con `DATABASE_URL`, `DATABASE_URL_TEST`, `TYPESAFE_API_KEY`, `OPENAI_API_KEY`, `SESSION_SECRET`, `STORAGE_DRIVER=local|supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, `NOMINATIM_USER_AGENT`. Crear `.env` local apuntando a `postgres://localhost/radar_urbano` y `radar_urbano_test`.
+- [ ] **Step 2:** `.env.example` con `DATABASE_URL`, `DATABASE_URL_TEST`, `TYPESAFE_API_KEY`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SESSION_SECRET`, `STORAGE_DRIVER=local|supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`, `NOMINATIM_USER_AGENT`. Crear `.env` local apuntando a `postgres://localhost/radar_urbano` y `radar_urbano_test`.
 - [ ] **Step 3:** Test `migrate.test.ts`: `migrate` sobre base vacía devuelve ≥ 6 nombres; segunda llamada devuelve `[]`; `select postgis_version()` responde; `to_regclass('review_items')` no es null.
 - [ ] **Step 4:** Correr `pnpm test` → falla (módulos inexistentes).
 - [ ] **Step 5:** Implementar `pool.ts` (pool por `DATABASE_URL`, `max` 10, `ssl` si la URL no es localhost), `tx.ts`, `migrate.ts` (lee `migrations/*.sql` ordenados, aplica cada uno en transacción con advisory lock `pg_advisory_lock(727)`).
@@ -262,16 +262,16 @@ Reparto sugerido: **A** recepción y bandeja (Tareas 5, 6, 13, 14); **B** datos,
 ### Task 13: LLM bajo demanda en recepción y geocodificación
 
 **Files:**
-- Create: `src/server/ai/llm/{client,extract-address,clarify,interpret-correction}.ts`, `src/server/geo/{geocoder,nominatim}.ts`, `scripts/smoke-openai.ts`
+- Create: `src/server/ai/llm/{client,extract-address,clarify,interpret-correction}.ts`, `src/server/geo/{geocoder,nominatim}.ts`, `scripts/smoke-llm.ts`
 - Modify: `src/server/intake/branches.ts` / `orchestrator.ts` (ramas `extract_address`, `ask_evidence`, `interpret_correction` pasan a usar LLM con fallback a plantilla)
 - Test: `tests/unit/llm-contracts.test.ts`, `tests/db/geocode-cache.test.ts`
 
 **Interfaces:**
-- Produces: `llmClient` = `OpenAI` con modelo de `textgen` policy; cada llamada usa `responses.parse` + `zodTextFormat`, registra `llm_runs`, timeout y `max_output_tokens` de política; cualquier error ⇒ `{ ok: false }` y el orquestador usa plantilla.
+- Produces: `llmClient` = `OpenAI({ baseURL: LLM_BASE_URL, apiKey: LLM_API_KEY })` contra el modelo open source servido en Tenki; cada llamada usa `chat.completions` con `response_format: { type: 'json_schema', json_schema }` y valida la salida con Zod (si no valida ⇒ `{ ok: false }`), registra `llm_runs`, timeout y `max_output_tokens` de política; cualquier error ⇒ `{ ok: false }` y el orquestador usa plantilla.
 - Produces: `extractAddress({ messages, territoryName }) → { address: string|null; sourceMessageIds: string[] }`; `clarify({ evaluation, missing, messages }) → { question; requestedField }`; `interpretCorrection({ messages, draft }) → { proposedFields: Partial<{ description; locationText }>; sourceMessageIds }`. Se valida que `sourceMessageIds ⊆` ids reales.
 - Produces: `geocode(client, { query; territory }) → { lon; lat; label } | null` con caché en `geocode_cache`, `User-Agent` de entorno, 1 req/s, `viewbox` del territorio y `bounded=1`.
 
-- [ ] **Step 1:** Tests: `sourceMessageIds` con un id inexistente ⇒ rechazo tipado; `geocode` dos veces la misma consulta ⇒ una sola llamada al proveedor (inyectar `fetch`). Smoke `pnpm cli smoke-openai` **bloqueado hasta tener la clave**: tres mensajes rioplatenses con dirección (“en Rivera y Comercio”, “frente al 1234 de 18 de julio”, “acá en la esquina de casa”) y registrar salidas y latencia en `docs/superpowers/notes/openai-smoke.md`; fijar el modelo definitivo en la seed de `textgen`.
+- [ ] **Step 1:** Tests: `sourceMessageIds` con un id inexistente ⇒ rechazo tipado; `geocode` dos veces la misma consulta ⇒ una sola llamada al proveedor (inyectar `fetch`). Smoke `pnpm cli smoke-llm` **bloqueado hasta tener el endpoint de Tenki**: tres mensajes rioplatenses con dirección (“en Rivera y Comercio”, “frente al 1234 de 18 de julio”, “acá en la esquina de casa”) y registrar salidas y latencia en `docs/superpowers/notes/llm-smoke.md`; fijar el modelo definitivo en la seed de `textgen`.
 - [ ] **Step 2:** Correr → falla. **Step 3:** Implementar; en el chat, la dirección extraída se muestra como pin propuesto que la persona confirma o mueve. **Step 4:** Tests → PASS. Commit `feat: LLM bajo demanda y geocodificación con caché`.
 
 ### Task 14: Cola de revisión y detalle del incidente

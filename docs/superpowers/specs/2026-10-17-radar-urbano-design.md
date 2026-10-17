@@ -37,9 +37,9 @@ Montevideo es el piloto porque tenemos su GeoJSON de barrios. Nada de la lógica
 
 - TypeScript, Node.js ≥ 22, Next.js 16, Zod, `pg` con migraciones SQL propias, PostgreSQL 16+ con **PostGIS**. Un repositorio: app web y worker como dos procesos que comparten los módulos de dominio.
 - Jev vía `@typesafe-ai/sdk` 0.7.x (`TypeSafeClient.systemOne`, Choice y Noul). Modelo configurado en política; propuesta inicial `jev-1.14.0`. Imágenes con header `TypeSafe-Danger-Zone-Images: true`, JPEG/PNG, 280–1568 px por lado, orientación aplicada antes de enviar.
-- LLM vía OpenAI Responses API con salidas estructuradas (`responses.parse` + `zodTextFormat`). Modelo configurado; candidato inicial `gpt-6-luna` por latencia y costo, a confirmar con la llamada real.
+- LLM: **modelo open source servido por el equipo en Tenki** detrás de una API compatible con OpenAI (vLLM o equivalente). Se accede con el SDK `openai` apuntando a `LLM_BASE_URL`, con `LLM_API_KEY` y `LLM_MODEL` por entorno. Salidas estructuradas vía `response_format: { type: 'json_schema' }` (guided decoding del servidor) con validación Zod del lado nuestro y plantilla de respaldo si el JSON no valida. No se usa cuenta de OpenAI.
 - Geocodificación detrás de una interfaz; Nominatim por defecto con caché persistida y `User-Agent` propio. Mapa base OSM con Leaflet.
-- Credenciales solo por entorno (`TYPESAFE_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL`). Nunca en seeds, documentos ni logs.
+- Credenciales solo por entorno (`TYPESAFE_API_KEY`, `LLM_BASE_URL`, `LLM_API_KEY`, `DATABASE_URL`). Nunca en seeds, documentos ni logs.
 - Despliegue recomendado Railway (web + worker) y Supabase (PostgreSQL con PostGIS, Storage privado). No provisionado; el desarrollo usa Postgres local y disco local detrás de la misma interfaz de storage.
 - Accesibilidad mínima del alcance: controles de 44 px, texto base 16 px, contraste AA, foco visible, prioridad legible sin color.
 
@@ -207,7 +207,7 @@ PostgreSQL + PostGIS. Estructura, estados y restricciones en SQL; parámetros, c
 - `priority`: reglas de banda, `promote_low_to_medium_after_hours = 48`.
 - `planning`: `window_hours = 24`, `weight_hours = 2`, `cap_hours = 12`, orden lexicográfico y pesos de desempate.
 - `dispatch`: `min_applicability = 0.90`, `min_type_confidence = 0.90`, `max_distance_m = 3000`, `position_max_age_min = 30`, `strategy in (nearest_mobile, zone_owner, manual)` por tipo.
-- `textgen`: `model = gpt-6-luna`, `instructions_version`, `max_output_tokens`, `enabled`.
+- `textgen`: `model` (nombre servido en Tenki), `instructions_version`, `max_output_tokens`, `timeout_ms`, `enabled`.
 
 ## 8. Qué queda al criterio del builder
 
@@ -222,4 +222,4 @@ PostgreSQL + PostGIS. Estructura, estados y restricciones en SQL; parámetros, c
 - **Tiempo:** unas 12 horas desde el 17 de octubre de 2026 por la tarde. **Equipo:** tres personas en paralelo (A recepción, B datos/IA/pipeline, C operación/planificación), más esta sesión como implementadora principal.
 - **Demo:** desde celulares reales por internet para ciudadano y bandeja de unidad; dashboard del operador en Mac. Por lo tanto **se despliega**: Railway (web + worker) y Supabase (PostgreSQL con PostGIS, Storage privado). El despliegue se prepara temprano con la primera sección funcional, no al final, para que las últimas horas sean de contenido y no de infraestructura.
 - **Orden de prioridad ante recortes** (se recorta de abajo hacia arriba): 1) reporte con Jev real → incidente visible en dashboard, desplegado; 2) agrupación automática y reevaluación; 3) planificador, despacho y bandeja de unidad; 4) cola de revisión con resolución; 5) LLM en recepción (dirección, repreguntas, correcciones) y textos generados; 6) responsable de zona y prueba de segundo territorio; 7) pulido visual y accesibilidad más allá del mínimo. Lo que no entra se muestra como pendiente en la demo, nunca simulado.
-- **Pendiente:** `TYPESAFE_API_KEY` y `OPENAI_API_KEY` en `.env` local; cuentas de Railway y Supabase (quién las crea y con qué plan); fotos y mensajes de ejemplo del equipo para calibrar umbrales.
+- **Pendiente:** `TYPESAFE_API_KEY` en `.env` local (existe en el llavero de la Mac); endpoint del LLM en Tenki (`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`); cuentas de Railway y Supabase (quién las crea y con qué plan). Las fotos y mensajes de ejemplo los reúne y calibra quien tome el módulo de evaluación (Tarea 2), no bloquean el arranque.
