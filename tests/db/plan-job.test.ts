@@ -250,4 +250,15 @@ describe("job plan", () => {
     expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 60_000))).toBe(0); // mismo intervalo de 5 min
     expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 6 * 60_000))).toBe(1);
   });
+
+  it("un job periódico que agotó sus intentos no se revive en el mismo intervalo; el siguiente encola otro", async () => {
+    const now = new Date("2026-10-17T22:00:00Z");
+    expect(await enqueuePeriodicPlans(pool, now)).toBe(1);
+    await pool.query("update jobs set status = 'failed', attempts = 3, last_error = 'roto' where kind = 'plan'");
+    // El worker mira el reloj cada minuto: el tick siguiente cae en el mismo intervalo de 5 min.
+    expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 60_000))).toBe(0);
+    expect(await one(pool, "select status, attempts from jobs where kind = 'plan'")).toEqual({ status: "failed", attempts: 3 });
+    expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 6 * 60_000))).toBe(1);
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and status = 'pending'")).n).toBe(1);
+  });
 });
