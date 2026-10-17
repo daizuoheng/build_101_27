@@ -6,7 +6,7 @@
 
 **Architecture:** Monolito modular Next.js 16 con un worker Node del mismo repo; PostgreSQL + PostGIS como fuente de verdad; jobs persistidos con lease; Jev decide, LLM redacta bajo demanda, el backend aplica políticas versionadas desde base. Pipeline autónomo; el humano entra por `review_items` y overrides.
 
-**Tech Stack:** TypeScript, Node ≥ 22, Next.js 16.4, React 19, Zod 4, `pg` 8, PostGIS, `@typesafe-ai/sdk` 0.7, `openai` 7 (como cliente de un endpoint compatible: modelo open source en Tenki), `sharp`, `iron-session`, Leaflet, Vitest, `tsx`. Railway + Supabase.
+**Tech Stack:** TypeScript, Node ≥ 22, Next.js 16.4, React 19, Zod 4, `pg` 8, PostGIS, `@typesafe-ai/sdk` 0.7, `openai` 7 (como cliente de la API de DeepSeek, compatible con OpenAI), `sharp`, `iron-session`, Leaflet, Vitest, `tsx`. Railway + Supabase.
 
 **Spec:** `docs/superpowers/specs/2026-10-17-radar-urbano-design.md` (prevalece) y `ALCANCE-RADAR-URBANO.md`, `ARQUITECTURA-RADAR-URBANO.md`, `INTEGRACION-JEV.md`.
 
@@ -284,11 +284,11 @@ Hitos: **h+3** Tarea 8 desplegada (reporte → incidente en dashboard); **h+6** 
 - Test: `tests/unit/llm-contracts.test.ts`, `tests/db/geocode-cache.test.ts`
 
 **Interfaces:**
-- Produces: `llmClient` = `OpenAI({ baseURL: LLM_BASE_URL, apiKey: LLM_API_KEY })` contra el modelo open source servido en Tenki; cada llamada usa `chat.completions` con `response_format: { type: 'json_schema', json_schema }` y valida la salida con Zod (si no valida ⇒ `{ ok: false }`), registra `llm_runs`, timeout y `max_output_tokens` de política; cualquier error ⇒ `{ ok: false }` y el orquestador usa plantilla.
+- Produces: `llmClient` = `OpenAI({ baseURL: LLM_BASE_URL, apiKey: LLM_API_KEY })` contra DeepSeek (`deepseek-flash`); cada llamada usa `chat.completions` con `response_format: { type: 'json_object' }`, la palabra "json" y un ejemplo de la forma en el prompt, `max_tokens` acotado, y valida la salida con Zod (vacía o inválida ⇒ un reintento y luego `{ ok: false }`), registra `llm_runs`, timeout y `max_output_tokens` de política; cualquier error ⇒ `{ ok: false }` y el orquestador usa plantilla.
 - Produces: `extractAddress({ messages, territoryName }) → { address: string|null; sourceMessageIds: string[] }`; `clarify({ evaluation, missing, messages }) → { question; requestedField }`; `interpretCorrection({ messages, draft }) → { proposedFields: Partial<{ description; locationText }>; sourceMessageIds }`. Se valida que `sourceMessageIds ⊆` ids reales.
 - Produces: `geocode(client, { query; territory }) → { lon; lat; label } | null` con caché en `geocode_cache`, `User-Agent` de entorno, 1 req/s, `viewbox` del territorio y `bounded=1`.
 
-- [ ] **Step 1:** Tests: `sourceMessageIds` con un id inexistente ⇒ rechazo tipado; `geocode` dos veces la misma consulta ⇒ una sola llamada al proveedor (inyectar `fetch`). Smoke `pnpm cli smoke-llm` **bloqueado hasta tener el endpoint de Tenki**: tres mensajes rioplatenses con dirección (“en Rivera y Comercio”, “frente al 1234 de 18 de julio”, “acá en la esquina de casa”) y registrar salidas y latencia en `docs/superpowers/notes/llm-smoke.md`; fijar el modelo definitivo en la seed de `textgen`.
+- [ ] **Step 1:** Tests: `sourceMessageIds` con un id inexistente ⇒ rechazo tipado; `geocode` dos veces la misma consulta ⇒ una sola llamada al proveedor (inyectar `fetch`). Smoke `pnpm cli smoke-llm` **bloqueado hasta tener `LLM_API_KEY` de DeepSeek**: tres mensajes rioplatenses con dirección (“en Rivera y Comercio”, “frente al 1234 de 18 de julio”, “acá en la esquina de casa”) y registrar salidas y latencia en `docs/superpowers/notes/llm-smoke.md`; fijar el modelo definitivo en la seed de `textgen`.
 - [ ] **Step 2:** Correr → falla. **Step 3:** Implementar; en el chat, la dirección extraída se muestra como pin propuesto que la persona confirma o mueve. **Step 4:** Tests → PASS. Commit `feat: LLM bajo demanda y geocodificación con caché`.
 
 ### Task 14: Cola de revisión y detalle del incidente
