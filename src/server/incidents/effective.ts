@@ -3,6 +3,7 @@ import { getActivePolicy } from "../config/policies";
 import { appendEvent } from "../events/append";
 import { enqueue } from "../jobs/queue";
 import { computePriority } from "../pipeline/priority";
+import { enqueueTextgen } from "../pipeline/textgen";
 import { applyOverrides, liveOverrides, markIncompatibleAssignment, type Assessed } from "./overrides";
 
 /**
@@ -44,7 +45,7 @@ type Row = Assessed & { territory_id: string; created_at: Date; priority_band: s
 
 /**
  * Valor efectivo = evaluado + correcciones vigentes, con prioridad por política. Escribe columnas, título y desglose;
- * sube la revisión y encola `plan` solo si cambió algo efectivo; bloquea la orden activa si cambió la capacidad
+ * sube la revisión y encola `plan` y `textgen` solo si cambió algo efectivo; bloquea la orden activa si cambió la capacidad
  * requerida (tipo o peligro activo nuevo). Llamar dentro de la transacción, con el incidente bloqueado.
  */
 export async function recomputeEffective(
@@ -98,6 +99,8 @@ export async function recomputeEffective(
       kind: "plan", entityType: "territory", entityId: cur.territory_id, entityRevision: 0, territoryId: cur.territory_id,
       dedupeSuffix: `incident:${incidentId}:${upd.rows[0].revision}`,
     });
+    // Textos del operador: una revisión nueva, un job (cubre setOverride y removeOverride).
+    await enqueueTextgen(db, { incidentId, revision: upd.rows[0].revision, territoryId: cur.territory_id });
   }
   return { revision: upd.rows[0].revision, changed, changes: [...changes, ...discrepancies], discrepancies, band };
 }

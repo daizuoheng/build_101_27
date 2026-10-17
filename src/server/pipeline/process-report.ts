@@ -13,6 +13,7 @@ import { openReviewItem, type ReviewKind } from "../review/items";
 import type { GroupingVerdict } from "../ai/jev/compare-candidates";
 import { applyGrouping, findCandidates, prepareGrouping, sameCandidates, type GroupingPlan } from "./group";
 import { computePriority } from "./priority";
+import { enqueueTextgen } from "./textgen";
 
 /** Si los candidatos cambian entre la comparación y la escritura, se compara de nuevo; a la última vuelta, revisión. */
 const GROUPING_ROUNDS = 2;
@@ -148,6 +149,8 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
   );
   const incidentId = inc.rows[0].id;
   await insertLink(c, { reportId: r.id, incidentId, origin: "auto", decisionId: grouped.decisionId });
+  // Textos del operador: una revisión nueva, un job. La revisión 1 se encola acá, no depende de assess_incident.
+  await enqueueTextgen(c, { incidentId, revision: 1, territoryId: r.territory_id! });
   // Base de la IA (evaluación del reporte que lo creó): lo que vuelve a mandar al quitar una corrección humana.
   const assessed = { problemTypeId: ev.problemTypeId, severity: ev.severity, activeHazard, passage: ev.passage, accessibility: ev.accessibility };
   await c.query(

@@ -142,6 +142,8 @@ describe("agrupación automática", () => {
     const link = await pool.query("select grouping_decision_id from report_incident_links where report_id = $1 and active", [reportId]);
     expect(link.rows[0].grouping_decision_id).toBe(dec.rows[0].id);
     expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("linked");
+    const created = (await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows[0].incident_id;
+    expect((await pool.query("select entity_revision from jobs where kind = 'textgen' and entity_id = $1", [created])).rows).toEqual([{ entity_revision: 1 }]);
   });
 
   it("si los candidatos cambian mientras Jev compara, se compara de nuevo antes de escribir", async () => {

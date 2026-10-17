@@ -6,9 +6,16 @@ import { enqueue, type Job } from "../jobs/queue";
 
 const PURPOSES: TextPurpose[] = ["title", "summary", "explain_priority"];
 
-/** Encola los textos de una revisión del incidente. Idempotente por revisión; lo llaman assess_incident y plan. */
-export async function enqueueTextgen(c: Db, input: { incidentId: string; revision: number; territoryId: string }): Promise<void> {
-  await enqueue(c, { kind: "textgen", entityType: "incident", entityId: input.incidentId, entityRevision: input.revision, territoryId: input.territoryId });
+/**
+ * Encola los textos de una revisión del incidente. Idempotente por revisión. Lo llaman la creación del incidente,
+ * `runAssessIncident` y `recomputeEffective`; `plan` solo renueva `explain_priority` (ver `planInTx`), con
+ * `dedupeSuffix` porque la banda por antigüedad cambia sin revisión nueva.
+ */
+export async function enqueueTextgen(c: Db, input: { incidentId: string; revision: number; territoryId: string; dedupeSuffix?: string }): Promise<void> {
+  await enqueue(c, {
+    kind: "textgen", entityType: "incident", entityId: input.incidentId, entityRevision: input.revision, territoryId: input.territoryId,
+    ...(input.dedupeSuffix !== undefined ? { dedupeSuffix: input.dedupeSuffix } : {}),
+  });
 }
 
 type IncidentRow = {
@@ -105,10 +112,14 @@ export async function runTextgen(
   if (!inc || inc.revision !== job.entity_revision || inc.status === "archived") return { discarded: true, sources: {}, fallbacks: {} };
   const policy = (await getActivePolicy(deps.pool, inc.territory_id, "textgen")).config;
   const inputs = textInputs(inc, await reportReferences(deps.pool, inc.id, policy.max_references), policy);
-  const isCurrent = async (c: PoolClient) =>
-    (await c.query<{ revision: number }>("select revision from incidents where id = $1 for share", [inc.id])).rows[0]?.revision === job.entity_revision;
+  // La explicación depende además de la banda, que `plan` puede promover por antigüedad sin subir la revisión: si
+  // cambió mientras se redactaba, se descarta (el job `band:<banda>` que encoló `plan` la vuelve a redactar).
+  const isCurrent = (purpose: TextPurpose) => async (c: PoolClient) => {
+    const cur = (await c.query<{ revision: number; priority_band: string }>("select revision, priority_band from incidents where id = $1 for share", [inc.id])).rows[0];
+    return cur?.revision === job.entity_revision && (purpose !== "explain_priority" || cur.priority_band === inc.priority_band);
+  };
   // Propósitos independientes: lo que salió queda cacheado aunque otro falle; el reintento solo rehace el resto.
-  const settled = await Promise.allSettled(PURPOSES.map((p) => generateText(deps, inputs[p], { isCurrent, policy })));
+  const settled = await Promise.allSettled(PURPOSES.map((p) => generateText(deps, inputs[p], { isCurrent: isCurrent(p), policy })));
   const failed = settled.find((r) => r.status === "rejected");
   if (failed) throw failed.reason;
   const results = settled.flatMap((r, i) => (r.status === "fulfilled" ? [[PURPOSES[i], r.value] as const] : []));

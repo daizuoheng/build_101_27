@@ -4,6 +4,10 @@ import { seedAll } from "../../seeds";
 import { policies } from "../../seeds/policies";
 import { generateText, type TextInput } from "@/server/ai/llm/generate-text";
 import { getActivePolicy } from "@/server/config/policies";
+import { withTx } from "@/server/db/tx";
+import { unlinkReport } from "@/server/incidents/links";
+import { setOverride } from "@/server/incidents/overrides";
+import { latestTexts, latestTextsMany } from "@/server/incidents/texts";
 import { claimNext } from "@/server/jobs/queue";
 import { enqueueTextgen, runTextgen, textInputs } from "@/server/pipeline/textgen";
 import { fakeLlm, newSession, territoryId } from "./fakes";
@@ -39,6 +43,15 @@ async function titleInput(pool: Pool, incidentId: string, revision = 1): Promise
   const reports = (await pool.query<{ id: string; description: string }>("select id, description from reports")).rows.map((r) => ({ id: r.id, text: r.description }));
   return { purpose: "title", territoryId: territory, entity: { type: "incident", id: incidentId, revision }, facts: { problem_type: "Bache", place: "Av. Italia 2450" }, references: reports };
 }
+
+const textgenJobs = (pool: Pool, incidentId: string) =>
+  pool.query<{ entity_revision: number; dedupe_key: string }>(
+    "select entity_revision, dedupe_key from jobs where kind = 'textgen' and entity_id = $1 order by entity_revision",
+    [incidentId],
+  );
+
+/** `setOverride` exige un operador identificado. */
+const operator = { type: "operator" as const, id: "00000000-0000-4000-8000-0000000000aa" };
 
 const texts = (pool: Pool) =>
   pool.query<{ purpose: string; entity_revision: number; body: string; references: string[]; llm_run_id: string | null }>(
@@ -96,6 +109,28 @@ describe("textos generados (textgen)", () => {
     const res = await runTextgen({ pool, llm }, job);
     expect(res.discarded).toBe(true);
     expect((await texts(pool)).rows).toEqual([]);
+  });
+
+  it("si plan promueve la banda mientras el LLM redacta (misma revisión), la explicación vieja no se guarda", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query("update incidents set severity = 'low', priority_band = 'low', priority_breakdown = '{\"rules\": []}' where id = $1", [incidentId]);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const job = (await claimNext(pool, "w", 60))!;
+    // Lo que hace planInTx al promover por antigüedad: banda nueva sin revisión nueva, explicación invalidada.
+    // Una sola vez, y todas las redacciones esperan a que termine (corren en paralelo).
+    let promoted: Promise<unknown> | null = null;
+    const promote = async () => {
+      await pool.query(`update incidents set priority_band = 'medium', priority_breakdown = '{"rules": [], "promoted_by_age": true, "computed_band": "medium"}' where id = $1`, [incidentId]);
+      await pool.query("delete from generated_texts where purpose = 'explain_priority' and entity_id = $1", [incidentId]);
+    };
+    const llm = fakeLlm(async (call) => {
+      await (promoted ??= promote());
+      return citeFirst(call);
+    });
+    const res = await runTextgen({ pool, llm }, job);
+    expect(res.discarded).toBe(true);
+    expect((await pool.query("select 1 from generated_texts where purpose = 'explain_priority' and entity_id = $1", [incidentId])).rows).toHaveLength(0);
   });
 
   it("salida inválida dos veces ⇒ plantilla de respaldo, sin llm_run_id y con los dos intentos registrados", async () => {
@@ -342,5 +377,35 @@ describe("textos generados (textgen)", () => {
     expect(inputs.summary.facts).toMatchObject({ severity: "alta", passage: "parcialmente obstruido", report_count: 2 });
     expect(inputs.explain_priority.facts.reasons).toEqual(["severidad alta", "antigüedad sin atender"]);
     expect(JSON.stringify(inputs)).not.toMatch(/status|assign|dispatch/);
+  });
+
+  it("una corrección del operador encola textgen para la revisión nueva", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool); // revisión 1, sin jobs
+    await withTx((c) => setOverride(c, { incidentId, override: { field: "severity", value: "low" }, reason: "test", actor: operator, expectedRevision: 1 }), pool);
+    expect((await textgenJobs(pool, incidentId)).rows.map((r) => r.entity_revision)).toEqual([2]);
+  });
+
+  it("archivar el incidente (último reporte desvinculado) no encola textgen", async () => {
+    const pool = await testDb();
+    const { incidentId, reportId } = await incidentWithReport(pool);
+    await withTx((c) => unlinkReport(c, { reportId, reason: "test", actor: { type: "operator", id: null } }), pool);
+    expect((await pool.query("select status from incidents where id = $1", [incidentId])).rows[0].status).toBe("archived");
+    expect((await textgenJobs(pool, incidentId)).rows).toHaveLength(0);
+  });
+
+  it("latestTexts devuelve solo los textos de la revisión vigente; sin texto, null", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool); // revisión 1
+    await pool.query(
+      `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body) values
+         ('title', 'incident', $1, 1, 'Bache en Av. Italia'), ('summary', 'incident', $1, 1, 'Un pozo')`,
+      [incidentId],
+    );
+    expect(await latestTexts(pool, incidentId)).toEqual({ revision: 1, title: "Bache en Av. Italia", summary: "Un pozo", explain_priority: null });
+    await pool.query("update incidents set revision = 2 where id = $1", [incidentId]);
+    expect(await latestTexts(pool, incidentId)).toEqual({ revision: 2, title: null, summary: null, explain_priority: null });
+    const many = await latestTextsMany(pool, [incidentId]);
+    expect(many.get(incidentId)?.revision).toBe(2);
   });
 });

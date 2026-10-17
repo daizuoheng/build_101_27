@@ -145,6 +145,8 @@ describe("assess_incident y correcciones", () => {
     expect(a.changes).toEqual(expect.arrayContaining([{ field: "severity", from: "medium", to: "high", source: "ai" }]));
     expect(a.evidence_summary.ai.evolution.choice).toBe("worsened");
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and entity_id = $1", [t])).n).toBeGreaterThanOrEqual(1);
+    const rev = await revisionOf(pool, incidentId);
+    expect((await pool.query("select entity_revision from jobs where kind = 'textgen' and entity_id = $1 order by entity_revision", [incidentId])).rows.map((r) => r.entity_revision)).toContain(rev);
 
     // Los reportes viajan con índices locales; los ids solo en input_refs.
     const run = await one(pool, "select input_refs, request from ai_runs where purpose = 'assess'");
@@ -223,9 +225,12 @@ describe("assess_incident y correcciones", () => {
     });
     const incidentId = await incidentWithTwoReports(pool, t, jev);
     const job = await one(pool, "select id from jobs where kind = 'assess_incident' and status = 'pending'");
+    await pool.query("update jobs set status = 'done' where kind = 'textgen'"); // los textos de la revisión 1 no son lo que se mide
     await runOnce(testDeps(pool, jev), handlers, { workerId: "test" });
     expect((await one(pool, "select status from jobs where id = $1", [job.id])).status).toBe("done");
     expect((await one(pool, "select count(*)::int as n from incident_assessments where incident_id = $1 and ai_run_id is not null and incident_revision > 1", [incidentId])).n).toBe(0);
+    // Resultado descartado: no se encolan textos para una revisión que no evaluó.
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'textgen' and entity_id = $1 and entity_revision > 1", [incidentId])).n).toBe(0);
     expect((await one(pool, "select severity from incidents where id = $1", [incidentId])).severity).toBe("medium");
   });
 
@@ -273,6 +278,16 @@ describe("assess_incident y correcciones", () => {
     const a = await one(pool, "select reports_considered, evidence_summary from incident_assessments where incident_id = $1 order by incident_revision desc limit 1", [incidentId]);
     expect(a.reports_considered).toHaveLength(2);
     expect(a.evidence_summary.all_report_ids).toHaveLength(3);
+  });
+
+  it("si la reevaluación tras vincular falla del todo, la revisión nueva igual tiene su textgen", async () => {
+    const jev = jevAssess();
+    const incidentId = await incidentWithTwoReports(pool, t, jev);
+    const rev = await revisionOf(pool, incidentId);
+    await pool.query("update jobs set attempts = 2 where kind = 'assess_incident'");
+    await drain(pool, downJev());
+    expect((await one(pool, "select status from jobs where kind = 'assess_incident' and entity_revision = $1", [rev])).status).toBe("failed");
+    expect((await pool.query("select entity_revision from jobs where kind = 'textgen' and entity_id = $1", [incidentId])).rows.map((r) => r.entity_revision)).toContain(rev);
   });
 
   it("una falla de reevaluación ya obsoleta no abre provider_failure", async () => {
