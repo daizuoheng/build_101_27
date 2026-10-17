@@ -209,6 +209,26 @@ PostgreSQL + PostGIS. Estructura, estados y restricciones en SQL; parámetros, c
 - `dispatch`: `min_applicability = 0.90`, `min_type_confidence = 0.90`, `max_distance_m = 3000`, `position_max_age_min = 30`, `strategy in (nearest_mobile, zone_owner, manual)` por tipo.
 - `textgen`: `model = deepseek-flash`, `instructions_version`, `max_output_tokens`, `timeout_ms`, `enabled`.
 
+## 7b. Privacidad y datos personales (Ley 18.331)
+
+Respuesta honesta para el jurado: qué hace el MVP hoy y qué es trabajo futuro. No afirmar nada de la segunda lista como implementado.
+
+**Cubierto por el diseño del MVP**
+
+- No se piden ni guardan datos de identidad del ciudadano: la sesión web es un token opaco aleatorio, se guarda solo su hash, sin registro, teléfono ni correo.
+- Las fotos van a storage privado; se sirven únicamente a operadores y unidades autorizados mediante URLs firmadas de corta duración. No hay galería pública ni listado anónimo de reportes.
+- Las fotos se envían al proveedor de IA solo para evaluar el reporte; el adaptador registra la llamada sin bytes. No se hace reconocimiento de personas ni de matrículas (fuera del alcance por definición).
+- Los textos ciudadanos se tratan como evidencia, no como instrucciones; el LLM no recibe identidad ni datos de otras sesiones.
+- Minimización en el dashboard: el operador ve el reporte y su código, nunca un identificador de persona.
+
+**Trabajo futuro (roadmap, etapas 1 y 3 del ALCANCE)**
+
+- Anonimización de imágenes: generar un derivado con rostros y matrículas difuminados para el dashboard y la bandeja, conservando el original cifrado y con acceso restringido solo si hace falta para una verificación. Evaluar si el derivado difuminado alcanza también para Jev.
+- Retención: política por territorio para borrar originales y mensajes pasado un plazo tras la resolución, conservando solo datos agregados.
+- WhatsApp/SMS: el número se guarda como hash con sal por proveedor, el operador ve un identificador de fuente, y la base legal y el aviso de privacidad se definen con la organización responsable.
+- Derechos ARCO: mecanismo para que un ciudadano pida ver o borrar lo que envió, autenticado por el mismo canal.
+- Registro de accesos a fotos y datos (quién vio qué) en `events`, y acuerdo de tratamiento de datos con el municipio u organización que opere el sistema.
+
 ## 8. Qué queda al criterio del builder
 
 - Estructura de carpetas, nombres de módulos y organización de tests, respetando los límites de módulo de la arquitectura.
