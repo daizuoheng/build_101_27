@@ -1,6 +1,7 @@
 import { getReport } from "../intake/drafts";
 import { evaluateRevision, respondToEvaluation } from "../intake/orchestrator";
 import { onProcessReportFailed, processReport } from "../pipeline/process-report";
+import { runTextgen } from "../pipeline/textgen";
 import { openReviewItem } from "../review/items";
 import type { JobKind } from "./queue";
 import type { Handler } from "./worker-loop";
@@ -30,4 +31,6 @@ export const handlers: Partial<Record<JobKind, Handler>> = {
     },
   },
   process_report: { run: processReport, onFailed: onProcessReportFailed },
+  /** Textos del operador por revisión del incidente. Nunca bloquea otra etapa: sin LLM, plantilla. */
+  textgen: { run: async (deps, job) => void (await runTextgen(deps, job)) },
 };

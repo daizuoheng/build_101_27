@@ -84,7 +84,35 @@ export const DispatchPolicy = z.object({
   strategies: z.record(z.string(), z.enum(["nearest_mobile", "zone_owner", "manual"])),
 });
 
-export const TextgenPolicy = LlmCallConfig.extend({ enabled: z.boolean() });
+const TextPurposes = z.object({ title: z.string(), summary: z.string(), explain_priority: z.string() });
+const Regex = z.string().refine((s) => {
+  try {
+    new RegExp(s, "iu");
+    return true;
+  } catch {
+    return false;
+  }
+}, "expresión regular inválida");
+
+export const TextgenPolicy = LlmCallConfig.extend({
+  enabled: z.boolean(),
+  max_chars: z.object({ title: z.number().int().positive(), summary: z.number().int().positive(), explain_priority: z.number().int().positive() }),
+  max_references: z.number().int().positive(),
+  forbidden_patterns: z.array(Regex),
+  instructions: TextPurposes.extend({ common: z.string(), output: z.string().refine((s) => /json/i.test(s), "debe mencionar json") }),
+  labels: z.object({
+    unknown_type: z.string(),
+    unknown_place: z.string(),
+    list_separator: z.string(),
+    no_reasons: z.string(),
+    severity: z.record(z.string(), z.string()),
+    passage: z.record(z.string(), z.string()),
+    accessibility: z.record(z.string(), z.string()),
+    active_hazard: z.record(z.string(), z.string()),
+    priority_band: z.record(z.string(), z.string()),
+    priority_rule: z.record(z.string(), z.string()),
+  }),
+});
 
 const schemas = {
   intake: IntakePolicy,

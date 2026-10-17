@@ -36,6 +36,7 @@ const commands: Record<string, () => Promise<Command>> = {
     console.log("seed ok", rows[0]);
   },
   "smoke-jev": async () => (await import("./smoke-jev")).smokeJev,
+  "smoke-llm": async () => (await import("./smoke-llm")).smokeLlm,
   "seed-demo": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { seedDemo } = await import("../seeds/demo");

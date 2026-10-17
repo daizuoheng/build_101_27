@@ -144,5 +144,44 @@ export const policies = {
     max_output_tokens: 300,
     timeout_ms: 10000,
     extra_body: { thinking: { type: "disabled" } },
+    max_chars: { title: 90, summary: 420, explain_priority: 420 },
+    // Descripciones de reportes que se pasan como referencias, las más antiguas primero.
+    max_references: 5,
+    // El texto se rechaza (y va la plantilla) si promete despacho o tiempos: eso lo decide el backend, no el LLM.
+    forbidden_patterns: [
+      "\\b(llega(r|rá|rán|n)?|arriba(rá|rán)?|demora(rá)?)\\b[^.]{0,40}\\b(minutos?|horas?|hoy|mañana)\\b",
+      "\\ben camino\\b",
+      "\\b(despachad|asignad|enviad)[oa]s?\\b",
+    ],
+    instructions: {
+      common:
+        "Redactás textos breves en español rioplatense para el operador de un servicio municipal de reportes urbanos. Usá solo los hechos y las referencias del json de entrada. No inventes estado, asignaciones, unidades, despacho, plazos ni tiempos de llegada. Copiá los nombres de lugares, barrios y tipos de problema exactamente como vienen, sin corregirlos ni traducirlos. No incluyas datos personales. Si un hecho falta, no lo supongas.",
+      output:
+        'Respondé solo json con la forma {"body": string, "references": string[]}. En "references" van los id de las referencias de la entrada en las que te basaste, y ningún otro.',
+      title: "Escribí un título de hasta {{max_chars}} caracteres con el tipo de problema y el lugar. Sin punto final.",
+      summary:
+        "Escribí un resumen de una a tres oraciones, de hasta {{max_chars}} caracteres: qué pasa, dónde y cuántos reportes lo respaldan, según los hechos y las descripciones de las referencias.",
+      explain_priority:
+        "Explicá en una o dos oraciones, de hasta {{max_chars}} caracteres, por qué el incidente tiene esa prioridad, usando solo los motivos dados. Citá como referencias los códigos de motivo que usaste.",
+    },
+    labels: {
+      unknown_type: "Problema sin clasificar",
+      unknown_place: "ubicación sin barrio",
+      list_separator: ", ",
+      no_reasons: "sin motivos de riesgo registrados",
+      severity: { low: "baja", medium: "media", high: "alta", undetermined: "sin determinar" },
+      passage: { total: "bloqueado", partial: "parcialmente obstruido", none: "libre", undetermined: "sin determinar" },
+      accessibility: { affected: "afectada", not_affected: "no afectada", undetermined: "sin determinar" },
+      active_hazard: { true: "sí", false: "no" },
+      priority_band: { high: "alta", medium: "media", low: "baja", unknown: "sin determinar" },
+      priority_rule: {
+        severity_high: "severidad alta",
+        active_hazard: "peligro activo",
+        passage_blocked: "paso bloqueado",
+        accessibility_affected: "accesibilidad afectada",
+        severity_medium: "severidad media",
+        promoted_by_age: "antigüedad sin atender",
+      },
+    },
   },
 };
