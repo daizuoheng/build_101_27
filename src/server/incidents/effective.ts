@@ -23,7 +23,7 @@ export async function latestAssessed(db: Db, incidentId: string): Promise<Assess
     `select e.problem_type_id, e.severity, e.active_fire, (e.answers->'fact_photo_shows_fire'->>'noul')::float8 as photo_fire, e.passage, e.accessibility
      from report_incident_links l join reports r on r.id = l.report_id
      join report_evaluations e on e.report_id = r.id and e.report_revision = r.confirmed_revision
-     where l.incident_id = $1 order by r.confirmed_at, r.id limit 1`,
+     where l.incident_id = $1 and l.active order by r.confirmed_at, r.id limit 1`,
     [incidentId],
   );
   const e = ev.rows[0];

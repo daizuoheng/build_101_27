@@ -301,6 +301,22 @@ describe("assess_incident y correcciones", () => {
     await withTx(async (c) => setOverride(c, { incidentId, override: { field: "severity", value: "high" }, reason: "riesgo visto", actor: operator, expectedRevision: await revisionOf(c as never, incidentId) }), pool);
     await withTx((c) => removeOverride(c, { incidentId, field: "severity", actor: operator }), pool);
     expect((await one(pool, "select severity from incidents where id = $1", [incidentId])).severity).toBe("medium");
+
+    // Un reporte desasociado no cuenta como base: con su vínculo inactivo, la base sale del siguiente reporte activo.
+    const r2 = await addReport(pool, t, incidentId, "otro");
+    await pool.query(
+      `insert into report_evaluations (report_id, report_revision, ai_run_id, policy_version_id, catalog_hash, intent, applicability, problem_type_id,
+         problem_type_choice, severity, active_fire, passage, accessibility, location_in_text, photo_quality, contradiction, answers, needs_review, review_reasons)
+       select $1, (select confirmed_revision from reports where id = $1), ai_run_id, policy_version_id, catalog_hash, intent, applicability, problem_type_id,
+         problem_type_choice, 'low', active_fire, passage, accessibility, location_in_text, photo_quality, contradiction, answers, needs_review, review_reasons
+       from report_evaluations e join report_incident_links l on l.report_id = e.report_id where l.incident_id = $2 and l.report_id <> $1 limit 1`,
+      [r2, incidentId],
+    );
+    await pool.query("update report_incident_links set active = false where incident_id = $1 and report_id <> $2", [incidentId, r2]);
+    await pool.query("delete from incident_assessments where incident_id = $1", [incidentId]);
+    await withTx(async (c) => setOverride(c, { incidentId, override: { field: "severity", value: "high" }, reason: "riesgo visto", actor: operator, expectedRevision: await revisionOf(c as never, incidentId) }), pool);
+    await withTx((c) => removeOverride(c, { incidentId, field: "severity", actor: operator }), pool);
+    expect((await one(pool, "select severity from incidents where id = $1", [incidentId])).severity).toBe("low");
   });
 
   it("no se quitan correcciones de un incidente cerrado", async () => {
