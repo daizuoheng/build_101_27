@@ -64,12 +64,18 @@ describe("cola de jobs (correcciones de revisión del PR #1)", () => {
     expect(await enqueue(pool, { kind: "process_report", entityType: "report", entityId: id, entityRevision: rev })).toMatchObject({ created: false, revived: false });
   });
 
-  it("reimportar el mismo GeoJSON no cambia nada; uno corregido actualiza la geometría", async () => {
+  it("reimportar el mismo GeoJSON no cambia nada; uno corregido actualiza la geometría; otra fuente actualiza la procedencia", async () => {
     const pool = await testDb();
-    const same = await importAreas(pool, { territorySlug: "montevideo", file: "barrios-montevideo.geojson", nameProperty: "barrio", idProperty: "ogc_fid" });
+    const src = (await pool.query("select source_url, source_date from areas limit 1")).rows[0];
+    const base = { territorySlug: "montevideo", file: "barrios-montevideo.geojson", nameProperty: "barrio", idProperty: "ogc_fid" };
+    const same = await importAreas(pool, { ...base, sourceUrl: src.source_url, sourceDate: src.source_date.toISOString().slice(0, 10) });
     expect(same).toMatchObject({ inserted: 0, updated: 0, total: 62 });
+
+    const moved = await importAreas(pool, { ...base, sourceUrl: "https://ejemplo.test/barrios.json", sourceDate: "2026-10-18" });
+    expect(moved.updated).toBe(62);
+    expect((await pool.query("select distinct source_url from areas")).rows).toEqual([{ source_url: "https://ejemplo.test/barrios.json" }]);
     await pool.query("update areas set checksum = 'viejo', name = 'NOMBRE VIEJO' where external_id = '51'");
-    const fixed = await importAreas(pool, { territorySlug: "montevideo", file: "barrios-montevideo.geojson", nameProperty: "barrio", idProperty: "ogc_fid" });
+    const fixed = await importAreas(pool, { ...base, sourceUrl: "https://ejemplo.test/barrios.json", sourceDate: "2026-10-18" });
     expect(fixed.updated).toBe(1);
     expect((await pool.query("select name from areas where external_id = '51'")).rows[0].name).toBe("CENTRO");
   });
