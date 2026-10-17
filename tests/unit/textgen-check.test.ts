@@ -37,6 +37,10 @@ describe("patrones prohibidos de textgen (seed)", () => {
     "Bache en Camino Maldonado 1234, con paso parcialmente obstruido.",
     "Árbol caído en Camino Carrasco y Camino Ariel.",
     "Por severidad media se le asigna prioridad media.",
+    "La basura está acumulada en Camino Maldonado 5600.",
+    "El bache está en Camino Carrasco y Rivera.",
+    "El camión no llega hace 5 días.",
+    "La basura no llega desde hace 3 horas al contenedor.",
     "La antigüedad sin atender le asignó prioridad media.",
   ])("acepta «%s»", (body) => {
     expect(check(body)).toBeNull();

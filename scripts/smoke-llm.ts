@@ -1,5 +1,5 @@
 // Prueba REAL de textos generados contra el LLM configurado (DeepSeek). No crea incidentes ni cachea:
-// redacta con draftText sobre tres incidentes de ejemplo y registra cada intento en llm_runs.
+// redacta con draftText sobre cuatro incidentes de ejemplo. No escribe llm_runs: sus ids no son incidentes reales.
 // La política es la del seed (la que se publica), validada con el mismo esquema que usa el pipeline.
 import { policies } from "../seeds/policies";
 import { getPool } from "../src/server/db/pool";
@@ -66,7 +66,7 @@ export async function smokeLlm(): Promise<number> {
     console.log(`## ${ex.name}`);
     for (const input of Object.values(inputs)) {
       const t0 = Date.now();
-      const r = await draftText({ db: pool, llm }, policy, input);
+      const r = await draftText({ db: pool, llm, recordRun: async () => "smoke" }, policy, input);
       if (r.source !== "llm") fallbacks++;
       console.log(`- ${input.purpose} [${r.source}, ${Date.now() - t0} ms]: ${r.body}`);
       console.log(`  referencias: ${JSON.stringify(r.references)}${r.error ? ` · error: ${r.error}` : ""}`);

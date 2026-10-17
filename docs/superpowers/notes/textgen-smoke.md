@@ -2,8 +2,8 @@
 
 17 oct 2026. Comando: `pnpm cli smoke-llm`. Usa el modelo `deepseek-flash` vía `api.deepseek.com` y la política
 `textgen-v1` del seed, con `json_object` y `max_output_tokens` 300. Son tres incidentes de ejemplo con nueve textos
-(título, resumen y explicación de prioridad), redactados con `draftText`. No se cachea ni se crean incidentes; cada
-intento queda en `llm_runs`.
+(título, resumen y explicación de prioridad), redactados con `draftText`. No se cachea ni se crean incidentes. Desde la
+revisión interna tampoco escribe `llm_runs`, porque sus ids no son incidentes reales.
 
 ## Resultado
 

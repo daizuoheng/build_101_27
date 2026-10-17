@@ -214,6 +214,28 @@ describe("textos generados (textgen)", () => {
     expect((await generateText({ pool, llm: null }, await titleInput(pool, incidentId))).source).toBe("cache");
   });
 
+  it("un texto cacheado que la política vigente ya no admite se vuelve a redactar y se reemplaza", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    await generateText({ pool, llm: fakeLlm(() => JSON.stringify({ body: "Bache grande en Av. Italia 2450", references: [] })) }, input);
+    // Se endurece la política: «grande» pasa a estar prohibido.
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{forbidden_patterns}', (config->'forbidden_patterns') || '["grande"]') where kind = 'textgen'`);
+    const llm = fakeLlm(citeFirst);
+    const res = await generateText({ pool, llm }, input);
+    expect(llm.calls).toHaveLength(1);
+    expect(res).toMatchObject({ source: "llm", body: "Bache en Av. Italia 2450" });
+    expect((await texts(pool)).rows.map((r) => r.body)).toEqual(["Bache en Av. Italia 2450"]);
+  });
+
+  it("una plantilla que arma una frase prohibida con datos numéricos es error de configuración", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    await pool.query("update message_templates set body = 'Tarda {{count}} horas' where key = 'textgen_title'");
+    const input = { ...(await titleInput(pool, incidentId)), facts: { count: 5 } };
+    await expect(generateText({ pool, llm: null }, input)).rejects.toThrow(/datos numéricos/);
+  });
+
   it("con textgen.enabled = false usa la plantilla sin llamar al LLM", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);
