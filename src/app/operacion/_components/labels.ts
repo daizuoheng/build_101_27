@@ -36,3 +36,48 @@ export function age(iso: string, now: number): string {
   if (h < 48) return `${h} h`;
   return `${Math.floor(h / 24)} d`;
 }
+
+// Plan de atención: textos de los motivos estables del planificador (src/shared/contracts/plan.ts).
+export const PLAN_PENDING_REASON: Record<string, string> = {
+  active_assignment: "Ya tiene una orden activa",
+  dispatch_blocked: "Revisión pendiente: despacho bloqueado",
+  manual_strategy: "Este tipo se asigna manualmente",
+  no_capable_unit: "Sin equipo compatible",
+  no_capacity: "Equipos compatibles ocupados",
+  stale_position: "Ubicación de las cuadrillas desactualizada",
+  out_of_radius: "Cuadrillas compatibles fuera de radio",
+  no_zone_owner: "Sin responsable para esta zona y tipo",
+  ambiguous_zone_owner: "Varios responsables de zona con igual precedencia",
+};
+
+export const PLAN_PROPOSAL_REASON: Record<string, string> = {
+  nearest_mobile: "Cuadrilla compatible más cercana",
+  zone_owner: "Responsable de la zona",
+  preserves_scarce_unit: "Reserva un equipo escaso para otro incidente",
+  only_capable_unit: "Única unidad compatible disponible",
+  lowest_load: "Responsable con menor carga",
+};
+
+export const PLAN_ITEM_STATUS: Record<string, string> = {
+  proposed: "Propuesta (sin enviar)",
+  executed: "Orden enviada",
+  obsolete: "Obsoleta",
+  blocked: "Pendiente de cuadrilla",
+  queued: "En cola",
+};
+
+export const ASSIGNMENT_STATUS: Record<string, string> = {
+  offered: "ofrecida",
+  accepted: "aceptada",
+  in_progress: "en curso",
+};
+
+export const PLAN_TRIGGER: Record<string, string> = {
+  manual: "pedido del operador",
+  periodic: "recálculo periódico",
+};
+
+/** Horas con un decimal, para el desglose de espera y bonus. */
+export function hours(h: number): string {
+  return `${h.toLocaleString("es-UY", { maximumFractionDigits: 1 })} h`;
+}

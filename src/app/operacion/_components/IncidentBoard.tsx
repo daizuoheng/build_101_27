@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { IncidentListItem, IncidentListResponse } from "@/shared/contracts/incident";
@@ -64,7 +65,10 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
             {data ? `${incidents.length} incidentes · actualizado ${new Date(data.generatedAt).toLocaleTimeString("es-UY")}` : "Cargando…"}
           </p>
         </div>
-        <button type="button" className="btn" onClick={load}>Actualizar</button>
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/operacion/plan?territory=${encodeURIComponent(territorySlug)}`} className="btn">Plan de atención</Link>
+          <button type="button" className="btn" onClick={load}>Actualizar</button>
+        </div>
       </header>
 
       <form className="flex flex-wrap gap-3 border-b border-line px-4 py-3" aria-label="Filtros" onSubmit={(e) => e.preventDefault()}>
