@@ -40,20 +40,25 @@ const CODE_WORDS = /\b(c[oó]digo|reporte|estado|n[uú]mero)\b/i;
 
 // Palabras que acompañan una consulta de estado («¿cómo va mi reporte X?»). Si el mensaje trae otras, es relato.
 const STATUS_WORDS = new Set(["estado", "de", "del", "mi", "el", "la", "codigo", "reporte", "numero", "como", "va", "esta", "que", "paso",
-  "con", "consulta", "consultar", "quiero", "saber", "hola", "buenas", "por", "favor", "info", "novedades", "hay", "sobre", "y", "el", "nro"]);
+  "con", "consulta", "consultar", "quiero", "saber", "hola", "buenas", "por", "favor", "info", "novedades", "hay", "sobre", "y", "nro",
+  "cual", "es", "en", "donde", "anda", "sigue", "gracias", "tardes", "dias", "noches", "saludos", "me", "podes", "decir", "puede", "ver"]);
 
 /**
- * Código de reporte en una consulta de estado. El mensaje tiene que ser solo la consulta («estado de MKGWXM»,
+ * Código de reporte en una consulta de estado. Por defecto (atajo previo a Jev) el mensaje tiene que ser solo la consulta («estado de MKGWXM»,
  * «¿cómo va el reporte a9umuq?», «WKTA64»): un código dentro de un relato no la dispara. Además, para no confundir
  * palabras («CALLES»), el token necesita un dígito o que el mensaje hable de un código o reporte.
  * Los códigos nuevos siempre incluyen un dígito (`confirm.ts`).
+ * Con `requireQueryOnly: false` (Jev ya clasificó el mensaje como consulta de estado) alcanza con encontrar el código,
+ * así frases libres («¿en qué anda lo que mandé, el AB2CD9?») también funcionan.
  */
-export function extractPublicCode(text: string): string | null {
+export function extractPublicCode(text: string, opts: { requireQueryOnly?: boolean } = {}): string | null {
+  const requireQueryOnly = opts.requireQueryOnly ?? true;
   const words = normalizeReply(text).split(" ").filter(Boolean);
   const mentionsCode = CODE_WORDS.test(text);
   for (const m of text.matchAll(TOKEN)) {
     const token = m[2];
     if (!(/\d/.test(token) || mentionsCode)) continue;
+    if (!requireQueryOnly) return token.toUpperCase();
     const rest = words.filter((w) => w !== token.toLowerCase());
     if (rest.every((w) => STATUS_WORDS.has(w))) return token.toUpperCase();
   }

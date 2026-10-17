@@ -51,6 +51,15 @@ describe("extractPublicCode", () => {
   it("un código dentro de un relato no es una consulta de estado", () => {
     expect(extractPublicCode("hay agua en 18 de julio, codigo AB2CD9")).toBeNull();
     expect(extractPublicCode("hola, quiero saber el estado del reporte AB2CD9 por favor")).toBe("AB2CD9");
+    expect(extractPublicCode("cual es el estado de AB2CD9")).toBe("AB2CD9");
+    expect(extractPublicCode("buenas tardes, estado de AB2CD9, gracias")).toBe("AB2CD9");
+    expect(extractPublicCode("en que estado esta AB2CD9")).toBe("AB2CD9");
+  });
+
+  it("con Jev diciendo que es consulta de estado, alcanza con encontrar el código", () => {
+    expect(extractPublicCode("che, ¿en qué anda lo que mandé ayer, el AB2CD9?")).toBeNull();
+    expect(extractPublicCode("che, ¿en qué anda lo que mandé ayer, el AB2CD9?", { requireQueryOnly: false })).toBe("AB2CD9");
+    expect(extractPublicCode("hay basura en las CALLES", { requireQueryOnly: false })).toBeNull();
   });
 });
 
