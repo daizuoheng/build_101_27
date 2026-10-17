@@ -129,6 +129,7 @@ describe("segundo territorio (Montevideo es configuración)", () => {
       )).rows;
     expect(await unitState()).toEqual([{ lon: demoB.unit.position.lon, location_updated_at: null, caps: ["limpieza", "vialidad"] }]);
     await refreshDemoPositions(pool, "demo-b");
+    await pool.query("update territories set enabled = false where id = $1", [b]);
 
     await seedTerritoryDemoB(pool, {
       defaultZoom: 14,

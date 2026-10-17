@@ -35,9 +35,12 @@ unidades por territorio que ese snapshot tiene que respetar. Cuando entre `runPl
 
 ## El seed de `demo-b` converge al archivo
 
-`seedAll` nunca pisa lo existente, porque en Montevideo lo puede haber cambiado operación. `demo-b` no tiene
-operación: su única fuente de verdad es `seeds/territory-demo-b.ts`, así que cada corrida lo deja como dice el
-archivo (el estado de la unidad sí queda fuera, porque los tests lo cambian a propósito).
+`seedAll` no pisa lo existente, porque en Montevideo lo puede haber cambiado operación (la única excepción: si la
+política activa ya no valida contra el esquema, publica la del seed como versión nueva). `demo-b` no tiene
+operación: su única fuente de verdad es `seeds/territory-demo-b.ts`, así que cada corrida deja sus valores como dice
+el archivo (el estado de la unidad sí queda fuera, porque los tests lo cambian a propósito). Converge por clave
+natural: renombrar el slug de la unidad o el `externalId` del área crea filas nuevas y no borra las viejas, que
+pueden estar referenciadas por incidentes u órdenes.
 
 Las políticas se versionan, no se editan: el seed compara la versión activa con la del archivo y, si falta o
 difiere, publica la del archivo como `max(version) + 1` activa, igual que `policy-upgrade`. No usa

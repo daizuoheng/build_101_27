@@ -41,7 +41,9 @@ export type DemoB = typeof demoB;
 /**
  * Requiere `seedAll` antes (catálogo y capacidades globales). Reejecutable y convergente: a diferencia de
  * `seedAll`, que nunca pisa lo que pudo cambiar operación, demo-b es sintético y no tiene operación, así que
- * cada corrida lo deja como dice `demoB` (con `overrides` encima; los tests lo usan para simular un cambio).
+ * cada corrida deja los valores como dice `demoB` (con `overrides` encima; los tests lo usan para simular un
+ * cambio). Converge por clave natural: renombrar el slug de la unidad o el `externalId` del área crea filas
+ * nuevas y no borra las viejas (pueden tener incidentes u órdenes que las referencian).
  * No toca el estado de la unidad ni le pone fecha de posición: eso es `refreshDemoPositions`.
  */
 export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> = {}): Promise<{ territoryId: string; unitId: string }> {
@@ -55,7 +57,7 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
        values ($5, $6, $7, st_setsrid(st_makepoint($8, $9), 4326)::geography, $10, ${env}, $11, $12)
        on conflict (slug) do update set name = excluded.name, area_label = excluded.area_label, center = excluded.center,
          default_zoom = excluded.default_zoom, coverage = excluded.coverage, emergency_channel = excluded.emergency_channel,
-         locale = excluded.locale, updated_at = now()
+         locale = excluded.locale, enabled = true, updated_at = now()
        returning id`,
       [...sqParams, t.slug, t.name, t.areaLabel, t.center.lon, t.center.lat, t.defaultZoom, t.emergencyChannel, t.locale],
     );
@@ -67,23 +69,21 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       [...sqParams, territoryId, t.area.externalId, t.area.name],
     );
 
-    // Catálogo: habilita los tipos de la lista y deshabilita los que salieron de ella.
-    await c.query(
+    // Catálogo: habilita los tipos de la lista y deshabilita los que salieron de ella. Con `do update`,
+    // rowCount cuenta cada tipo encontrado (nuevo o existente); solo cuentan los activos, como en el catálogo.
+    const types = await c.query(
       `insert into territory_problem_types (territory_id, problem_type_id)
-       select $1, id from problem_types where slug = any($2)
+       select $1, id from problem_types where slug = any($2) and active
        on conflict (territory_id, problem_type_id) do update set enabled = true`,
       [territoryId, t.problemTypes],
     );
+    const missing = new Set(t.problemTypes).size - (types.rowCount ?? 0);
+    if (missing) throw new Error(`catálogo de demo-b incompleto: ${missing} tipo(s) inexistentes o inactivos (¿falta seedAll?)`);
     await c.query(
       `update territory_problem_types set enabled = false where territory_id = $1 and enabled
          and problem_type_id not in (select id from problem_types where slug = any($2))`,
       [territoryId, t.problemTypes],
     );
-    const enabled = await c.query<{ n: number }>(
-      "select count(*)::int as n from territory_problem_types where territory_id = $1 and enabled",
-      [territoryId],
-    );
-    if (enabled.rows[0].n !== t.problemTypes.length) throw new Error("catálogo de demo-b incompleto (¿falta seedAll?)");
 
     // Políticas: si la activa falta o difiere de la del seed, se publica la del seed como versión nueva activa.
     // Se versiona y no se edita (como `policy-upgrade`): evaluaciones y decisiones guardan el `policy_version_id`
@@ -117,7 +117,7 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
     } else {
       // Una posición nueva no hereda la vigencia de la anterior: si cambió, se borra su fecha.
       const upd = await c.query<{ id: string }>(
-        `update response_units set name = $3, unit_kind = $4, capacity = $5, service_radius_m = $8, updated_at = now(),
+        `update response_units set name = $3, unit_kind = $4, capacity = $5, service_radius_m = $8, is_demo = true, updated_at = now(),
            location_updated_at = case when st_equals(location::geometry, st_setsrid(st_makepoint($6, $7), 4326))
              then location_updated_at end,
            location = st_setsrid(st_makepoint($6, $7), 4326)::geography
@@ -137,7 +137,7 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       [unitId, u.capabilities],
     );
     const linked = await c.query<{ n: number }>("select count(*)::int as n from unit_capabilities where unit_id = $1", [unitId]);
-    if (linked.rows[0].n !== u.capabilities.length) throw new Error("capacidades de demo-b incompletas (¿falta seedAll?)");
+    if (linked.rows[0].n !== new Set(u.capabilities).size) throw new Error("capacidades de demo-b incompletas (¿falta seedAll?)");
     return { territoryId, unitId };
   }, pool);
 }
