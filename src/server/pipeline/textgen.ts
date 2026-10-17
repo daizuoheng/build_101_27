@@ -97,6 +97,10 @@ export async function runTextgen(deps: TextDeps, job: Job): Promise<{ discarded:
   const inputs = textInputs(inc, await reportReferences(deps.pool, inc.id, policy.max_references), policy);
   const isCurrent = async (c: PoolClient) =>
     (await c.query<{ revision: number }>("select revision from incidents where id = $1 for share", [inc.id])).rows[0]?.revision === job.entity_revision;
-  const results = await Promise.all(PURPOSES.map(async (p) => [p, await generateText(deps, inputs[p], { isCurrent })] as const));
+  // Propósitos independientes: lo que salió queda cacheado aunque otro falle; el reintento solo rehace el resto.
+  const settled = await Promise.allSettled(PURPOSES.map((p) => generateText(deps, inputs[p], { isCurrent, policy })));
+  const failed = settled.find((r) => r.status === "rejected");
+  if (failed) throw failed.reason;
+  const results = settled.map((r, i) => [PURPOSES[i], (r as PromiseFulfilledResult<Awaited<ReturnType<typeof generateText>>>).value] as const);
   return { discarded: results.some(([, r]) => r.discarded), sources: Object.fromEntries(results.map(([p, r]) => [p, r.source])) };
 }

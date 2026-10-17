@@ -146,6 +146,24 @@ describe("textos generados (textgen)", () => {
     expect((await texts(pool)).rows).toEqual([]);
   });
 
+  it("datos largos en la plantilla se recortan al máximo en vez de fallar", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    input.facts.place = "Frente al edificio, del lado de la parada de ómnibus sobre 18 de Julio, pasando la farmacia de la esquina";
+    const res = await generateText({ pool, llm: fakeLlm(() => "") }, input);
+    expect(res.source).toBe("template");
+    expect(res.body).toHaveLength(90);
+    expect(res.body.endsWith("…")).toBe(true);
+  });
+
+  it("sin cliente LLM, una plantilla cacheada se reutiliza sin re-renderizar", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    expect((await generateText({ pool, llm: null }, await titleInput(pool, incidentId))).source).toBe("template");
+    expect((await generateText({ pool, llm: null }, await titleInput(pool, incidentId))).source).toBe("cache");
+  });
+
   it("con textgen.enabled = false usa la plantilla sin llamar al LLM", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);

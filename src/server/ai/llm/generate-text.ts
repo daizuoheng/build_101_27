@@ -35,22 +35,24 @@ const Output = z.object({ body: z.string().trim().min(1), references: z.array(z.
 function bodyViolation(policy: TextgenPolicy, purpose: TextPurpose, body: string): string | null {
   const max = policy.max_chars[purpose];
   if (body.length > max) return `texto de ${body.length} caracteres (máximo ${max})`;
-  const hit = policy.forbidden_patterns.find((p) => new RegExp(p, "iu").test(body));
-  return hit ? `texto con contenido prohibido por política (${hit})` : null;
+  const hit = policy.forbidden_patterns.find((p) => p.test(body));
+  return hit ? `texto con contenido prohibido por política (${hit.source})` : null;
 }
 
 /**
- * Plantilla de respaldo `textgen_<propósito>` con los hechos como variables. Una plantilla que viola la política
- * es un error de configuración: falla en lugar de mostrarse y cachearse.
+ * Plantilla de respaldo `textgen_<propósito>` con los hechos como variables. El texto fijo de la plantilla (sin
+ * variables) que viola la política es un error de configuración y falla. Los datos que la completan (lugar, tipo)
+ * pueden ser largos: el resultado se recorta al máximo en vez de fallar en cada reintento.
  */
 async function fromTemplate(db: Db, policy: TextgenPolicy, input: TextInput, error: string): Promise<DraftedText> {
+  const key = `textgen_${input.purpose}`;
+  const bad = bodyViolation(policy, input.purpose, await renderTemplate(db, input.territoryId, key));
+  if (bad) throw new Error(`plantilla '${key}' inválida: ${bad}`);
   const sep = policy.labels.list_separator;
   const vars = Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, Array.isArray(v) ? v.join(sep) : v]));
-  const key = `textgen_${input.purpose}`;
   const body = await renderTemplate(db, input.territoryId, key, vars);
-  const bad = bodyViolation(policy, input.purpose, body);
-  if (bad) throw new Error(`plantilla '${key}' inválida: ${bad}`);
-  return { body, references: [], llmRunId: null, source: "template", error };
+  const max = policy.max_chars[input.purpose];
+  return { body: body.length > max ? `${body.slice(0, max - 1)}…` : body, references: [], llmRunId: null, source: "template", error };
 }
 
 /** Rechazos semánticos del LLM: los de la plantilla más referencias ajenas al input. */
@@ -62,13 +64,16 @@ export function checkText(policy: TextgenPolicy, input: TextInput, out: { body: 
 }
 
 /**
- * Mensaje al LLM: hechos del backend como json y, aparte y delimitadas, las referencias. Su texto lo escribió un
- * ciudadano: se recorta por política y se escapa `<` para que no pueda cerrar el delimitador.
+ * Mensaje al LLM: hechos y referencias como json, cada uno en su bloque delimitado. Los dos pueden traer texto
+ * ciudadano (el lugar escrito, las descripciones): se recorta por política y se escapa `<` para que no pueda
+ * cerrar el delimitador. La instrucción `untrusted` de la política dice que ahí solo hay datos.
  */
 export function userMessage(policy: TextgenPolicy, input: TextInput): string {
-  const refs = input.references.map((r) => ({ id: r.id, text: r.text.slice(0, policy.max_reference_chars) }));
-  const quoted = JSON.stringify(refs).replace(/</g, "\\u003c");
-  return `${JSON.stringify({ purpose: input.purpose, facts: input.facts })}\n<referencias>\n${quoted}\n</referencias>`;
+  const cap = (t: string) => t.slice(0, policy.max_reference_chars);
+  const facts = Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, typeof v === "string" ? cap(v) : Array.isArray(v) ? v.map(cap) : v]));
+  const refs = input.references.map((r) => ({ id: r.id, text: cap(r.text) }));
+  const block = (tag: string, v: unknown) => `<${tag}>\n${JSON.stringify(v).replace(/</g, "\\u003c")}\n</${tag}>`;
+  return [block("hechos", { purpose: input.purpose, facts }), block("referencias", refs)].join("\n");
 }
 
 /**
@@ -111,13 +116,19 @@ async function cached(db: Db, input: TextInput): Promise<CachedRow | null> {
 /**
  * Texto cacheado en `generated_texts` por (propósito, entidad, revisión). Un texto del LLM es definitivo para su
  * revisión; uno de plantilla se reintenta con el LLM en la próxima llamada si la política lo permite.
- * Sin política `textgen` válida falla: es un error de configuración, no del LLM.
+ * Sin política `textgen` válida falla: es un error de configuración, no del LLM. `opts.policy` evita releerla
+ * cuando el llamador ya la tiene (un job usa una sola versión para los tres textos).
  * La IA corre fuera de la transacción; `isCurrent` se evalúa al persistir y, si da falso, el texto se descarta.
  */
-export async function generateText(deps: TextDeps, input: TextInput, opts: { isCurrent?: (c: PoolClient) => Promise<boolean> } = {}): Promise<GeneratedText> {
-  const policy = (await getActivePolicy(deps.pool, input.territoryId, "textgen")).config;
+export async function generateText(
+  deps: TextDeps,
+  input: TextInput,
+  opts: { isCurrent?: (c: PoolClient) => Promise<boolean>; policy?: TextgenPolicy } = {},
+): Promise<GeneratedText> {
+  const policy = opts.policy ?? (await getActivePolicy(deps.pool, input.territoryId, "textgen")).config;
   const hit = await cached(deps.pool, input);
-  if (hit && (hit.llm_run_id || !policy.enabled)) {
+  // Una plantilla cacheada solo se reintenta si hay con qué: política prendida y cliente LLM.
+  if (hit && (hit.llm_run_id || !policy.enabled || !deps.llm)) {
     return { body: hit.body, references: hit.references, llmRunId: hit.llm_run_id, source: "cache", discarded: false };
   }
 

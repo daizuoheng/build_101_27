@@ -105,14 +105,15 @@ export const DispatchPolicy = z.object({
 });
 
 const TextPurposes = z.object({ title: z.string(), summary: z.string(), explain_priority: z.string() });
-const Regex = z.string().refine((s) => {
+/** Se compila una vez al leer la política (flags "iu": sin mayúsculas y con clases Unicode). */
+const Regex = z.string().transform((src, ctx) => {
   try {
-    new RegExp(s, "iu");
-    return true;
+    return new RegExp(src, "iu");
   } catch {
-    return false;
+    ctx.addIssue({ code: "custom", message: "expresión regular inválida" });
+    return z.NEVER;
   }
-}, "expresión regular inválida");
+});
 
 export const TextgenPolicy = LlmCallConfig.extend({
   enabled: z.boolean(),
