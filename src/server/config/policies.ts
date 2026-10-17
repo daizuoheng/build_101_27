@@ -47,6 +47,17 @@ export const EvaluationPolicy = z.object({
   }),
   noul_facts: z.array(z.object({ key: z.string().regex(/^[a-z_]+$/), instructions: z.string() })),
   review: z.object({ min_applicability: z.number(), min_type: z.number(), min_contradiction: z.number() }),
+  assessment: z.object({
+    timeout_ms: z.number().int().positive(),
+    max_reports: z.number().int().positive(),
+    max_photos: z.number().int().nonnegative(),
+    preamble: z.string(),
+    evolution: ChoiceSpec,
+    consistency: ChoiceSpec,
+    min_change: z.number().min(0).max(1),
+    min_hazard_off: z.number().min(0).max(1),
+    min_contradiction: z.number().min(0).max(1),
+  }),
 });
 
 /** Texto de pregunta por candidato: `{candidate}` se reemplaza por el índice local (c1, c2…), nunca por un id. */
