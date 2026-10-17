@@ -29,6 +29,27 @@ export const REVIEW_KIND: Record<string, string> = {
   out_of_coverage: "fuera de cobertura",
 };
 
+/** Nombre de área legible: el GeoJSON trae mayúsculas («CORDON»); se muestra «Cordon». */
+export function areaDisplay(name: string | null | undefined): string | null {
+  if (!name) return null;
+  if (name !== name.toLocaleUpperCase("es")) return name;
+  return name
+    .toLocaleLowerCase("es")
+    .replace(/(^|[\s(\-/])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toLocaleUpperCase("es"));
+}
+
+/** Identificador corto y estable del incidente para leerlo y buscarlo (los incidentes no tienen código público). */
+export function shortCode(id: string): string {
+  return `#${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+}
+
+/** Diferencia contra ayer en texto («+4 respecto a ayer», «igual que ayer»). */
+export function versusYesterday(today: number, yesterday: number): string {
+  const d = today - yesterday;
+  if (d === 0) return "igual que ayer";
+  return `${d > 0 ? "+" : "−"}${Math.abs(d)} respecto a ayer`;
+}
+
 export function age(iso: string, now: number): string {
   const min = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60000));
   if (min < 60) return `${min} min`;

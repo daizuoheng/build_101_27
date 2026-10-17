@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BrandMark } from "../operacion/_components/Icons";
 import { api, errorMessage } from "../_components/http";
 
 /**
@@ -38,14 +39,17 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">Radar Urbano</h1>
-        <p className="text-ink-2">Acceso para operación y unidades.</p>
+      <div className="flex items-center gap-3">
+        <BrandMark size={44} />
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-accent">Radar Urbano</h1>
+          <p className="text-ink-2">Acceso para operación y unidades</p>
+        </div>
       </div>
-      <form onSubmit={submit} className="card flex flex-col gap-4 p-5">
+      <form onSubmit={submit} className="card flex flex-col gap-4 p-5" aria-busy={busy}>
         <label className="flex flex-col gap-1">
           <span className="font-semibold">Usuario</span>
-          <input className="field" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+          <input className="field" autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} required />
         </label>
         <label className="flex flex-col gap-1">
           <span className="font-semibold">Contraseña</span>
