@@ -1,6 +1,7 @@
 import { getReport } from "../intake/drafts";
 import { evaluateRevision, respondToEvaluation } from "../intake/orchestrator";
 import { onProcessReportFailed, processReport } from "../pipeline/process-report";
+import { onAssessIncidentFailed, runAssessIncident } from "../pipeline/assess";
 import { openReviewItem } from "../review/items";
 import type { JobKind } from "./queue";
 import type { Handler } from "./worker-loop";
@@ -30,4 +31,5 @@ export const handlers: Partial<Record<JobKind, Handler>> = {
     },
   },
   process_report: { run: processReport, onFailed: onProcessReportFailed },
+  assess_incident: { run: runAssessIncident, onFailed: onAssessIncidentFailed },
 };
