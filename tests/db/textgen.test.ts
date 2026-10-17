@@ -163,7 +163,7 @@ describe("textos generados (textgen)", () => {
     const input = await titleInput(pool, incidentId);
     input.facts.place = "esquina donde la cuadrilla está en camino";
     const res = await generateText({ pool, llm: null }, input);
-    expect(res.body).toBe("Bache — [dato omitido]");
+    expect(res.body).toBe("Bache — esquina donde la [dato omitido]");
   });
 
   it("el recorte de la plantilla no parte emojis", async () => {

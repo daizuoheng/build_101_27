@@ -45,10 +45,12 @@ function bodyViolation(policy: TextgenPolicy, purpose: TextPurpose, body: string
  * prohibida se reemplaza por `labels.redacted`. Así el LLM no la copia y la plantilla no la muestra.
  */
 export function redactFacts(policy: TextgenPolicy, facts: TextInput["facts"]): TextInput["facts"] {
-  const bad = (v: string) => policy.forbidden_patterns.some((p) => p.test(v));
-  return Object.fromEntries(
-    Object.entries(facts).map(([k, v]) => [k, typeof v === "string" ? (bad(v) ? policy.labels.redacted : v) : Array.isArray(v) ? v.map((x) => (bad(x) ? policy.labels.redacted : x)) : v]),
-  );
+  return Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, typeof v === "string" ? scrub(policy, v) : Array.isArray(v) ? v.map((x) => scrub(policy, x)) : v]));
+}
+
+/** Tapa solo la frase prohibida: un falso positivo no borra la dirección entera. */
+function scrub(policy: TextgenPolicy, text: string): string {
+  return policy.forbidden_patterns.reduce((acc, p) => acc.replace(new RegExp(p.source, "giu"), policy.labels.redacted), text);
 }
 
 /**
@@ -95,8 +97,7 @@ export function userMessage(policy: TextgenPolicy, input: TextInput): string {
   const redacted = redactFacts(policy, input.facts);
   const facts = Object.fromEntries(Object.entries(redacted).map(([k, v]) => [k, typeof v === "string" ? cap(v) : Array.isArray(v) ? v.map(cap) : v]));
   // En las descripciones solo se tapa la frase prohibida: el resto es la evidencia que el resumen necesita.
-  const scrub = (t: string) => policy.forbidden_patterns.reduce((acc, p) => acc.replace(new RegExp(p.source, "giu"), policy.labels.redacted), t);
-  const refs = input.references.map((r) => ({ id: r.id, text: cap(scrub(r.text)) }));
+  const refs = input.references.map((r) => ({ id: r.id, text: cap(scrub(policy, r.text)) }));
   const block = (tag: string, v: unknown) => `<${tag}>\n${JSON.stringify(v).replace(/</g, "\\u003c")}\n</${tag}>`;
   return [block("hechos", { purpose: input.purpose, facts }), block("referencias", refs)].join("\n");
 }

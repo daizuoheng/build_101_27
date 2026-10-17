@@ -267,6 +267,7 @@ export const policies = {
         accessibility_affected: "accesibilidad afectada",
         severity_medium: "severidad media",
         promoted_by_age: "antigüedad sin atender",
+        band_override: "ajuste manual del operador",
       },
     },
   },

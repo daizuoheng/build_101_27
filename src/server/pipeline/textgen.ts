@@ -23,7 +23,7 @@ type IncidentRow = {
   passage: string;
   accessibility: string;
   priority_band: string;
-  priority_breakdown: { rules?: string[]; promoted_by_age?: boolean };
+  priority_breakdown: { rules?: string[]; promoted_by_age?: boolean; computed_band?: string; band_override?: string };
   report_count: number;
   status: string;
 };
@@ -58,7 +58,10 @@ export function textInputs(inc: Omit<IncidentRow, "status">, reports: { id: stri
   const label = (map: Record<string, string>, code: string) => map[code] ?? code;
   const problemType = inc.type_name ?? L.unknown_type;
   const place = [inc.location_text, inc.area_name].filter(Boolean).join(", ") || L.unknown_place;
-  const rules = [...(inc.priority_breakdown.rules ?? []), ...(inc.priority_breakdown.promoted_by_age ? ["promoted_by_age"] : [])];
+  // Con un override del operador, los motivos calculados explican otra banda: se cita el override, no esos motivos.
+  const bd = inc.priority_breakdown;
+  const overridden = bd.band_override !== undefined && bd.computed_band !== undefined && bd.band_override !== bd.computed_band;
+  const rules = overridden ? ["band_override"] : [...(bd.rules ?? []), ...(bd.promoted_by_age ? ["promoted_by_age"] : [])];
   const reasons = rules.map((r) => label(L.priority_rule, r));
   const base = { territoryId: inc.territory_id, entity: { type: "incident", id: inc.id, revision: inc.revision } };
   return {

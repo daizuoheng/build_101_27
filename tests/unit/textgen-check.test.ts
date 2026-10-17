@@ -90,10 +90,14 @@ describe("mensaje al LLM", () => {
 
 describe("hechos redactados", () => {
   it("un lugar con una frase prohibida se reemplaza antes de llegar al LLM; uno normal pasa igual", () => {
-    expect(redactFacts(policy, { place: "esquina donde la cuadrilla ya está en camino", report_count: 3 })).toEqual({ place: policy.labels.redacted, report_count: 3 });
+    const r = redactFacts(policy, { place: "Rivera 2450, donde la cuadrilla ya está en camino", report_count: 3 });
+    expect(r.report_count).toBe(3);
+    expect(r.place).toContain("Rivera 2450");
+    expect(r.place).toContain(policy.labels.redacted);
+    expect(r.place).not.toMatch(/en camino/);
     expect(redactFacts(policy, { place: "Camino Maldonado 5600" })).toEqual({ place: "Camino Maldonado 5600" });
     const msg = userMessage(policy, { ...input(), facts: { place: "esquina donde la cuadrilla ya está en camino" } });
-    expect(msg).not.toContain("en camino");
+    expect(msg).not.toContain("está en camino");
   });
 
   it("el largo se mide por punto de código, igual que el recorte", () => {
@@ -116,6 +120,13 @@ describe("referencias ciudadanas en el mensaje", () => {
 describe("explicación de prioridad sin desglose", () => {
   const inc = (band: string) => ({ id: "i", territory_id: "t", revision: 1, type_name: "Bache", area_name: null, location_text: null, severity: "low",
     active_hazard: false, passage: "none", accessibility: "not_affected", priority_band: band, priority_breakdown: {}, report_count: 1 });
+  it("con override del operador cita el ajuste y no los motivos de la banda calculada", () => {
+    const i = { ...inc("low"), priority_breakdown: { rules: ["severity_high", "active_hazard"], computed_band: "high", band_override: "low" } };
+    const e = textInputs(i, [], policy).explain_priority;
+    expect(e.facts.reasons).toEqual([policy.labels.priority_rule.band_override]);
+    expect(e.references.map((r) => r.id)).toEqual(["band_override"]);
+  });
+
   it("una banda alta sin reglas no se explica como «sin motivos»", () => {
     expect(textInputs(inc("high"), [], policy).explain_priority.facts.reasons).toEqual([policy.labels.unexplained_band]);
     expect(textInputs(inc("unknown"), [], policy).explain_priority.facts.reasons).toEqual([policy.labels.no_reasons]);
