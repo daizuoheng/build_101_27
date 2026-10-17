@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { policies } from "../../seeds/policies";
 import { IntakePolicy } from "@/server/config/policies";
-import { classifyReply, extractPublicCode, normalizeReply } from "@/server/intake/replies";
+import { classifyReply, extractPublicCode, isOnlyAddress, normalizeReply } from "@/server/intake/replies";
 
 const lexicon = IntakePolicy.parse(policies.intake).replies!;
 
@@ -39,5 +39,15 @@ describe("extractPublicCode", () => {
     expect(extractPublicCode("hay basura en las calles")).toBeNull();
     expect(extractPublicCode("frente al 1234 de 18 de julio")).toBeNull();
     expect(extractPublicCode("ABCDE0")).toBeNull(); // 0 no existe en el alfabeto
+  });
+});
+
+describe("isOnlyAddress", () => {
+  it("solo la dirección (con relleno) sí; si agrega relato, no", () => {
+    expect(isOnlyAddress("18 de julio y ejido", "18 de Julio y Ejido")).toBe(true);
+    expect(isOnlyAddress("es en 18 de julio esquina ejido", "18 de Julio y Ejido")).toBe(true);
+    expect(isOnlyAddress("frente al 1234 de 18 de julio", "18 de Julio 1234")).toBe(true);
+    expect(isOnlyAddress("en 18 de julio y ejido, está lleno de agua", "18 de Julio y Ejido")).toBe(false);
+    expect(isOnlyAddress("hay un pozo en 18 de julio 1234", "18 de Julio 1234")).toBe(false);
   });
 });

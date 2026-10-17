@@ -13,9 +13,9 @@ import { recordAiRun, recordLlmRun } from "../ai/runs";
 import { geocode } from "../geo/geocoder";
 import { enqueue } from "../jobs/queue";
 import type { StorageAdapter } from "../storage/adapter";
-import { appendAssistantMessage, areaName, getReport, loadEvidence, setLocation, type ReportRow } from "./drafts";
+import { appendAssistantMessage, areaName, excludeFromDescription, getReport, loadEvidence, setLocation, type ReportRow } from "./drafts";
 import { confirmReport } from "./confirm";
-import { classifyReply, extractPublicCode } from "./replies";
+import { classifyReply, extractPublicCode, isOnlyAddress } from "./replies";
 import { appendEvent } from "../events/append";
 import { DomainError } from "../errors";
 import { chooseBranch, evidenceReasons, indicatesActiveHazard, type Branch } from "./branches";
@@ -101,10 +101,11 @@ export async function runIntakeTurn(deps: IntakeDeps, reportId: string): Promise
 type Reply = { body: string; origin: "template" | "llm"; ui: MessageUi | null; llmRunId?: string | null };
 
 /** Responde ya, sin evaluación, a la revisión actual (bajo el lock del reporte). Devuelve false si llegó otra entrada. */
-async function replyNow(c: PoolClient, r: ReportRow, reply: Reply): Promise<boolean> {
+async function replyNow(c: PoolClient, r: ReportRow, reply: Reply, strip?: string): Promise<boolean> {
   await c.query("select pg_advisory_xact_lock(hashtext($1))", [r.id]);
   const cur = await c.query<{ revision: number; status: string }>("select revision, status from reports where id = $1", [r.id]);
   if (cur.rows[0].status !== "draft" || cur.rows[0].revision !== r.revision) return false;
+  if (strip) await excludeFromDescription(c, r.id, strip);
   await appendAssistantMessage(c, { conversationId: r.conversation_id, ...reply });
   await c.query("update conversations set replied_revision = greatest(replied_revision, $2), updated_at = now() where id = $1", [r.conversation_id, r.revision]);
   return true;
@@ -146,7 +147,7 @@ async function handleShortReply(deps: IntakeDeps, r: ReportRow, intake: IntakeCo
   const code = intake.status_lookup && ex.text.length <= 80 ? extractPublicCode(ex.text) : null;
   if (code && intake.status_lookup) {
     const body = await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId: r.territory_id!, code, max: intake.status_lookup.max_per_hour }, t);
-    await withTx((c) => replyNow(c, r, { body, origin: "template", ui: { kind: "status" } }), deps.pool);
+    await withTx((c) => replyNow(c, r, { body, origin: "template", ui: { kind: "status" } }, ex.text), deps.pool);
     return "handled";
   }
 
@@ -159,16 +160,23 @@ async function handleShortReply(deps: IntakeDeps, r: ReportRow, intake: IntakeCo
     const alreadyThere = r.location_confirmed && r.lon !== null && Math.abs(r.lon - p.lon) < 1e-6 && Math.abs(r.lat! - p.lat) < 1e-6;
     if (alreadyThere) return null;
     if (kind === "no") {
-      await withTx(async (c) => replyNow(c, r, { body: await t("ask_location_retry"), origin: "template", ui: { kind: "ask_location" } }), deps.pool);
+      await withTx(async (c) => replyNow(c, r, { body: await t("ask_location_retry"), origin: "template", ui: { kind: "ask_location" } }, ex.text), deps.pool);
       return "handled";
     }
-    await withTx((c) => setLocation(c, { reportId: r.id, sessionId: r.citizen_session_id, lon: p.lon, lat: p.lat, source: "geocoded", text: p.label }), deps.pool);
+    await withTx(async (c) => {
+      await excludeFromDescription(c, r.id, ex.text);
+      await setLocation(c, { reportId: r.id, sessionId: r.citizen_session_id, lon: p.lon, lat: p.lat, source: "geocoded", text: p.label });
+    }, deps.pool);
     return "continue";
   }
 
   if (ex.asked.kind === "ready" && (kind === "send" || kind === "yes")) {
     try {
-      await withTx((c) => confirmReport(c, { reportId: r.id, sessionId: r.citizen_session_id, idempotencyKey: `reply:${ex.messageId}` }), deps.pool);
+      await withTx(async (c) => {
+        await c.query("select 1 from reports where id = $1 for update", [r.id]);
+        await excludeFromDescription(c, r.id, ex.text);
+        await confirmReport(c, { reportId: r.id, sessionId: r.citizen_session_id, idempotencyKey: `reply:${ex.messageId}` });
+      }, deps.pool);
     } catch (err) {
       if (!(err instanceof DomainError)) throw err;
       await withTx((c) => replyNow(c, r, { body: err.message, origin: "template", ui: null }), deps.pool);
@@ -210,12 +218,14 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
   if (r.status !== "draft" || r.revision !== revision) return;
   const territoryId = r.territory_id!;
   const intake = await getActivePolicy(deps.pool, territoryId, "intake");
+  const answering = await answeringLocation(deps.pool, r.conversation_id);
+  let strip: string | null = null;
   const branch = chooseBranch(
     ev,
     {
       locationConfirmed: r.location_confirmed,
       textAfterReady: (await textsAfterReady(deps.pool, r.conversation_id)).length > 0,
-      answeringLocation: await answeringLocation(deps.pool, r.conversation_id),
+      answeringLocation: answering,
     },
     intake.config,
     r.clarification_rounds,
@@ -239,9 +249,14 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
     case "ask_location":
       reply = { body: await t("ask_location"), origin: "template", ui: { kind: "ask_location" } };
       break;
-    case "extract_address":
-      reply = await proposeAddress(deps, r.id, revision, territoryId, intake.config, t);
+    case "extract_address": {
+      const res = await proposeAddress(deps, r.id, revision, territoryId, intake.config, t);
+      reply = res.reply;
+      // Una dirección escrita en respuesta al pedido de ubicación es dato de ubicación, no relato del problema.
+      const ex = answering && res.address ? await lastExchange(deps.pool, r.conversation_id) : null;
+      if (ex && isOnlyAddress(ex.text, res.address!)) strip = ex.text;
       break;
+    }
     case "ask_evidence":
       reply = await askEvidence(deps, r.id, revision, ev, branch.requestedField, intake.config, t);
       break;
@@ -279,6 +294,7 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
         });
       }
     }
+    if (strip) await excludeFromDescription(c, reportId, strip);
     await appendAssistantMessage(c, { conversationId: row.conversation_id, ...reply });
     await c.query(
       `update conversations set replied_revision = $2, clarification_rounds = clarification_rounds + $3, updated_at = now() where id = $1`,
@@ -391,19 +407,20 @@ async function proposeAddress(
   territoryId: string,
   intake: IntakeConfig,
   t: Render,
-): Promise<Reply> {
+): Promise<{ reply: Reply; address: string | null }> {
   const fallback: Reply = { body: await t("ask_location"), origin: "template", ui: { kind: "ask_location" } };
-  if (!deps.llm) return fallback;
+  if (!deps.llm) return { reply: fallback, address: null };
   const terr = await deps.pool.query<{ name: string }>("select name from territories where id = $1", [territoryId]);
   const extracted = await extractAddress(llmDeps(deps), {
     reportId, revision, messages: await citizenTexts(deps.pool, reportId), territoryName: terr.rows[0].name, config: intake.llm,
   });
-  if (!extracted.ok || !extracted.value.address) return fallback;
+  if (!extracted.ok || !extracted.value.address) return { reply: fallback, address: null };
   const address = extracted.value.address;
-  return geocodedProposal(deps, territoryId, address, intake, t, extracted.llmRunId, {
+  const reply = await geocodedProposal(deps, territoryId, address, intake, t, extracted.llmRunId, {
     notFound: async () => ({ body: await t("location_not_found", { query: address }), origin: "template", ui: { kind: "ask_location" } }),
     error: fallback,
   });
+  return { reply, address };
 }
 
 /** Repregunta redactada por el LLM; si falla o no hay LLM, la plantilla del campo pedido. */

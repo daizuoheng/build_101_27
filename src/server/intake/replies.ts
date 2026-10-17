@@ -46,3 +46,16 @@ export function extractPublicCode(text: string): string | null {
   }
   return null;
 }
+
+const ADDRESS_FILLER = new Set(["es", "en", "esta", "queda", "la", "el", "los", "las", "de", "del", "y", "e", "esq", "esquina", "con", "casi",
+  "frente", "al", "a", "sobre", "calle", "avenida", "av", "bulevar", "bvar", "numero", "nro", "n", "puerta", "aca", "ahi", "por", "ahi", "creo", "que"]);
+
+/**
+ * ¿El mensaje es solo la dirección (más palabras de relleno)? «18 de julio y ejido» o «es en 18 de julio y ejido»
+ * sí; «en 18 de julio, y está lleno de agua» no, porque agrega relato que tiene que quedar en la descripción.
+ */
+export function isOnlyAddress(text: string, address: string): boolean {
+  const addr = new Set(normalizeReply(address).split(" "));
+  const words = normalizeReply(text).split(" ").filter(Boolean);
+  return words.length > 0 && words.every((w) => addr.has(w) || ADDRESS_FILLER.has(w));
+}
