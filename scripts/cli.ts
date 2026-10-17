@@ -36,6 +36,7 @@ const commands: Record<string, () => Promise<Command>> = {
     console.log("seed ok", rows[0]);
   },
   "smoke-jev": async () => (await import("./smoke-jev")).smokeJev,
+  "smoke-llm": async () => (await import("./smoke-llm")).smokeLlm,
   // Publica como versión nueva activa la política del seed de un kind si difiere (los seeds nunca pisan filas).
   "policy-upgrade": async () => async (args) => {
     const { spawnSync } = await import("node:child_process");

@@ -79,4 +79,23 @@ export const templates: { key: string; locale: string; body: string; variables: 
     body: "Ese punto queda fuera de la zona que atiende este piloto ({{territory}}). Guardamos el reporte, pero no podemos asignarlo.",
     variables: ["territory"],
   },
+  // Respaldo de los textos generados (textgen) cuando el LLM falla o está apagado por política.
+  {
+    key: "textgen_title",
+    locale: "es",
+    body: "{{problem_type}} — {{place}}",
+    variables: ["problem_type", "place"],
+  },
+  {
+    key: "textgen_summary",
+    locale: "es",
+    body: "{{problem_type}} en {{place}}: {{active_hazard}}, paso {{passage}}, accesibilidad {{accessibility}}. Severidad {{severity}}. Reportes vinculados: {{report_count}}.",
+    variables: ["problem_type", "place", "active_hazard", "passage", "accessibility", "severity", "report_count"],
+  },
+  {
+    key: "textgen_explain_priority",
+    locale: "es",
+    body: "Prioridad {{priority}} por: {{reasons}}.",
+    variables: ["priority", "reasons"],
+  },
 ];

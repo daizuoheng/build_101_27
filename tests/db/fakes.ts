@@ -1,6 +1,7 @@
 // Dobles para tests de base: Jev y storage en memoria, CLARAMENTE simulados. La integración real se prueba con smoke-jev.
 import type { Pool } from "pg";
 import type { JevCall, JevClient } from "@/server/ai/jev/client";
+import type { LlmClient } from "@/server/ai/llm/client";
 import type { IntakeDeps } from "@/server/intake/orchestrator";
 import type { StorageAdapter } from "@/server/storage/adapter";
 
@@ -63,4 +64,17 @@ export async function territoryId(pool: Pool, slug = "montevideo"): Promise<stri
 export async function newSession(pool: Pool): Promise<string> {
   const { rows } = await pool.query<{ id: string }>("insert into citizen_sessions (token_hash) values (gen_random_uuid()::text) returning id");
   return rows[0].id;
+}
+
+/** LLM simulado: cada llamada recibe el system/user y devuelve el contenido crudo (o lanza). */
+export function fakeLlm(reply: (call: { system: string; user: string; n: number }) => string | Promise<string>): LlmClient & { calls: { system: string; user: string }[] } {
+  const llm = {
+    provider: "fake-llm",
+    calls: [] as { system: string; user: string }[],
+    async completeJson({ system, user }: { system: string; user: string }) {
+      llm.calls.push({ system, user });
+      return { content: await reply({ system, user, n: llm.calls.length }), inputTokens: 1, outputTokens: 1, latencyMs: 1 };
+    },
+  };
+  return llm;
 }
