@@ -27,3 +27,37 @@ export async function openReviewItem(
   );
   return { id: ex.rows[0].id, created: false };
 }
+
+/**
+ * Incidentes cuyo despacho depende de un ítem: el incidente mismo, o los candidatos de un `uncertain_duplicate`
+ * (que se abre sobre el reporte y bloquea a sus candidatos mientras se decide).
+ */
+export async function incidentsAffectedByReviewItem(db: Db, reviewItemId: string): Promise<string[]> {
+  const { rows } = await db.query<{ id: string }>(
+    `select ri.entity_id as id from review_items ri where ri.id = $1 and ri.entity_type = 'incident'
+     union
+     select jsonb_array_elements_text(ref->'candidate_incident_ids')::uuid from review_items ri, jsonb_array_elements(ri.evidence_refs) ref
+     where ri.id = $1 and ri.kind = 'uncertain_duplicate' and jsonb_typeof(ref->'candidate_incident_ids') = 'array'`,
+    [reviewItemId],
+  );
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Recalcula `dispatch_blocked`: queda en true solo si sigue abierto algún ítem sobre el incidente o algún
+ * `uncertain_duplicate` que lo lista como candidato. Llamar al cerrar ítems (contrato de `resolveReviewItem`).
+ */
+export async function recomputeDispatchBlocked(db: Db, incidentIds: string[]): Promise<{ id: string; dispatchBlocked: boolean }[]> {
+  if (!incidentIds.length) return [];
+  const { rows } = await db.query<{ id: string; dispatch_blocked: boolean }>(
+    `update incidents i set dispatch_blocked = exists (
+       select 1 from review_items ri where ri.status = 'open' and (
+         (ri.entity_type = 'incident' and ri.entity_id = i.id)
+         or (ri.kind = 'uncertain_duplicate' and ri.evidence_refs @> jsonb_build_array(jsonb_build_object('candidate_incident_ids', jsonb_build_array(i.id::text))))
+       )
+     ), updated_at = now()
+     where i.id = any($1::uuid[]) returning i.id, i.dispatch_blocked`,
+    [incidentIds],
+  );
+  return rows.map((r) => ({ id: r.id, dispatchBlocked: r.dispatch_blocked }));
+}

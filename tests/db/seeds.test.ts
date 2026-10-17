@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
+import { policies } from "../../seeds/policies";
 import { getActiveCatalog } from "@/server/config/catalog";
 import { getActivePolicy } from "@/server/config/policies";
 import { renderTemplate } from "@/server/config/templates";
@@ -36,6 +37,35 @@ describe("seeds y geografía", () => {
     expect(await counts(pool)).toEqual(before);
     const { rows } = await pool.query("select name from problem_types where slug = 'bache'");
     expect(rows[0].name).toBe("Pozo (editado)");
+  });
+
+  it("una política activa que ya no valida contra el esquema se versiona con la del seed; una válida editada no se toca", async () => {
+    const pool = await testDb();
+    const t = (await pool.query("select id from territories where slug = 'montevideo'")).rows[0].id;
+    // Base sembrada antes del cambio de esquema: grouping v1 plana.
+    await pool.query(
+      `update policy_versions set config = '{"radius_m":30,"max_candidates":5,"same_threshold":0.9,"different_threshold":0.8,"conflict_band":0.15}'
+       where territory_id = $1 and kind = 'grouping'`,
+      [t],
+    );
+    await expect(getActivePolicy(pool, t, "grouping")).rejects.toThrow("pnpm cli seed");
+    await seedAll(pool, { importAreas: false });
+    const g = await pool.query("select version, active from policy_versions where territory_id = $1 and kind = 'grouping' order by version", [t]);
+    expect(g.rows).toEqual([{ version: 1, active: false }, { version: 2, active: true }]);
+    expect((await getActivePolicy(pool, t, "grouping")).config.radius_m).toBe(30);
+
+    // Operación cambia el radio publicando una versión válida: reseedear no la pisa.
+    await pool.query(
+      `update policy_versions set config = jsonb_set(config, '{radius_m}', '45') where territory_id = $1 and kind = 'grouping' and active`,
+      [t],
+    );
+    await seedAll(pool, { importAreas: false });
+    expect((await getActivePolicy(pool, t, "grouping")).config.radius_m).toBe(45);
+    expect((await pool.query("select count(*)::int as n from policy_versions where territory_id = $1 and kind = 'grouping'", [t])).rows[0].n).toBe(2);
+
+    // Restaura el estado que esperan los tests siguientes (comparten base).
+    await pool.query("delete from policy_versions where territory_id = $1 and kind = 'grouping' and version = 2", [t]);
+    await pool.query("update policy_versions set active = true, config = $2 where territory_id = $1 and kind = 'grouping'", [t, policies.grouping]);
   });
 
   it("lee políticas validadas, catálogo con hash y plantillas", async () => {

@@ -9,6 +9,7 @@ import { runOnce } from "@/server/jobs/worker-loop";
 import { handlers } from "@/server/jobs/handlers";
 import { linkReport, unlinkReport } from "@/server/incidents/links";
 import { findCandidates } from "@/server/pipeline/group";
+import { incidentsAffectedByReviewItem, openReviewItem, recomputeDispatchBlocked } from "@/server/review/items";
 import { fakeAnswers, fakeComparison, fakeJev, newSession, territoryId, testDeps } from "./fakes";
 import { resetDb, testDb } from "./setup";
 
@@ -154,6 +155,42 @@ describe("agrupación automática", () => {
     expect(Object.keys((compare[1].state as { candidates: Candidates }).candidates)).toHaveLength(2);
     expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("linked");
     expect(await count(pool, "select count(*)::int as n from grouping_decisions where report_id = $1", [reportId])).toBe(1);
+  });
+
+  it("si los candidatos cambian también en la última vuelta ⇒ revisión, sin guardar la comparación vieja", async () => {
+    const first = await insertIncident(pool, t, P, "bache");
+    const reportId = await confirmedReport(pool, t, east(4));
+    const added: string[] = [];
+    const jev = jevWith(async (cands) => {
+      added.push(await insertIncident(pool, t, east(2 + added.length), "basura_acumulada")); // cambia en cada vuelta
+      return fakeComparison(Object.fromEntries(Object.keys(cands).map((ref) => [ref, { match: "same_incident" }])));
+    });
+    await runOnce(testDeps(pool, jev), handlers, { workerId: "test" });
+    expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("review");
+    const dec = await pool.query("select outcome, ai_run_id, candidates from grouping_decisions where report_id = $1", [reportId]);
+    expect(dec.rows).toHaveLength(1);
+    expect(dec.rows[0]).toMatchObject({ outcome: "uncertain", ai_run_id: null });
+    // Los candidatos guardados son los vigentes al escribir (los 3), sin respuestas de Jev de otro conjunto.
+    expect(dec.rows[0].candidates.map((c: { incident_id: string }) => c.incident_id).sort()).toEqual([first, ...added].sort());
+    expect(dec.rows[0].candidates.every((c: { match: unknown }) => c.match === null)).toBe(true);
+    const ri = await pool.query("select evidence_refs from review_items where kind = 'uncertain_duplicate' and status = 'open'");
+    expect(ri.rows[0].evidence_refs[0].candidate_incident_ids.sort()).toEqual([first, ...added].sort());
+  });
+
+  it("resolver el uncertain_duplicate desbloquea a los candidatos salvo que otro ítem abierto los siga bloqueando", async () => {
+    const a = await insertIncident(pool, t, P, "bache");
+    const b = await insertIncident(pool, t, east(10), "bache");
+    await confirmedReport(pool, t, east(5));
+    await runOnce(testDeps(pool, jevWith(() => fakeComparison({ c1: { match: "same_incident" }, c2: { match: "same_incident" } }))), handlers, { workerId: "test" });
+    // b además tiene su propio ítem abierto
+    await openReviewItem(pool, { territoryId: t, kind: "contradiction", entityType: "incident", entityId: b });
+
+    const item = (await pool.query<{ id: string }>("select id from review_items where kind = 'uncertain_duplicate'")).rows[0].id;
+    const affected = await incidentsAffectedByReviewItem(pool, item);
+    expect(affected.sort()).toEqual([a, b].sort());
+    await pool.query("update review_items set status = 'resolved', resolved_at = now() where id = $1", [item]);
+    const after = await recomputeDispatchBlocked(pool, affected);
+    expect(Object.fromEntries(after.map((x) => [x.id, x.dispatchBlocked]))).toEqual({ [a]: false, [b]: true });
   });
 
   it("unlinkReport del único reporte ⇒ incidente archivado y orden activa cancelada en la misma transacción", async () => {

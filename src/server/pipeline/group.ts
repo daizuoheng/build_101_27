@@ -105,12 +105,13 @@ export async function applyGrouping(
   { report, plan, verdict, evidenceRefs }: { report: { id: string; territoryId: string }; plan: GroupingPlan; verdict: GroupingVerdict; evidenceRefs: Record<string, unknown> },
 ): Promise<{ decisionId: string; kind: GroupingVerdict["kind"]; incidentId: string | null }> {
   const outcome = verdict.kind === "create" && !plan.comparison ? "no_candidates" : OUTCOME[verdict.kind];
+  // Sin comparación (sin candidatos, o candidatos que cambiaron antes de escribir) se guardan los candidatos vigentes sin respuesta de Jev.
   const candidates = plan.comparison
     ? plan.comparison.perCandidate.map((p) => ({
         ref: p.ref, incident_id: p.incidentId, distance_m: Math.round(p.distanceM),
         match: { choice: p.match.choice, probabilities: p.match.probabilities, confidence: p.match.confidence }, conflicts: p.conflicts,
       }))
-    : [];
+    : plan.found.candidates.map((x) => ({ incident_id: x.incidentId, distance_m: Math.round(x.distanceM), match: null }));
   const dec = await c.query<{ id: string }>(
     `insert into grouping_decisions (report_id, ai_run_id, candidates, outcome, chosen_incident_id, policy_version_id, origin)
      values ($1, $2, $3, $4, $5, $6, 'auto') returning id`,

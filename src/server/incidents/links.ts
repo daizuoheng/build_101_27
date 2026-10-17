@@ -49,10 +49,14 @@ async function detach(db: Db, link: { id: string; incident_id: string; territory
   return { archived: true };
 }
 
-async function activeLink(db: Db, reportId: string) {
+/**
+ * Vínculo activo del reporte. `lock` solo después de tomar el lock del territorio: orden de locks único
+ * (territorio → filas) en link y unlink, para no generar deadlocks entre ambos.
+ */
+async function activeLink(db: Db, reportId: string, { lock }: { lock: boolean }) {
   const { rows } = await db.query<{ id: string; incident_id: string; territory_id: string }>(
     `select l.id, l.incident_id, i.territory_id from report_incident_links l join incidents i on i.id = l.incident_id
-     where l.report_id = $1 and l.active for update of l`,
+     where l.report_id = $1 and l.active ${lock ? "for update of l" : ""}`,
     [reportId],
   );
   return rows[0] ?? null;
@@ -94,7 +98,7 @@ export async function linkReport(
   }
 
   const actor = eventActor(who);
-  const prev = await activeLink(db, reportId);
+  const prev = await activeLink(db, reportId, { lock: true });
   if (prev?.incident_id === incidentId) return { linkId: prev.id, previousIncidentId: null };
   if (prev) await detach(db, prev, "relinked", actor);
 
@@ -117,10 +121,10 @@ export async function unlinkReport(
   db: Db,
   { reportId, reason, actor: who }: Parameters<UnlinkReport>[1],
 ): Promise<{ incidentId: string; archived: boolean }> {
-  const first = await activeLink(db, reportId);
+  const first = await activeLink(db, reportId, { lock: false }); // solo para saber el territorio
   if (!first) throw notFound("El reporte no está asociado a ningún incidente.");
   await lockTerritory(db, first.territory_id);
-  const link = await activeLink(db, reportId); // relectura bajo el lock del territorio
+  const link = await activeLink(db, reportId, { lock: true }); // relectura con lock, bajo el lock del territorio
   if (!link) throw notFound("El reporte no está asociado a ningún incidente.");
   const actor = eventActor(who);
   const { archived } = await detach(db, link, reason, actor);

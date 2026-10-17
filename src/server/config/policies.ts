@@ -134,6 +134,17 @@ export class PolicyMissingError extends Error {
   }
 }
 
+export class PolicyInvalidError extends Error {
+  constructor(public territoryId: string, public kind: PolicyKind, public version: number, detail: string) {
+    super(`la política activa '${kind}' v${version} del territorio ${territoryId} no valida contra el esquema actual (${detail}). Correr \`pnpm cli seed\` publica la del seed como versión nueva`);
+  }
+}
+
+/** ¿La configuración valida contra el esquema actual de su tipo? */
+export function isValidPolicy(kind: PolicyKind, config: unknown): boolean {
+  return schemas[kind].safeParse(config).success;
+}
+
 /** Política activa validada. Falla si no existe o no valida: la app no inventa valores por defecto. */
 export async function getActivePolicy<K extends PolicyKind>(db: Db, territoryId: string, kind: K): Promise<Versioned<PolicyOf<K>>> {
   const { rows } = await db.query<{ id: string; version: number; config: unknown }>(
@@ -141,6 +152,7 @@ export async function getActivePolicy<K extends PolicyKind>(db: Db, territoryId:
     [territoryId, kind],
   );
   if (!rows[0]) throw new PolicyMissingError(territoryId, kind);
-  const config = schemas[kind].parse(rows[0].config) as PolicyOf<K>;
-  return { id: rows[0].id, version: rows[0].version, config };
+  const parsed = schemas[kind].safeParse(rows[0].config);
+  if (!parsed.success) throw new PolicyInvalidError(territoryId, kind, rows[0].version, parsed.error.issues.map((i) => i.path.join(".")).join(", "));
+  return { id: rows[0].id, version: rows[0].version, config: parsed.data as PolicyOf<K> };
 }

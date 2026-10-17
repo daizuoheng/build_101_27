@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { withTx } from "../src/server/db/tx";
 import { importAreas } from "../src/server/geo/import-areas";
+import { isValidPolicy, type PolicyKind } from "../src/server/config/policies";
 import { activeHazardCapability, capabilities, problemTypes } from "./catalog";
 import { policies } from "./policies";
 import { templates } from "./templates";
@@ -53,13 +54,27 @@ export async function seedAll(pool: Pool, opts: { importAreas?: boolean } = {}):
         [territoryId],
       );
 
-      for (const [kind, config] of Object.entries(policies)) {
+      for (const [kind, config] of Object.entries(policies) as [PolicyKind, unknown][]) {
         await c.query(
           `insert into policy_versions (territory_id, kind, version, config, active)
            values ($1, $2, 1, $3, not exists (select 1 from policy_versions where territory_id = $1 and kind = $2 and active))
            on conflict (territory_id, kind, version) do nothing`,
           [territoryId, kind, config],
         );
+        // Si el esquema cambió y la política activa ya no valida, se publica la del seed como versión nueva:
+        // se versiona, no se edita, y una política válida (aunque la haya cambiado operación) no se toca.
+        const active = await c.query<{ version: number; config: unknown }>(
+          "select version, config from policy_versions where territory_id = $1 and kind = $2 and active",
+          [territoryId, kind],
+        );
+        if (active.rows[0] && !isValidPolicy(kind, active.rows[0].config)) {
+          await c.query("update policy_versions set active = false where territory_id = $1 and kind = $2 and active", [territoryId, kind]);
+          await c.query(
+            `insert into policy_versions (territory_id, kind, version, config, active)
+             select $1, $2, coalesce(max(version), 0) + 1, $3, true from policy_versions where territory_id = $1 and kind = $2`,
+            [territoryId, kind, config],
+          );
+        }
       }
 
       for (const t of templates) {

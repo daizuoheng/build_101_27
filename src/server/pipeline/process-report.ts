@@ -85,7 +85,8 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
   let verdict: GroupingVerdict = plan.comparison?.verdict ?? { kind: "create", reasons: ["no_candidates"] };
   if (!sameCandidates(fresh, plan.found)) {
     if (!lastRound) return false;
-    plan = { ...plan, found: fresh };
+    // La comparación de Jev fue sobre otro conjunto: no se guarda como si correspondiera a estos candidatos.
+    plan = { ...plan, found: fresh, comparison: null };
     verdict = { kind: "review", reasons: ["candidates_changed"] };
   }
   const evidenceRefs = { report_id: r.id, evaluation_id: ev.id, evaluation_ai_run_id: ev.aiRunId };

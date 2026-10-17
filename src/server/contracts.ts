@@ -40,6 +40,8 @@ export type TransitionAssignment = (
  * Al cerrar, recalcula `incidents.dispatch_blocked` de cada incidente afectado: queda en true solo si sigue
  * habiendo un ítem abierto sobre ese incidente, o un `uncertain_duplicate` abierto (sobre un reporte) que lo
  * lista en `evidence_refs[].candidate_incident_ids`. La agrupación bloquea así a los candidatos mientras se decide.
+ * Implementado en src/server/review/items.ts: `incidentsAffectedByReviewItem` + `recomputeDispatchBlocked`
+ * (cerrar el ítem primero, después recalcular).
  */
 export type ResolveReviewItem = (
   c: PoolClient,
