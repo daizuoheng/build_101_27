@@ -13,15 +13,15 @@ Ritmo de referencia: 150 palabras por minuto (2,5 por segundo). Las esperas son 
 
 | Bloque | Hablado | Esperas | Acumulado |
 |---|---|---|---|
-| 1. El problema | ~30 s | — | 0:30 |
-| 2. Qué es | ~15 s | — | 0:45 |
-| 3. Entender | ~10 s | ~10 s | 1:05 |
-| 4. Agrupar | ~14 s | ~10 s | 1:29 |
-| 5. Priorizar y asignar | ~15 s | ~5 s | 1:49 |
-| 6. Por qué IA | ~24 s | — | 2:13 |
-| 7. Cierre | ~10 s | — | **~2:25** |
+| 1. El problema | ~31 s | — | 0:31 |
+| 2. Qué es | ~13 s | — | 0:44 |
+| 3. Entender | ~10 s | ~10 s | 1:04 |
+| 4. Agrupar | ~12 s | ~10 s | 1:26 |
+| 5. Priorizar y asignar | ~14 s | ~5 s | 1:45 |
+| 6. Por qué IA | ~22 s | — | 2:07 |
+| 7. Cierre | ~11 s | — | **~2:18** |
 
-Quedan ~35 s de colchón. **Regla de corte en vivo:** si a las 2:30 no empezaste el bloque 6, decís solo la última frase del bloque 6 ("Lo medimos…") y vas al cierre.
+Hablado medido: 288 palabras (~1:55). Quedan ~40 s de colchón. **Regla de corte en vivo:** si a las 2:15 no empezaste el bloque 6, decís solo la última frase del bloque 6 ("Lo medimos…") y vas al cierre.
 
 ---
 

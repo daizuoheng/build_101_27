@@ -1,0 +1,360 @@
+<title>Pitch Radar Urbano</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=Literata:opsz,wght@7..72,400;7..72,500&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: hoja de escena de un guion — columna de timecode a la izquierda, texto a decir en serif, indicaciones de pantalla como notas al margen. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --fg: #16202a;
+  --muted: #5a6774;
+  --line: #d6dde4;
+  --fire: #c9420c;
+  --fire-soft: #fbe9e1;
+  --wait: #2c6aa8;
+  --wait-soft: #e3edf7;
+  --warn: #8a5a00;
+  --warn-soft: #fbf1dc;
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Literata", Georgia, "Times New Roman", serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151b; --surface: #161e26; --fg: #e5eaef; --muted: #96a3b0; --line: #2a3540;
+    --fire: #ff7d45; --fire-soft: #3a1f14; --wait: #74aee6; --wait-soft: #172a3d;
+    --warn: #f0c060; --warn-soft: #33290f; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151b; --surface: #161e26; --fg: #e5eaef; --muted: #96a3b0; --line: #2a3540;
+  --fire: #ff7d45; --fire-soft: #3a1f14; --wait: #74aee6; --wait-soft: #172a3d;
+  --warn: #f0c060; --warn-soft: #33290f; color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--f-display);
+  font-size: 1rem;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 920px; margin: 0 auto; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 48px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+h1 { font-weight: 800; font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.05; letter-spacing: -0.01em; }
+h2 { font-weight: 800; font-size: 1.45rem; line-height: 1.2; }
+h3 { font-weight: 600; font-size: 1.05rem; }
+p { margin: 0; }
+a { color: var(--wait); }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--wait); outline-offset: 2px; border-radius: 3px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+
+/* Header */
+header { display: flex; flex-direction: column; gap: 18px; }
+.lede { font-family: var(--f-body); font-size: 1.15rem; line-height: 1.55; max-width: 62ch; }
+.thesis { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.thesis > div { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.thesis b { font-weight: 600; }
+.thesis p { color: var(--muted); font-size: 0.95rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); font-size: 0.9rem; }
+nav { display: flex; flex-wrap: wrap; gap: 8px; }
+nav a { font-size: 0.85rem; text-decoration: none; color: var(--fg); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; background: var(--surface); }
+nav a:hover { border-color: var(--muted); }
+
+/* Línea de tiempo a escala: 180 s = 100% */
+.timeline { display: flex; flex-direction: column; gap: 10px; }
+.bar { position: relative; display: flex; height: 44px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: repeating-linear-gradient(135deg, transparent 0 6px, var(--line) 6px 7px); }
+.seg { display: flex; height: 100%; flex: none; border-right: 2px solid var(--bg); }
+.seg .talk { background: var(--fg); color: var(--bg); display: flex; align-items: center; justify-content: center; font-family: var(--f-mono); font-size: 0.8rem; font-weight: 600; flex: none; }
+.seg .pause { background: var(--wait); opacity: 0.75; flex: none; }
+.seg.cond .talk { background: var(--fire); }
+.ticks { position: relative; height: 18px; font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); }
+.ticks span { position: absolute; top: 0; transform: translateX(-50%); }
+.ticks span:first-child { transform: none; }
+.ticks span:last-child { transform: translateX(-100%); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.85rem; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+.cutrule { background: var(--warn-soft); color: var(--fg); border-radius: 6px; padding: 12px 16px; font-size: 0.95rem; }
+.cutrule b { color: var(--warn); }
+
+/* Guion */
+.script { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); }
+.block { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 20px; padding-block: 24px; border-bottom: 1px solid var(--line); }
+.tc { display: flex; flex-direction: column; gap: 4px; padding-top: 3px; }
+.tc .start { font-family: var(--f-mono); font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tc .dur { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); }
+.body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.body h3 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.body h3 .n { font-family: var(--f-mono); color: var(--muted); font-weight: 400; font-size: 0.9rem; }
+.say { font-family: var(--f-body); font-size: 1.2rem; line-height: 1.6; max-width: 62ch; display: flex; flex-direction: column; gap: 8px; }
+.cue { font-size: 0.88rem; color: var(--wait); background: var(--wait-soft); border-radius: 4px; padding: 6px 10px; max-width: 62ch; }
+.cue::before { content: "PANTALLA  "; font-family: var(--f-mono); font-size: 0.7rem; letter-spacing: 0.08em; font-weight: 600; white-space: pre; }
+.note { font-size: 0.88rem; color: var(--muted); max-width: 62ch; }
+.cond { border-left: 3px dashed var(--fire); padding-left: 14px; display: flex; flex-direction: column; gap: 10px; }
+.cond .flag { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fire); font-weight: 600; }
+.closing { font-weight: 500; }
+
+/* Secciones de apoyo */
+section { display: flex; flex-direction: column; gap: 16px; }
+.checklist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; max-width: 72ch; }
+.checklist li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; }
+.checklist li::before { content: ""; width: 14px; height: 14px; border: 1.5px solid var(--muted); border-radius: 3px; margin-top: 4px; }
+.qa { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.qa > div { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.qa h3 { font-family: var(--f-body); font-weight: 500; font-style: italic; }
+.qa p { font-size: 0.93rem; color: var(--muted); }
+.qa p strong { color: var(--fg); }
+.qa .tag { font-family: var(--f-mono); font-size: 0.7rem; color: var(--fire); text-transform: uppercase; letter-spacing: 0.06em; }
+.nogo { background: var(--fire-soft); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 8px; max-width: 72ch; }
+.nogo ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; min-width: 560px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+code { font-family: var(--f-mono); font-size: 0.85em; background: var(--wait-soft); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 560px) {
+  .block { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .tc { flex-direction: row; gap: 12px; align-items: baseline; }
+  .say { font-size: 1.1rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">build 101 · FIUM / LATU · guion del pitch</span>
+    <h1>Radar Urbano</h1>
+    <p class="lede">Un sistema de triage para intendencias y entes públicos. Entra cualquier aviso ciudadano, como lo cuente el vecino, y sale una lista de incidentes únicos, ordenados por riesgo. El vecino es la entrada de datos; el cliente es el ente público.</p>
+    <div class="thesis">
+      <div><b>Con personas no escala</b><p>Miles de avisos por día. A un minuto cada uno, son horas de trabajo diarias solo para ordenar.</p></div>
+      <div><b>Con reglas fijas no se entiende</b><p>Texto libre, fotos, y el mismo problema contado de diez maneras.</p></div>
+      <div><b>La IA interpreta, las reglas deciden</b><p>Jev entiende y agrupa; el orden y la asignación son reglas explícitas y auditables.</p></div>
+    </div>
+    <div class="meta">
+      <span><span class="mono">3:00</span> pitch + demo, todo junto</span>
+      <span><span class="mono">3:00</span> preguntas del jurado</span>
+      <span>Habla una persona, otra maneja la demo</span>
+    </div>
+    <nav aria-label="Secciones">
+      <a href="#tiempo">Tiempo</a>
+      <a href="#guion">Guion</a>
+      <a href="#demo">Notas de demo</a>
+      <a href="#preguntas">Preguntas</a>
+      <a href="#limites">Qué no prometer</a>
+      <a href="#fuentes">Fuentes</a>
+    </nav>
+  </header>
+
+  <section id="tiempo" class="timeline" aria-labelledby="t-tiempo">
+    <h2 id="t-tiempo">Presupuesto de tiempo</h2>
+    <p class="note">A escala sobre los 3:00. Hablado medido: 288 palabras a 150 por minuto (~1:55). Las esperas son momentos sin hablar: respuesta de Jev, toques en el celular, cambio de pantalla.</p>
+    <!-- 180 s = 100%. Cada segmento: hablado + espera. -->
+    <div class="bar" role="img" aria-label="Bloques: 1 problema 31 s, 2 qué es 13 s, 3 entender 10 s más 10 de espera, 4 agrupar 12 s más 10, 5 priorizar 14 s más 5, 6 por qué IA 22 s, 7 cierre 11 s. Total 2:18, colchón 42 s.">
+      <div class="seg" style="width:17.22%"><span class="talk" style="width:100%">1</span></div>
+      <div class="seg" style="width:7.22%"><span class="talk" style="width:100%">2</span></div>
+      <div class="seg" style="width:11.11%"><span class="talk" style="width:50%">3</span><span class="pause" style="width:50%"></span></div>
+      <div class="seg" style="width:12.22%"><span class="talk" style="width:54.5%">4</span><span class="pause" style="width:45.5%"></span></div>
+      <div class="seg cond" style="width:10.56%"><span class="talk" style="width:73.7%">5</span><span class="pause" style="width:26.3%"></span></div>
+      <div class="seg" style="width:12.22%"><span class="talk" style="width:100%">6</span></div>
+      <div class="seg" style="width:6.11%"><span class="talk" style="width:100%">7</span></div>
+    </div>
+    <div class="ticks" aria-hidden="true">
+      <span style="left:0">0:00</span><span style="left:33.33%">1:00</span><span style="left:76.67%">fin 2:18</span><span style="left:100%">3:00</span>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--fg)"></i>Hablado</span>
+      <span><i style="background:var(--wait);opacity:.75"></i>Espera de demo</span>
+      <span><i style="background:var(--fire)"></i>Incluye la parte condicional del planificador</span>
+      <span><i style="background:repeating-linear-gradient(135deg,transparent 0 3px,var(--muted) 3px 4px)"></i>Colchón (~42 s)</span>
+    </div>
+    <p class="cutrule"><b>Regla de corte en vivo:</b> si a las <span class="mono">2:15</span> no empezaste el bloque 6, decís solo "Lo medimos…" y vas al cierre.</p>
+  </section>
+
+  <section id="guion" aria-labelledby="t-guion">
+    <h2 id="t-guion">Guion</h2>
+    <div class="script">
+
+      <article class="block">
+        <div class="tc"><span class="start">0:00</span><span class="dur">~31 s</span></div>
+        <div class="body">
+          <h3><span class="n">1</span>El problema, como proceso</h3>
+          <div class="say">
+            <p>Once de la noche. Un contenedor se prende fuego en una esquina. Lo ven diez vecinos, y llegan diez avisos, cada uno contado distinto.</p>
+            <p>Solo por contenedores quemados, Bomberos recibió unos cuarenta mil llamados en 2025. Y en Montevideo hay dos mil reclamos de basura por día.</p>
+            <p>Cada uno hay que leerlo, entender qué es, ver si ya existe y decidir qué va primero. A un minuto por aviso, son treinta y tres horas por día solo para ordenar.</p>
+          </div>
+          <p class="note">Las 33 horas son una cuenta ilustrativa (2.000 × 1 min), no un dato medido.</p>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="tc"><span class="start">0:31</span><span class="dur">~13 s</span></div>
+        <div class="body">
+          <h3><span class="n">2</span>Qué es</h3>
+          <div class="say">
+            <p>Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale una lista de incidentes únicos, ordenados por riesgo.</p>
+            <p>Lo vemos en vivo.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="tc"><span class="start">0:44</span><span class="dur">~10 s + 10 espera</span></div>
+        <div class="body">
+          <h3><span class="n">3</span>Entender</h3>
+          <p class="cue">Celular 1 proyectado. Se manda la foto del contenedor en llamas y se pega: "se está prendiendo fuego el contenedor de la esquina".</p>
+          <div class="say"><p>Llega un aviso: una foto y una frase, sin formulario.</p></div>
+          <p class="cue">Espera la respuesta.</p>
+          <div class="say"><p>Ya entendió: contenedor con fuego, fuego activo, severidad alta. Falta el lugar, y lo pide.</p></div>
+          <p class="cue">Toca "usar mi ubicación" y confirma, sin narrar.</p>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="tc"><span class="start">1:04</span><span class="dur">~12 s + 10 espera</span></div>
+        <div class="body">
+          <h3><span class="n">4</span>Agrupar</h3>
+          <p class="cue">Celular 2. Se pega: "hay mucho humo en la esquina, huele a plástico quemado".</p>
+          <div class="say"><p>Otro vecino. No dice "contenedor", dice "humo".</p></div>
+          <p class="cue">Confirma. Cambio a la pantalla del operador; tocar "Actualizar".</p>
+          <div class="say"><p>El operador no ve dos reclamos: ve un incidente con dos reportes. La IA comparó los relatos y decidió que es el mismo.</p></div>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="tc"><span class="start">1:26</span><span class="dur">~14 s + 5 espera</span></div>
+        <div class="body">
+          <h3><span class="n">5</span>Priorizar y asignar</h3>
+          <p class="cue">Lista del operador: el fuego queda arriba del contenedor desbordado que se cargó antes con tres reportes.</p>
+          <div class="say"><p>Y va primero, arriba del contenedor desbordado que cargamos antes con tres vecinos. Ordena por riesgo, no por cantidad de quejas.</p></div>
+          <div class="cond">
+            <span class="flag">Solo si operacion/t11 está mergeado y probado</span>
+            <p class="cue">Vista /operacion/plan.</p>
+            <div class="say"><p>Y propone quién va: la cuadrilla más cercana que puede atender fuego, no la de limpieza.</p></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="tc"><span class="start">1:45</span><span class="dur">~22 s</span></div>
+        <div class="body">
+          <h3><span class="n">6</span>Por qué IA, y cómo sabemos que funciona</h3>
+          <div class="say">
+            <p>Con personas, esto no escala. Con reglas fijas, no se entiende: la gente escribe como quiere y cuenta lo mismo de diez maneras.</p>
+            <p>Por eso la IA interpreta, y reglas auditables ordenan y asignan.</p>
+            <p>Lo medimos: acertó las once comparaciones de nuestro set de agrupación. Y cuando duda, no adivina: lo manda a revisión humana.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="tc"><span class="start">2:07</span><span class="dur">~11 s</span></div>
+        <div class="body">
+          <h3><span class="n">7</span>Cierre</h3>
+          <div class="say">
+            <p>Hoy funciona el triage completo. Lo que sigue es despachar la orden al celular de la cuadrilla.</p>
+            <p class="closing">Diez avisos, un incidente, lo urgente primero. Eso es Radar Urbano.</p>
+          </div>
+          <p class="note">Si el planificador no llegó: se saltea "propone quién va" (−6 s), en el bloque 6 queda "reglas auditables ordenan", y el cierre dice "Lo que sigue es asignar y despachar cuadrillas".</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="demo" aria-labelledby="t-demo">
+    <h2 id="t-demo">Notas para quien maneja la demo</h2>
+    <ul class="checklist">
+      <li><span><b>Todo a un toque.</b> Foto ya en la galería del celular 1, textos copiados para pegar, celular 2 con la sesión abierta, operador ya logueado.</span></li>
+      <li><span><b>Antes de subir:</b> <code>reset-demo</code>, y después cargar el contexto del triage.</span></li>
+      <li><span><b>Contexto del triage:</b> cargar con el flujo real (no por base de datos) un contenedor desbordado con tres reportes de sesiones distintas, en otro punto de la ciudad. En el pitch se dice que se cargó antes.</span></li>
+      <li><span><b>Refresco:</b> la lista del operador se actualiza sola cada 10 s; tocar "Actualizar" para no esperar.</span></li>
+      <li><span><b>GPS:</b> los dos celulares juntos en el LATU quedan dentro del radio de 30 m y se agrupan solos. Probarlo en el lugar.</span></li>
+      <li><span><b>Riesgo con el vecino 2:</b> "humo, huele a plástico" sin foto puede salir como evidencia insuficiente. Si pasa en el ensayo, usar "el contenedor está largando mucho humo" y decir "lo cuenta distinto".</span></li>
+      <li><span><b>Proyección:</b> resolver cómo se espejan los celulares, y tener un video de respaldo grabado por si falla internet.</span></li>
+      <li><span><b>Aviso de emergencia:</b> con fuego activo el chat muestra el texto de <code>seeds/territory-montevideo.ts</code>, que hoy dice "consultá el canal de emergencias local de tu zona". Cambiarlo a algo concreto, como "llamá a Bomberos al 104".</span></li>
+      <li><span><b>Ensayo:</b> dos pasadas completas con cronómetro y los dos roles, anotando cada bloque contra el presupuesto.</span></li>
+    </ul>
+  </section>
+
+  <section id="preguntas" aria-labelledby="t-preguntas">
+    <h2 id="t-preguntas">Para las preguntas del jurado</h2>
+    <div class="qa">
+      <div>
+        <h3>"¿No es un chat?"</h3>
+        <p>La conversación es solo la entrada. El producto es el triage: Jev clasifica cada aviso (tipo, severidad, fuego activo, paso bloqueado, contradicción entre texto y foto), lo compara con los incidentes cercanos y decide si es el mismo. El LLM ni siquiera decide: solo extrae la dirección.</p>
+      </div>
+      <div>
+        <h3>"¿Cómo priorizan?"</h3>
+        <p>Jev extrae los hechos; la banda la calcula una regla explícita (<code>pipeline/priority.ts</code>). La lista pone peligro activo primero, después banda, después el más viejo. <strong>La cantidad de reportes no sube la prioridad</strong>, a propósito. Queda auditable y ajustable por política, sin tocar el modelo.</p>
+      </div>
+      <div>
+        <span class="tag">Si t11 está mergeado</span>
+        <h3>"¿Cómo asignan cuadrillas?"</h3>
+        <p>En el orden de la cola, solo cuadrillas con la capacidad requerida (fuego no es limpieza), por distancia o por zona, descontando capacidad y sin dejar sin unidad a otro incidente que solo esa podría atender. Determinista: misma entrada, mismo plan.</p>
+      </div>
+      <div>
+        <h3>"¿Qué pasa cuando la IA se equivoca?"</h3>
+        <p>Duplicado dudoso, contradicción o baja confianza van a la cola de revisión y bloquean el despacho de ese incidente. Las correcciones humanas se conservan y una reevaluación no las pisa.</p>
+      </div>
+      <div>
+        <h3>"¿Cómo es hoy?"</h3>
+        <p>Muchos canales: teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial. Mediana de resolución de 8 días y 11,8% que tarda más de 90. Decirlo como dato de proceso, no como crítica. No afirmar cómo se hace hoy el triage por dentro: no lo sabemos.</p>
+      </div>
+      <div>
+        <h3>"¿Por qué no coinciden los números de incendios?"</h3>
+        <p>Los números públicos de Bomberos y de la Intendencia no coinciden; por eso usamos el de Bomberos de 2025. Que no coincidan también muestra que falta un registro único.</p>
+      </div>
+      <div>
+        <h3>"¿Por qué importa?"</h3>
+        <p>Solo si preguntan, y sin tono político: La Cachimba del Piojo, en La Teja, asfaltó su calle principal recién en septiembre de 2026, después de años de reclamo, cuando el caso se hizo viral.</p>
+      </div>
+      <div>
+        <h3>"¿Privacidad?"</h3>
+        <p>No se piden datos de identidad (sesión con token opaco), fotos en storage privado con URLs firmadas, el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="limites" aria-labelledby="t-limites">
+    <h2 id="t-limites">Qué no prometer como hecho</h2>
+    <div class="nogo">
+      <p>Al momento de escribir esto no existen:</p>
+      <ul>
+        <li>El despacho de órdenes y la bandeja de la cuadrilla (<code>/unidad</code>).</li>
+        <li>La pantalla para resolver la cola de revisión: el operador solo ve los avisos.</li>
+        <li>La geocodificación de esquinas tipo "Rivera y Comercio": hay que poner un pin.</li>
+        <li>El planificador está en <code>operacion/t11</code>, sin mergear: mostrarlo solo si está mergeado y probado.</li>
+      </ul>
+      <p><b>Revisar esta lista contra el estado del sistema antes del pitch.</b></p>
+    </div>
+  </section>
+
+  <section id="fuentes" aria-labelledby="t-fuentes">
+    <h2 id="t-fuentes">Datos y fuentes</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Dato</th><th>Fuente</th></tr></thead>
+        <tbody>
+          <tr><td>~40.000 llamados a Bomberos por quema de contenedores en 2025</td><td><a href="https://www.subrayado.com.uy/contenedores-incendiados-bomberos-recibio-mas-50-mil-llamados-imm-espera-que-disminuya-el-plan-residuos-n999752" target="_blank" rel="noopener">Subrayado, 10/2/2026</a></td></tr>
+          <tr><td>727.637 reclamos de basura en 2025 (~2.000 por día)</td><td><a href="https://www.elobservador.com.uy/nacional/basura-montevideo-mas-700000-denuncias-un-ano-la-meta-que-no-logro-cumplir-la-im-y-el-plan-piloto-450-contenedores-llave-digital-n6056766" target="_blank" rel="noopener">El Observador, 9/9/2026</a></td></tr>
+          <tr><td>33 horas por día de triage</td><td>Cuenta ilustrativa: 2.000 avisos × 1 min. No es un dato medido.</td></tr>
+          <tr><td>Mediana de resolución de 8 días; 11,8% tarda más de 90 (cerrados 2024–2026)</td><td><a href="https://github.com/EmilianoGonLas/reclamos-montevideo" target="_blank" rel="noopener">Análisis independiente de datos abiertos del SUR</a></td></tr>
+          <tr><td>Canales actuales de reclamo</td><td><a href="https://tramites.montevideo.gub.uy/tramite/contenedor-lleno-o-residuos-fuera-de-el" target="_blank" rel="noopener">Trámites IM</a></td></tr>
+          <tr><td>Agrupación: 5/5 decisiones y 11/11 respuestas por candidato correctas, estables en dos corridas</td><td><code>docs/superpowers/notes/jev-smoke.md</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><b>No usar en el pitch:</b> "50.000 llamados en enero de 2026" y "más de 70 incendios entre el 1 de enero y mediados de febrero". Juntos dan unos 700 llamados por incendio: no cierran, y probablemente miden cosas distintas.</p>
+  </section>
+
+  <footer>Fuente de verdad: <code>docs/pitch/guion.md</code> en la rama <code>docs/pitch</code> del repo. Esta página es una vista para el equipo.</footer>
+</div>
