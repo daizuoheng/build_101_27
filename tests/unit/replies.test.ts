@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { policies } from "../../seeds/policies";
 import { IntakePolicy } from "@/server/config/policies";
 import { classifyReply, extractPublicCode, isOnlyAddress, normalizeReply } from "@/server/intake/replies";
+import { newCode } from "@/server/intake/confirm";
 
 const lexicon = IntakePolicy.parse(policies.intake).replies!;
 
@@ -43,7 +44,13 @@ describe("extractPublicCode", () => {
     expect(extractPublicCode("frente al 1234 de 18 de julio")).toBeNull();
     expect(extractPublicCode("ABCDE0")).toBeNull(); // 0 no existe en el alfabeto
     expect(extractPublicCode("HAY BASURA EN TODAS LAS CALLES")).toBeNull();
-    expect(extractPublicCode("MKGWXM")).toBe("MKGWXM"); // solo el código, aunque no tenga dígitos
+    expect(extractPublicCode("CALLES")).toBeNull(); // palabra sola en mayúsculas, sin dígito
+    expect(extractPublicCode("estado de MKGWXM")).toBe("MKGWXM"); // sin dígito pero con contexto
+  });
+
+  it("un código dentro de un relato no es una consulta de estado", () => {
+    expect(extractPublicCode("hay agua en 18 de julio, codigo AB2CD9")).toBeNull();
+    expect(extractPublicCode("hola, quiero saber el estado del reporte AB2CD9 por favor")).toBe("AB2CD9");
   });
 });
 
@@ -54,5 +61,12 @@ describe("isOnlyAddress", () => {
     expect(isOnlyAddress("frente al 1234 de 18 de julio", "18 de Julio 1234")).toBe(true);
     expect(isOnlyAddress("en 18 de julio y ejido, está lleno de agua", "18 de Julio y Ejido")).toBe(false);
     expect(isOnlyAddress("hay un pozo en 18 de julio 1234", "18 de Julio 1234")).toBe(false);
+    expect(isOnlyAddress("creo que esta por ahi", "18 de Julio y Ejido")).toBe(false); // solo relleno
+  });
+});
+
+describe("newCode", () => {
+  it("siempre incluye al menos un dígito", () => {
+    for (let i = 0; i < 500; i++) expect(newCode()).toMatch(/^(?=.*[2-9])[A-HJ-NP-Z2-9]{6}$/);
   });
 });
