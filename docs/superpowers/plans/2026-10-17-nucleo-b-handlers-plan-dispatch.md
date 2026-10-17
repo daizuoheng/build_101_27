@@ -116,7 +116,7 @@ Expected: PASS.
 
 **Files:**
 - Modify: `src/server/jobs/handlers.ts` (agregar entrada `plan`)
-- Modify: `src/server/pipeline/process-report.ts` (encolar `plan` al crear o vincular; ver Step 3b)
+- Modify: `src/server/pipeline/process-report.ts` (encolar `plan` en los tres caminos con `incident_id`: `created`, `linked`, `kept_existing_link`; ver Step 3b)
 - Test: `tests/db/plan-job.test.ts`, `tests/db/group.test.ts`
 
 **Hueco de hoy (hallazgo de Tenki en #16):** nada encola `plan` cuando `process_report` **crea** un incidente ni cuando lo **vincula** a uno existente y la reevaluación no cambia nada efectivo. `plan` solo se encola en `recomputeEffective` con cambios (`effective.ts:97`), al archivar (`links.ts:56`), al cerrar (`overrides.ts:190`) y por el periódico. Sin arreglarlo, un incidente nuevo espera hasta `replan_interval_min` (5 min) para recibir orden, y una fuente nueva no reordena la cola.
