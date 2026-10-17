@@ -64,7 +64,7 @@ export function getStorage(): StorageAdapter {
     storage = new SupabaseStorage(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_BUCKET);
   } else {
     // En Railway web y worker son contenedores distintos con disco efímero: el disco local perdería fotos.
-    if (process.env.RAILWAY_ENVIRONMENT) throw new Error("STORAGE_DRIVER=local no sirve en Railway: usá supabase");
+    if (process.env.RAILWAY_ENVIRONMENT_ID || process.env.RAILWAY_ENVIRONMENT) throw new Error("STORAGE_DRIVER=local no sirve en Railway: usá supabase");
     // Directorio de datos en tiempo de ejecución, no código: fuera del rastreo de archivos del build.
     storage = new LocalStorage(path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_LOCAL_DIR ?? "storage"));
   }

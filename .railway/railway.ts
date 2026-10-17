@@ -6,10 +6,12 @@ import { defineRailway, github, preserve, project, service } from "railway/iac";
 const REPO = "daizuoheng/build_101_27";
 const BRANCH = "main";
 
-/** Variables que leen web y worker. Supabase: Postgres en modo sesión (puerto 5432) y Storage privado. */
+/**
+ * Variables que leen web y worker. Supabase: Postgres en modo sesión (puerto 5432) y Storage privado.
+ * `DATABASE_CA_CERT` (opcional) no se declara hasta tener el certificado: cómo agregarla en la guía de despliegue.
+ */
 const shared = {
   DATABASE_URL: preserve(),
-  DATABASE_CA_CERT: preserve(),
   TYPESAFE_API_KEY: preserve(),
   LLM_BASE_URL: "https://api.deepseek.com",
   LLM_API_KEY: preserve(),
@@ -39,11 +41,23 @@ export default defineRailway(() => {
 
   const worker = service("worker", {
     source: github(REPO, { branch: BRANCH }),
-    // Corre con tsx: en vez de `next build`, el build verifica tipos para no desplegar un worker roto.
+    // Corre con tsx: en vez de `next build`, el build verifica tipos para no desplegar un worker roto
+    // (`pnpm typecheck` genera antes los tipos de rutas con `next typegen`, que en un clon limpio no existen).
     build: {
       builder: "RAILPACK",
       buildCommand: "pnpm typecheck",
-      watchPatterns: ["src/server/**", "src/shared/**", "src/worker/**", "migrations/**", "package.json", "pnpm-lock.yaml"],
+      // Lo que lee el worker en ejecución (tsx resuelve `@/*` con tsconfig.json) y su pre-deploy (scripts/cli.ts + migrations).
+      watchPatterns: [
+        "src/server/**",
+        "src/shared/**",
+        "src/worker/**",
+        "migrations/**",
+        "scripts/cli.ts",
+        "tsconfig.json",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+      ],
     },
     // tsx reenvía SIGTERM: el worker termina el job en curso y suelta el lease.
     start: "node_modules/.bin/tsx src/worker/index.ts",

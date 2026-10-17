@@ -5,29 +5,44 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 
 ## Decisiones
 
-- **Builder nativo de Railway (Railpack), sin Dockerfile.** Detecta pnpm por `packageManager`, Node por `engines`
-  (26.x), cachea `.next/cache` y no deja imagen que mantener. Las dos dependencias nativas (`sharp`, `pg`) traen
-  binarios precompilados para linux x64.
+- **Builder nativo de Railway (Railpack), sin Dockerfile.** Según la documentación de Railpack, detecta pnpm por
+  `packageManager`, Node por `engines.node` (26.x) y cachea `.next/cache`; no deja imagen que mantener. La única
+  dependencia nativa es `sharp`, que trae binarios precompilados para linux x64 (`pg` es JavaScript puro). El build real
+  de Railpack está **sin verificar** (abajo).
 - **Configuración como código en `.railway/railway.ts`** (SDK `railway/iac`). `railway.json` está deprecado: los
-  servicios nuevos ya no pueden usarlo y se deja de leer el 1 dic 2026.
+  servicios nuevos ya no pueden usarlo y se deja de leer el 1 dic 2026. El IaC es declarativo sobre todo el proyecto:
+  lo que falte en el archivo (servicios, variables) `apply` lo marca para borrar, con confirmación.
+  `pnpm typecheck` verifica también este archivo (`.railway/tsconfig.json`: el `include` raíz no entra en carpetas con
+  punto).
 - **Dos servicios del mismo repo**, rama `main`:
   - `web`: build `pnpm build`; arranca con `node_modules/.bin/next start` (toma `$PORT`); healthcheck `/api/health`
     (responde 200 si llega a la base).
-  - `worker`: build `pnpm typecheck` (no necesita `next build`); arranca con `node_modules/.bin/tsx src/worker/index.ts`.
+  - `worker`: build `pnpm typecheck` (no necesita `next build`; corre `next typegen` antes de `tsc`, porque en un clon
+    limpio no existen `next-env.d.ts` ni los tipos de rutas como `RouteContext`); arranca con
+    `node_modules/.bin/tsx src/worker/index.ts`. Solo se redespliega si cambia lo que lee en ejecución o en el
+    pre-deploy (`watchPatterns`: `src/server`, `src/shared`, `src/worker`, `migrations`, `scripts/cli.ts`,
+    `tsconfig.json`, `package.json` y archivos de pnpm).
   - En los dos, el arranque usa el binario directo y no `pnpm start`: verificado en local que pnpm no reenvía SIGTERM
     al hijo, y con el binario directo el worker termina el job en curso y escribe `worker detenido`.
 - **Migraciones** como comando previo al despliegue (`pnpm cli migrate`) en los dos servicios; el advisory lock del
-  migrador serializa si corren a la vez. Una migración fallida frena el despliegue.
+  migrador serializa si corren a la vez y el segundo encuentra `sin migraciones pendientes`. Va en los dos para que el
+  código nuevo de cualquiera de ellos nunca arranque contra el esquema viejo, despliegue el que despliegue primero.
+  Una migración fallida frena el despliegue.
 - **Seeds**: comandos manuales de una sola vez (abajo), nunca en el despliegue.
 - **Postgres de Supabase en modo sesión** (Supavisor, puerto **5432**, usuario `postgres.<ref>`, IPv4). El advisory
   lock del migrador y el `FOR UPDATE SKIP LOCKED` con lease de los jobs necesitan sesión. `createPool` **rechaza el
   puerto 6543** (pooler transaccional) con un error explícito. La conexión directa (`db.<ref>.supabase.co`) es solo
   IPv6 sin el add-on pago, así que desde Railway se usa el pooler de sesión.
-- **TLS** siempre fuera de localhost. Con `DATABASE_CA_CERT` (certificado raíz de Supabase en PEM) se verifica
-  servidor y nombre; sin él se cifra sin verificar (equivale a `sslmode=require`). Los parámetros `ssl*` de la URL se
-  ignoran a propósito: `pg` 8 trata `sslmode=require` como `verify-full` y fallaría sin CA.
+- **TLS** siempre fuera de localhost (`localhost`, `127.0.0.1`, `[::1]` o socket Unix). Con `DATABASE_CA_CERT`
+  (certificado raíz de Supabase en PEM) se verifica servidor y nombre; sin él se cifra sin verificar (lo que libpq
+  llama `sslmode=require`). `sslmode` de la URL se descarta a propósito: `pg-connection-string` 2.14 (el de `pg` 8.23)
+  trata `sslmode=require` como `verify-full` y fallaría sin CA. Excepción: `sslmode=disable` apaga TLS (Postgres de CI
+  o de red privada sin TLS). `sslcert`/`sslkey`/`sslrootcert` en la URL dan error en vez de ignorarse.
+- **Pool**: `DATABASE_POOL_MAX` vacío usa 10; un valor que no sea entero ≥ 1 falla al arrancar. Conseguir conexión
+  tiene un tope de 10 s, así que con la base caída `/api/health` responde 503 en vez de quedar colgado.
 - **Storage**: `STORAGE_DRIVER=supabase` sobre un bucket **privado**; las fotos se sirven solo a través de la app
-  tras autorizar. En Railway, `STORAGE_DRIVER=local` falla al arrancar a propósito (web y worker no comparten disco).
+  tras autorizar. En Railway (`RAILWAY_ENVIRONMENT_ID` definida), `STORAGE_DRIVER=local` falla a propósito en el primer
+  uso del storage (web y worker no comparten disco); el IaC ya fija `STORAGE_DRIVER=supabase`.
   Con claves nuevas (`sb_secret_…`) el driver manda solo `apikey`; con la `service_role` heredada (JWT) manda además
   `Authorization: Bearer`.
 
@@ -36,7 +51,7 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 | Variable | web | worker | Notas |
 |---|---|---|---|
 | `DATABASE_URL` | ✓ | ✓ | Supabase → Connect → **Session pooler** (puerto 5432). Secreto. |
-| `DATABASE_CA_CERT` | opcional | opcional | PEM de Database Settings → SSL. Se puede pegar con `\n` escapados. |
+| `DATABASE_CA_CERT` | opcional | opcional | PEM de Database Settings → SSL; se puede pegar con `\n` escapados. **No está en el IaC**: ver abajo. |
 | `DATABASE_POOL_MAX` | `5` | `3` | Ya en el IaC. El pooler de sesión cuenta cada conexión contra el límite del plan. |
 | `TYPESAFE_API_KEY` | ✓ | ✓ | Jev. Secreto. |
 | `LLM_BASE_URL` | ✓ | ✓ | `https://api.deepseek.com` (ya en el IaC). |
@@ -53,7 +68,13 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 **no** van en Railway: solo las usa `seed-demo`, que se corre desde una máquina del equipo.
 
 En `.railway/railway.ts` los secretos están como `preserve()`: el archivo declara la variable y el valor se carga en
-Railway, nunca en el repo.
+Railway, nunca en el repo. La documentación de Railway define `preserve()` como "conservar el valor que ya está en
+Railway" y no dice qué hace `apply` si la variable todavía no existe (**sin verificar**; ver el paso 3.4).
+
+`DATABASE_CA_CERT` se dejó fuera del IaC porque es opcional y no se sabe si `apply` acepta un `preserve()` sin valor.
+Para activarla: cargarla en los dos servicios (`railway variables --service web --set DATABASE_CA_CERT=…`, ídem
+`worker`), agregar `DATABASE_CA_CERT: preserve()` a `shared` en `.railway/railway.ts` y correr `railway config plan`:
+si no se declara, el siguiente `apply` la marca para borrar.
 
 ## Pasos cuando lleguen las cuentas
 
@@ -85,7 +106,7 @@ export DATABASE_URL='postgresql://postgres.<ref>:<password>@<pooler-host>:5432/p
 pnpm cli migrate
 pnpm cli seed                                   # catálogo, políticas, plantillas, Montevideo y sus barrios
 DEMO_OPERATOR_PASSWORD=… DEMO_UNIT_PASSWORD=… pnpm cli seed-demo
-pnpm cli policy-upgrade --kind grouping         # lo agrega la épica de agrupación (T9); si no existe aún, saltear
+pnpm cli policy-upgrade --kind grouping         # no-op en una base recién sembrada; versiona si la activa difiere del seed
 pnpm cli refresh-demo-positions                 # antes de cada demo: las posiciones vencen por política
 unset DATABASE_URL
 ```
@@ -96,10 +117,16 @@ unset DATABASE_URL
 2. Conectar la app de GitHub de Railway con acceso a `daizuoheng/build_101_27`.
 3. `railway config plan` → revisar que cree `web` y `worker` → `railway config apply`.
 4. Cargar los secretos en los dos servicios (dashboard → Variables, o `railway variables --service web --set K=V`).
-   **Sin verificar:** si `apply` exige valor para las variables `preserve()` inexistentes, cargarlas primero con
-   `railway variables` y repetir el `apply`.
-5. Settings → Networking → **Generate Domain** en `web` (los dominios generados no se declaran en el IaC).
-6. Primer despliegue: en los logs de `web` debe verse `sin migraciones pendientes` (o la lista aplicada) en el
+   **Sin verificar:** qué hace `apply` con un `preserve()` de una variable que todavía no existe (puede rechazarlo,
+   saltearlo o crearla vacía). Si lo rechaza, como los servicios aún no existen: comentar temporalmente esas líneas,
+   `apply`, cargar los valores con `railway variables`, restaurar los `preserve()` y repetir `plan`/`apply` (no debe
+   proponer cambios en las variables).
+   Si el despliegue automático arranca antes de tener los secretos, falla en el pre-deploy (sin `DATABASE_URL`):
+   es esperable; redesplegar después de cargarlos.
+5. Settings → Networking → **Generate Domain** en `web`. El importador de Railway deja fuera los dominios generados;
+   **sin verificar** si un `apply` posterior propone borrarlo: correr `railway config plan` y, si lo propone, traerlo al
+   archivo con `railway config pull` antes de aplicar.
+6. Despliegue con secretos: en los logs de `web` debe verse `sin migraciones pendientes` (o `aplicadas: …`) en el
    pre-deploy y el healthcheck en verde; en `worker`, `worker … iniciado`.
 
 ### 4. Verificación desde un celular (por datos móviles, no por la red de la oficina)
@@ -124,8 +151,12 @@ unset DATABASE_URL
   (`process_report` en 39 ms en el worker).
 - SIGTERM al proceso `tsx` → `worker detenido`. SIGTERM a `pnpm worker` → el hijo no imprime el cierre: por eso el
   arranque usa los binarios directos.
-- `.railway/railway.ts` compila con el SDK `railway@3.16.0` y su evaluación produce los dos servicios esperados.
-- Tests unitarios de `poolConfig` (TLS, CA, rechazo de 6543, `sslmode` en la URL).
+- `.railway/railway.ts` compila con el SDK `railway@3.16.0` y su evaluación produce los dos servicios esperados;
+  `pnpm typecheck` lo verifica (un campo mal escrito, p. ej. `healthcheckTimeot`, da error).
+- `pnpm typecheck` en un clon limpio (sin `next-env.d.ts` ni `.next/`): pasa gracias a `next typegen`.
+- Con `DATABASE_URL` apuntando a un host inalcanzable, `/api/health` responde 503 a los 10 s (timeout de conexión).
+- Tests unitarios de `poolConfig` (TLS, CA, IPv6 local, `sslmode=disable`, rechazo de 6543 y de `sslrootcert`,
+  `sslmode` en la URL, `DATABASE_POOL_MAX` vacío o inválido).
 
 ## Bloqueado hasta tener cuentas (no simulado)
 

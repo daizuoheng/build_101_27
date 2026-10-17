@@ -4,8 +4,20 @@ import { poolConfig } from "@/server/db/pool";
 const SESSION = "postgresql://postgres.abcd:pw@aws-0-sa-east-1.pooler.supabase.com:5432/postgres";
 
 describe("poolConfig", () => {
-  it("local sin TLS", () => {
-    expect(poolConfig("postgres://localhost/radar_urbano", {}).ssl).toBeUndefined();
+  it("local sin TLS (incluido IPv6 y socket Unix)", () => {
+    for (const url of ["postgres://localhost/radar_urbano", "postgres://[::1]:5432/radar_urbano", "postgres:///radar_urbano"]) {
+      expect(poolConfig(url, {}).ssl).toBeUndefined();
+    }
+  });
+
+  it("sslmode=disable apaga TLS en un host remoto (CI, red privada)", () => {
+    const cfg = poolConfig("postgres://u:p@db:5432/app?sslmode=disable", {});
+    expect(cfg.ssl).toBe(false);
+    expect(cfg.connectionString).not.toContain("sslmode");
+  });
+
+  it("rechaza archivos de certificado en la URL en vez de ignorarlos", () => {
+    expect(() => poolConfig(`${SESSION}?sslrootcert=/etc/ca.pem`, {})).toThrow(/DATABASE_CA_CERT/);
   });
 
   it("Supabase en modo sesión: TLS sin CA cifra sin verificar", () => {
@@ -27,7 +39,14 @@ describe("poolConfig", () => {
     expect(() => poolConfig(SESSION.replace(":5432", ":6543"), {})).toThrow(/modo sesión/);
   });
 
-  it("tamaño del pool por entorno", () => {
+  it("tamaño del pool por entorno; vacío usa el default y un valor inválido falla", () => {
     expect(poolConfig(SESSION, { DATABASE_POOL_MAX: "3" }).max).toBe(3);
+    expect(poolConfig(SESSION, { DATABASE_POOL_MAX: "" }).max).toBe(10);
+    expect(() => poolConfig(SESSION, { DATABASE_POOL_MAX: "0" })).toThrow(/DATABASE_POOL_MAX/);
+    expect(() => poolConfig(SESSION, { DATABASE_POOL_MAX: "cinco" })).toThrow(/DATABASE_POOL_MAX/);
+  });
+
+  it("timeout de conexión para no colgar el healthcheck", () => {
+    expect(poolConfig(SESSION, {}).connectionTimeoutMillis).toBeGreaterThan(0);
   });
 });

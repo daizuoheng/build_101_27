@@ -13,7 +13,7 @@
     "worker": "tsx src/worker/index.ts",
     "cli": "tsx scripts/cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit && tsc --noEmit -p .railway"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "0.7.0",
