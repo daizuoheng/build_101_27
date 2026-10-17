@@ -263,6 +263,18 @@ describe("agrupación automática", () => {
     expect((await pool.query("select dispatch_blocked from incidents where id = $1", [target])).rows[0].dispatch_blocked).toBe(true);
   });
 
+  it("con evaluación insufficient, la discrepancia comparte ítem con la evaluación pero no pierde su motivo", async () => {
+    const reportId = await confirmedReport(pool, t, P);
+    const target = await insertIncident(pool, t, east(500), "bache");
+    await withTx((c) => insertLinkForTest(c, reportId, target), pool);
+    const insuficiente = fakeJev(() => fakeAnswers({ applicability: { type: "choice", choice: "insufficient", confidence: 1, probabilities: { insufficient: 1 } } }));
+    await runOnce(testDeps(pool, insuficiente), handlers, { workerId: "test" });
+    const items = await pool.query("select kind, reasons from review_items where entity_id = $1 and status = 'open'", [target]);
+    expect(items.rows).toHaveLength(1);
+    expect(items.rows[0].kind).toBe("insufficient_evidence");
+    expect(items.rows[0].reasons.map((r: { code: string }) => r.code).sort()).toEqual(["evaluation_disagrees_with_manual_link", "insufficient_evidence"]);
+  });
+
   it("revisión por truncamiento bloquea y lista a todos los incidentes del radio, no solo a los comparados", async () => {
     const max = (await getActivePolicy(pool, t, "grouping")).config.max_candidates;
     const ids: string[] = [];
