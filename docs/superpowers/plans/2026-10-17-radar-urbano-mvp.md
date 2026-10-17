@@ -61,7 +61,24 @@ src/app/reportar/…  src/app/operacion/…  src/app/unidad/…  src/app/api/…
 tests/unit/**  tests/db/**  tests/fixtures/**
 ```
 
-Reparto sugerido: **A** recepción y bandeja (Tareas 5, 6, 13, 14); **B** datos, jobs, IA y pipeline (Tareas 1, 2, 7, 8, 10); **C** geografía, dashboard, planificación y despacho (Tareas 3, 4, 9, 11, 12, 15). Esta sesión arranca con 1–2 y luego toma lo que esté más atrasado. Hitos: **h+3** Tarea 8 desplegada (reporte → incidente en dashboard); **h+6** Tarea 10; **h+9** Tarea 12; **h+11** congelar.
+## Reparto por módulos
+
+Cada persona es dueña de un módulo: su código, sus tests y sus decisiones dentro de las interfaces del plan. Las tareas se derivan del módulo.
+
+| Módulo | Dueño de | Tareas del plan |
+| --- | --- | --- |
+| **Recepción ciudadana** | `src/app/reportar`, `src/app/api/reportar`, `src/server/intake`, `src/server/ai/llm/{extract-address,clarify,interpret-correction}`, `src/server/geo/{geocoder,nominatim}`, plantillas de recepción | 5, 6, 13 y la parte de chat de la 8 |
+| **Núcleo y pipeline** | `migrations`, `seeds`, `src/server/db`, `src/server/config`, `src/server/jobs`, `src/worker`, `src/server/ai/jev`, `src/server/pipeline`, `src/server/incidents`, `src/server/ai/llm/generate-text`, `scripts/cli` | 1, 2, 3, 7, pipeline de la 8, 9, 10, 15 |
+| **Operación** | `src/server/access`, `src/server/storage`, `src/app/operacion`, `src/app/unidad`, `src/app/api/{operacion,unidad}`, `src/server/planning`, `src/server/dispatch`, `src/server/review` | 4, dashboard de la 8, 11, 12, 14 |
+
+Reglas de convivencia:
+
+- **Esquema y contratos primero.** La Tarea 1 (esquema, migrador, `src/shared/contracts`) se hace antes de que los módulos arranquen y es compartida. Un cambio de esquema o de contrato después de eso se avisa al equipo y se migra; nunca se hace en silencio.
+- **Los módulos se hablan por la base y por los servicios de dominio**, no por imports cruzados de UI. Recepción escribe reportes y encola jobs; Núcleo los procesa y deja incidentes, planes y `review_items`; Operación los lee y llama a los servicios de overrides, vínculos, despacho y resolución. Las firmas exactas están en los bloques **Interfaces** de cada tarea y son el contrato entre módulos.
+- **Cada módulo tiene su propio recorrido de prueba** y además participa del recorrido integrado de los hitos.
+- Esta sesión (Claude) toma **Núcleo y pipeline**, con una persona pareando en Jev y calibración; las otras dos toman Recepción y Operación.
+
+Hitos: **h+3** Tarea 8 desplegada (reporte → incidente en dashboard); **h+6** Tarea 10; **h+9** Tarea 12; **h+11** congelar.
 
 ---
 
