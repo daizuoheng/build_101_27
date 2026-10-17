@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { policies } from "../../seeds/policies";
 import { chooseBranch, evidenceReasons } from "@/server/intake/branches";
+import { intersectionCandidates } from "@/server/geo/geocoder";
 import { computePriority } from "@/server/pipeline/priority";
 import { IntakePolicy, PriorityPolicy } from "@/server/config/policies";
 import type { ReportEvaluation } from "@/shared/contracts/evaluation";
@@ -42,6 +43,24 @@ describe("chooseBranch", () => {
     expect(chooseBranch(ev(), { locationConfirmed: true, textAfterReady: true }, intake, 0)).toEqual({ kind: "interpret_correction" });
     expect(chooseBranch(ev({ intent: "status_query" }), { locationConfirmed: true, textAfterReady: true }, intake, 0)).toEqual({ kind: "status" });
     expect(chooseBranch(ev(), { locationConfirmed: false, textAfterReady: true }, intake, 0)).toEqual({ kind: "ask_location" });
+  });
+
+  it("respuesta a un pedido de ubicación ⇒ extract_address aunque Jev la vea vaga", () => {
+    expect(chooseBranch(ev({ locationInText: "vague" }), { locationConfirmed: false, answeringLocation: true }, intake, 0)).toEqual({ kind: "extract_address" });
+    expect(chooseBranch(ev({ locationInText: "vague" }), { locationConfirmed: false }, intake, 0)).toEqual({ kind: "ask_location" });
+  });
+});
+
+describe("intersectionCandidates", () => {
+  it("reconoce las formas de escribir una esquina, incluidas calles con «y» en el nombre", () => {
+    expect(intersectionCandidates("18 de julio y ejido")).toEqual([["18 de julio", "ejido"]]);
+    expect(intersectionCandidates("Constituyente esq. Minas")).toEqual([["Constituyente", "Minas"]]);
+    expect(intersectionCandidates("Rivera esquina con Soca")).toEqual([["Rivera", "Soca"]]);
+    expect(intersectionCandidates("Batlle y Ordóñez y Avenida Italia")).toEqual([
+      ["Batlle", "Ordóñez y Avenida Italia"],
+      ["Batlle y Ordóñez", "Avenida Italia"],
+    ]);
+    expect(intersectionCandidates("18 de Julio 1234")).toEqual([]);
   });
 });
 

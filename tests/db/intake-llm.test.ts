@@ -178,6 +178,30 @@ describe("recepción con LLM bajo demanda", () => {
     expect(seen).toEqual([1, 1]); // la ficha lista reinicia la ventana: no se reenvían mensajes viejos
   });
 
+  it("tras pedir la ubicación, el texto se trata como dirección aunque Jev la vea vaga", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    const s = await newSession(pool);
+    const id = await withTx((c) => createDraft(c, { sessionId: s, territoryId: t }), pool);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000001", body: "hay un pozo en 18 de julio" }), pool);
+    const vague = fakeJev(() => fakeAnswers({ location_in_text: choice("vague") }));
+    const llm = fakeLlm((u) => {
+      const msgs = u.messages as { id: string; text: string }[];
+      const last = msgs.at(-1)!;
+      return { address: last.text, source_message_ids: [last.id] };
+    });
+    const deps = { ...testDeps(pool, vague), llm };
+    await runIntakeTurn(deps, id);
+    expect((await lastAssistant(pool, id)).ui).toEqual({ kind: "ask_location" });
+    expect(llm.calls).toBe(0);
+
+    await cacheGeocode(pool, t, "18 de julio y ejido", { lon: -56.1868, lat: -34.9056, label: "18 de julio y ejido" });
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "18 de julio y ejido" }), pool);
+    await runIntakeTurn(deps, id);
+    expect(llm.calls).toBe(1);
+    expect((await lastAssistant(pool, id)).ui).toEqual({ kind: "propose_location", lon: -56.1868, lat: -34.9056, label: "18 de julio y ejido" });
+  });
+
   it("sin LLM configurado, texto nuevo tras la ficha ⇒ plantilla", async () => {
     const { pool, s, id } = await setup();
     const deps = testDeps(pool, fakeJev());

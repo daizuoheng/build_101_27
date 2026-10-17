@@ -16,19 +16,19 @@ export const templates: { key: string; locale: string; body: string; variables: 
   {
     key: "ask_location",
     locale: "es",
-    body: "¿Dónde está exactamente? Podés usar tu ubicación, marcar el punto en el mapa o escribir una dirección o esquina.",
+    body: "¿Dónde está exactamente? Mandame tu ubicación o escribime la dirección (calle y número, o una esquina).",
     variables: [],
   },
   {
     key: "location_proposed",
     locale: "es",
-    body: "Encontré «{{label}}». Revisá el punto en el mapa y confirmalo, o movelo si no es ahí.",
+    body: "Encontré «{{label}}». ¿Es ahí?",
     variables: ["label"],
   },
   {
     key: "location_not_found",
     locale: "es",
-    body: "No pude ubicar «{{query}}». Marcá el punto en el mapa o probá con calle y número de puerta.",
+    body: "No pude ubicar «{{query}}». Probá con calle y número de puerta, otra esquina cercana, o mandame tu ubicación.",
     variables: ["query"],
   },
   {
