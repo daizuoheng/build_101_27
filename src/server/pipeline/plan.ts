@@ -237,7 +237,10 @@ export function planHandler(buildPlan: BuildPlan): { run: (deps: { pool: Pool },
   };
 }
 
-/** Replanificación periódica (factores temporales: antigüedad, ventana, vigencia de posiciones). Un job por intervalo. */
+/**
+ * Replanificación periódica (factores temporales: antigüedad, ventana, vigencia de posiciones). Un job por intervalo.
+ * Si el del intervalo falló, no se revive: el worker llama cada minuto y lo reintentaría sin límite; lo cubre el intervalo siguiente.
+ */
 export async function enqueuePeriodicPlans(pool: Pool, now = new Date()): Promise<number> {
   const terr = await pool.query<{ id: string; config: { replan_interval_min: number } }>(
     `select t.id, pv.config from territories t join policy_versions pv on pv.territory_id = t.id and pv.kind = 'planning' and pv.active where t.enabled`,
@@ -245,7 +248,7 @@ export async function enqueuePeriodicPlans(pool: Pool, now = new Date()): Promis
   let n = 0;
   for (const t of terr.rows) {
     const bucket = Math.floor(now.getTime() / (t.config.replan_interval_min * 60_000));
-    const r = await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t.id, entityRevision: 0, territoryId: t.id, payload: { trigger: "periodic" }, dedupeSuffix: `periodic:${bucket}` });
+    const r = await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t.id, entityRevision: 0, territoryId: t.id, payload: { trigger: "periodic" }, dedupeSuffix: `periodic:${bucket}`, reviveFailed: false });
     if (r.created) n++;
   }
   return n;
