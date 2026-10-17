@@ -1,9 +1,12 @@
 // Prueba REAL contra la API de Jev con casos del piloto. Escribe respuestas crudas en tests/fixtures/jev/responses/.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import type { Pool } from "pg";
+import sharp from "sharp";
 import { getPool } from "../src/server/db/pool";
 import { getActiveCatalog } from "../src/server/config/catalog";
 import { getActivePolicy } from "../src/server/config/policies";
-import { createJevClient } from "../src/server/ai/jev/client";
+import { createJevClient, type JevClient } from "../src/server/ai/jev/client";
+import { compareCandidates } from "../src/server/ai/jev/compare-candidates";
 import { evaluateReport } from "../src/server/ai/jev/evaluate-report";
 import { recordAiRun, type AiRunRecord } from "../src/server/ai/runs";
 import { normalizeForJev } from "../src/server/storage/normalize-image";
@@ -23,7 +26,110 @@ const cases: Case[] = [
   { name: "vago", texts: ["en mi barrio hay un problema"], expect: { applicability: "insufficient", location_in_text: "vague" } },
 ];
 
-export async function smokeJev(): Promise<number> {
+// Pares de agrupación: reporte nuevo contra candidatos cercanos. `crop` simula otra toma de la misma foto.
+type Side = { texts: string[]; photo?: string; crop?: "left" | "right" };
+type Pair = { name: string; report: Side; candidates: (Side & { category: string; distanceM: number; hoursAgo: number })[]; expect: { verdict: string; match: string[] } };
+
+const pairs: Pair[] = [
+  {
+    name: "mismo-bache-dos-textos",
+    report: { texts: ["Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda"], photo: "bache.jpg", crop: "left" },
+    candidates: [{ category: "Bache", distanceM: 6, hoursAgo: 20, texts: ["Hay un bache muy grande en Avenida Italia casi Comercio, a la altura del 2450, ojo con las motos"], photo: "bache.jpg", crop: "right" }],
+    expect: { verdict: "link", match: ["same_incident"] },
+  },
+  {
+    name: "bache-vs-basura-cercanos",
+    report: { texts: ["Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda"], photo: "bache.jpg" },
+    candidates: [{ category: "Basura acumulada", distanceM: 12, hoursAgo: 6, texts: ["Bolsas de basura tiradas al lado del contenedor en Av. Italia, hace días que no levantan"], photo: "basura.jpg" }],
+    expect: { verdict: "create", match: ["different_incident"] },
+  },
+  {
+    name: "ambiguo-sin-detalle",
+    report: { texts: ["acá en la esquina hay un problema en la calle, está feo"] },
+    candidates: [{ category: "Bache", distanceM: 15, hoursAgo: 30, texts: ["Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda"], photo: "bache.jpg" }],
+    expect: { verdict: "review", match: ["uncertain"] },
+  },
+  {
+    name: "dos-candidatos-elige-el-bache",
+    report: { texts: ["Hay un pozo en el asfalto frente al 2450 de Av. Italia, se llena de agua"], photo: "bache.jpg", crop: "left" },
+    candidates: [
+      { category: "Basura acumulada", distanceM: 8, hoursAgo: 4, texts: ["Basura desparramada en la vereda de Av. Italia al 2400"], photo: "basura.jpg" },
+      { category: "Bache", distanceM: 11, hoursAgo: 26, texts: ["Bache grande sobre Av. Italia a la altura del 2450, cuidado"], photo: "bache.jpg", crop: "right" },
+    ],
+    expect: { verdict: "link", match: ["different_incident", "same_incident"] },
+  },
+  {
+    name: "fuego-nuevo-vs-quemado-ayer",
+    report: { texts: ["Se está prendiendo fuego el contenedor de 8 de Octubre y Garibaldi ahora mismo, sale humo negro"] },
+    candidates: [{ category: "Contenedor dañado", distanceM: 5, hoursAgo: 48, texts: ["El contenedor de 8 de Octubre y Garibaldi amaneció todo quemado, está derretido"], photo: "contenedor-quemado.jpg" }],
+    expect: { verdict: "review", match: ["different_incident", "uncertain"] },
+  },
+];
+
+async function photoFor(side: Side, ref: string) {
+  if (!side.photo) return [];
+  let bytes = await readFile(`tests/fixtures/jev/photos/${side.photo}`);
+  if (side.crop) {
+    const meta = await sharp(bytes).rotate().metadata();
+    const w = Math.round(meta.width! * 0.8);
+    const h = Math.round(meta.height! * 0.85);
+    bytes = await sharp(bytes).rotate().extract({ left: side.crop === "left" ? 0 : meta.width! - w, top: side.crop === "left" ? 0 : meta.height! - h, width: w, height: h }).jpeg().toBuffer();
+  }
+  const n = await normalizeForJev(bytes);
+  return [{ attachmentId: ref, bytes: n.bytes, format: n.format }];
+}
+
+async function smokeCompare(pool: Pool, territoryId: string, jev: JevClient): Promise<{ hits: number; total: number }> {
+  const policy = await getActivePolicy(pool, territoryId, "grouping");
+  let hits = 0;
+  let total = 0;
+  const now = Date.now();
+  const at = (hoursAgo: number) => new Date(now - hoursAgo * 3600_000).toISOString();
+  const msgs = (texts: string[], when: string) => texts.map((body, i) => ({ id: `m${i + 1}`, body, createdAt: when }));
+  for (const p of pairs) {
+    let raw: AiRunRecord | null = null;
+    const res = await compareCandidates(
+      {
+        reportId: `smoke-${p.name}`,
+        reportRevision: 1,
+        report: { confirmedAt: at(0), messages: msgs(p.report.texts, at(0)), images: await photoFor(p.report, "new-photo"), location: { text: null, areaName: null } },
+        candidates: await Promise.all(
+          p.candidates.map(async (c, i) => ({
+            incidentId: `incident-${i + 1}`,
+            distanceM: c.distanceM,
+            summary: { category: c.category, status: "open", firstReportedAt: at(c.hoursAgo), reportCount: 1 },
+            evidence: { reports: [{ reportId: `report-${i + 1}`, confirmedAt: at(c.hoursAgo), messages: msgs(c.texts, at(c.hoursAgo)), images: await photoFor(c, `cand-${i + 1}-photo`) }] },
+          })),
+        ),
+        truncated: false,
+        policy,
+      },
+      { jev, recordRun: async (run) => ((raw = run), recordAiRun(pool, run)) },
+    );
+    const r = raw as AiRunRecord | null;
+    await writeFile(`tests/fixtures/jev/responses/compare-${p.name}.json`, JSON.stringify({ pair: p, run: { ...r, request: undefined } }, null, 2));
+    if (!res.ok) {
+      console.log(`✗ ${p.name}: ${res.error.kind} ${res.error.message}`);
+      continue;
+    }
+    const v = res.value;
+    total += 1 + v.perCandidate.length;
+    const okVerdict = v.verdict.kind === p.expect.verdict;
+    if (okVerdict) hits++;
+    const lines = v.perCandidate.map((c, i) => {
+      const want = p.expect.match[i];
+      const ok = c.match.choice === want || (p.expect.verdict === "review" && p.expect.match.includes(c.match.choice));
+      if (ok) hits++;
+      const probs = Object.entries(c.match.probabilities).map(([k, x]) => `${k.split("_")[0]}=${x.toFixed(2)}`).join(" ");
+      const conf = Object.entries(c.conflicts).map(([k, x]) => `${k}=${x.toFixed(2)}`).join(" ");
+      return `${ok ? "✓" : "✗"} ${c.ref} ${c.match.choice} [${probs}] conflictos ${conf}${ok ? "" : ` esperado ${want}`}`;
+    });
+    console.log(`${p.name} [${r?.modelReturned} ${r?.latencyMs}ms] ${okVerdict ? "✓" : "✗"} decisión=${v.verdict.kind} (${v.verdict.reasons.join(",")})${okVerdict ? "" : ` esperado ${p.expect.verdict}`}\n   ${lines.join("\n   ")}`);
+  }
+  return { hits, total };
+}
+
+export async function smokeJev(args: Record<string, string> = {}): Promise<number> {
   if (!process.env.TYPESAFE_API_KEY) {
     console.error("Falta TYPESAFE_API_KEY: smoke-jev queda bloqueado (no se simula).");
     return 2;
@@ -39,6 +145,12 @@ export async function smokeJev(): Promise<number> {
   const catalog = await getActiveCatalog(pool, territoryId);
   const jev = createJevClient();
   await mkdir("tests/fixtures/jev/responses", { recursive: true });
+
+  if (args.only === "compare") {
+    const r = await smokeCompare(pool, territoryId, jev);
+    console.log(`\nagrupación: ${r.hits}/${r.total}`);
+    return 0;
+  }
 
   let hits = 0;
   let total = 0;
@@ -77,5 +189,10 @@ export async function smokeJev(): Promise<number> {
     console.log(`${c.name} [${r?.modelReturned} ${r?.latencyMs}ms${c.photo ? " +foto" : ""}] review=${res.value.reviewReasons.join(",") || "-"}\n   ${checks.join("  ")}`);
   }
   console.log(`\naciertos: ${hits}/${total}`);
+  if (args.only !== "evaluate") {
+    console.log("\n— agrupación —");
+    const r = await smokeCompare(pool, territoryId, jev);
+    console.log(`\nagrupación: ${r.hits}/${r.total}`);
+  }
   return 0;
 }
