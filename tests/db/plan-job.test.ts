@@ -118,6 +118,62 @@ describe("job plan", () => {
     expect((await one(pool, "select count(*)::int as n from plan_runs")).n).toBe(0);
   });
 
+  it("con otra corrida del territorio en curso no calcula en paralelo: difiere el pedido a un único job, sin perder ninguno", async () => {
+    await incident(pool, t, { slug: "bache" });
+    // Tramo largo (1 h) para que los dos pedidos caigan, salvo cruce exacto de la hora entre ambos, en el mismo job diferido.
+    await pool.query("update policy_versions set config = config || '{\"busy_retry_sec\": 3600}' where territory_id = $1 and kind = 'planning' and active", [t]);
+    for (const s of ["a", "b", "c"]) await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: s });
+    const [a, b, c] = (await pool.query("select * from jobs where kind = 'plan' order by created_at")).rows;
+    await pool.query("update jobs set status = 'running' where id = any($1)", [[a.id, b.id]]); // reclamados por otros workers
+
+    // Otro worker está calculando el plan del territorio (tiene el lock de plan en su transacción).
+    const busy = await pool.connect();
+    try {
+      await busy.query("begin");
+      await busy.query("select pg_advisory_xact_lock(hashtext('plan'), hashtext($1))", [t]);
+      await planHandler(testPlanner).run({ pool }, { ...a, territory_id: t, payload: { trigger: "event" } });
+      await planHandler(testPlanner).run({ pool }, { ...b, territory_id: t, payload: { trigger: "event" } });
+    } finally {
+      await busy.query("rollback");
+      busy.release();
+    }
+    expect((await one(pool, "select count(*)::int as n from plan_runs")).n).toBe(0);
+    const deferred = await pool.query("select id, status, payload, run_after > now() as later from jobs where kind = 'plan' and dedupe_key like '%:deferred:%'");
+    expect(deferred.rows).toHaveLength(1);
+    expect(deferred.rows[0]).toMatchObject({ status: "pending", payload: { trigger: "deferred:event" }, later: true });
+    expect((await one(pool, "select status from jobs where id = $1", [c.id])).status).toBe("pending"); // el pedido sin reclamar sigue en pie
+
+    // Libre el lock, el job diferido calcula un solo plan que junta el pedido pendiente.
+    await pool.query("update jobs set run_after = now(), status = 'running' where id = $1", [deferred.rows[0].id]);
+    const job = (await pool.query("select * from jobs where id = $1", [deferred.rows[0].id])).rows[0];
+    await planHandler(testPlanner).run({ pool }, job);
+    expect((await pool.query("select trigger from plan_runs")).rows).toEqual([{ trigger: "deferred:event+1" }]);
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and status = 'pending'")).n).toBe(0);
+  });
+
+  it("runPlan directo espera la corrida en curso en vez de diferirse", async () => {
+    await incident(pool, t, { slug: "bache" });
+    const busy = await pool.connect();
+    let run: Promise<{ planRunId: string }> | undefined;
+    try {
+      await busy.query("begin");
+      await busy.query("select pg_advisory_xact_lock(hashtext('plan'), hashtext($1))", [t]);
+      run = runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+      // Espera hasta ver a runPlan bloqueado en el lock de plan (advisory sin conceder).
+      for (let i = 0; i < 100; i++) {
+        if ((await one(pool, "select count(*)::int as n from pg_locks where locktype = 'advisory' and objsubid = 2 and not granted")).n > 0) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect((await one(pool, "select count(*)::int as n from pg_locks where locktype = 'advisory' and objsubid = 2 and not granted")).n).toBe(1);
+      expect((await one(pool, "select count(*)::int as n from plan_runs")).n).toBe(0);
+    } finally {
+      await busy.query("rollback");
+      busy.release();
+    }
+    expect((await run!).planRunId).toEqual(expect.any(String));
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan'")).n).toBe(0);
+  });
+
   it("la replanificación periódica encola un job por territorio por intervalo", async () => {
     const now = new Date("2026-10-17T22:00:00Z");
     expect(await enqueuePeriodicPlans(pool, now)).toBe(1);

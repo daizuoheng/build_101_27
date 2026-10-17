@@ -195,7 +195,7 @@ export const policies = {
     medium: { severity: ["medium"] },
     promote_low_to_medium_after_hours: 48,
   },
-  planning: { window_hours: 24, weight_hours: 2, cap_hours: 12, replan_interval_min: 5 },
+  planning: { window_hours: 24, weight_hours: 2, cap_hours: 12, replan_interval_min: 5, busy_retry_sec: 10 },
   dispatch: {
     min_applicability: 0.9,
     min_type_confidence: 0.9,
