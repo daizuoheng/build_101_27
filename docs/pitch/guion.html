@@ -286,15 +286,55 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
   </section>
 
   <section id="preguntas" aria-labelledby="t-preguntas">
-    <h2 id="t-preguntas">Para las preguntas del jurado</h2>
+    <h2 id="t-preguntas">Preguntas del jurado</h2>
+    <p class="note" style="max-width:72ch">Son 3 minutos: entran 4 a 6 preguntas. <b>Cómo responder:</b> primero la respuesta en una frase, después un dato o un ejemplo, y cortar (~20 s). Si no sabés, decilo y decí cómo lo medirían. Las técnicas profundas las toma quien manejó la demo.</p>
+    <p class="cutrule"><b>Alcance declarado</b> (decirlo si quieren probar un caso propio): Montevideo, avisos de espacio público de los 10 tipos del catálogo: bache, basura acumulada, accesibilidad obstruida, contenedor dañado, contenedor con fuego, vereda rota, cartelería, alumbrado, árbol o rama caída, desagüe obstruido. Lo que queda afuera no se inventa: va a revisión.</p>
+
+    <h3 class="eyebrow" style="margin-top:8px">Las seis más probables</h3>
+    <div class="qa">
+      <div>
+        <span class="tag">La pregunta de la consigna</span>
+        <h3>1. "Si le sacás la IA, ¿qué queda?"</h3>
+        <p><strong>Queda un formulario: el vecino elige una categoría de una lista, y al municipio le llegan diez reclamos del mismo fuego que alguien tiene que leer y juntar a mano. Sin IA no hay triage: nadie entiende el texto libre ni la foto, y nadie decide si dos relatos distintos son el mismo incidente.</strong></p>
+        <p>Respaldo: sin Jev no hay tipo, severidad, fuego activo ni agrupación; las reglas de prioridad no tienen hechos sobre los que operar.</p>
+      </div>
+      <div>
+        <h3>2. "¿Cómo saben que funciona? Once casos es poco."</h3>
+        <p><strong>Es poco, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno quemado hace dos días. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y de seis pares de agrupación, acertó los seis, igual en dos corridas.</strong></p>
+        <p>Respaldo: cada llamada queda registrada, así que el siguiente paso es un set etiquetado con avisos reales y medir precisión por tipo. Clasificación: 9 de 9 con el tipo o la rama correcta.</p>
+      </div>
+      <div>
+        <span class="tag">La rúbrica dice que pueden variar un caso</span>
+        <h3>3. "Probemos con un caso nuestro."</h3>
+        <p><strong>Dale. Si está en el catálogo lo clasifica; si es ambiguo o no alcanza la evidencia, lo pide o lo manda a revisión, no inventa.</strong></p>
+        <p>Preparar: celular 2 con una sesión nueva. Si dicen algo vago ("hay un problema en mi barrio"), lo esperado es evidencia insuficiente y repregunta: es correcto, decirlo.</p>
+      </div>
+      <div>
+        <h3>4. "¿Qué pasa cuando la IA se equivoca?"</h3>
+        <p><strong>No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión humana y ese incidente no se despacha. Y si un operador corrige algo, una reevaluación no lo pisa.</strong></p>
+        <p>Respaldo: umbrales de agrupación 0,90 "mismo" y 0,80 "distinto" (<code>seeds/policies.ts</code>). La cola existe en datos y el operador la ve como aviso; la pantalla para resolverla no está.</p>
+      </div>
+      <div>
+        <h3>5. "¿Qué es Jev? ¿Por qué no un LLM para todo?"</h3>
+        <p><strong>Jev es un clasificador: le hacemos preguntas cerradas, como ¿hay fuego activo? o ¿es el mismo incidente?, y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Es rápido: medio segundo sin foto, poco más de un segundo con foto. El LLM solo extrae la dirección, y no decide nada.</strong></p>
+        <p>Respaldo: latencia medida 230–400 ms texto, 0,6–1,4 s con foto. Costo por aviso: no lo medimos todavía; decirlo así.</p>
+      </div>
+      <div>
+        <span class="tag">La rúbrica pide declararlo</span>
+        <h3>6. "¿Qué está simulado?"</h3>
+        <p><strong>La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, que están marcadas como demo. Y el contenedor desbordado del principio lo cargamos antes, pero por el mismo flujo, no a mano en la base.</strong></p>
+      </div>
+    </div>
+
+    <h3 class="eyebrow" style="margin-top:8px">Otras que pueden salir</h3>
     <div class="qa">
       <div>
         <h3>"¿No es un chat?"</h3>
-        <p>La conversación es solo la entrada. El producto es el triage: Jev clasifica cada aviso (tipo, severidad, fuego activo, paso bloqueado, contradicción entre texto y foto), lo compara con los incidentes cercanos y decide si es el mismo. El LLM ni siquiera decide: solo extrae la dirección.</p>
+        <p>La conversación es solo la entrada. El producto es el triage: clasificar, agrupar, priorizar y asignar. El LLM ni siquiera decide. Es lo opuesto al chat genérico que la consigna descalifica.</p>
       </div>
       <div>
-        <h3>"¿Cómo priorizan?"</h3>
-        <p>Jev extrae los hechos; la banda la calcula una regla explícita (<code>pipeline/priority.ts</code>). La lista pone peligro activo primero, después banda, después el más viejo. <strong>La cantidad de reportes no sube la prioridad</strong>, a propósito. Queda auditable y ajustable por política, sin tocar el modelo.</p>
+        <h3>"¿Por qué no priorizan por cantidad de quejas?"</h3>
+        <p>Jev extrae los hechos y una regla explícita calcula la banda (<code>pipeline/priority.ts</code>). <strong>Que se quejen más no hace más grave el problema</strong>; si no, el barrio que más se queja gana siempre. La cantidad suma, como mucho, un bonus acotado dentro de la banda, nunca por encima de un peligro activo.</p>
       </div>
       <div>
         <span class="tag">Si t11 está mergeado</span>
@@ -302,25 +342,52 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         <p>En el orden de la cola, solo cuadrillas con la capacidad requerida (fuego no es limpieza), por distancia o por zona, descontando capacidad y sin dejar sin unidad a otro incidente que solo esa podría atender. Determinista: misma entrada, mismo plan.</p>
       </div>
       <div>
-        <h3>"¿Qué pasa cuando la IA se equivoca?"</h3>
-        <p>Duplicado dudoso, contradicción o baja confianza van a la cola de revisión y bloquean el despacho de ese incidente. Las correcciones humanas se conservan y una reevaluación no las pisa.</p>
+        <h3>"¿Y dos contenedores distintos en la misma esquina?"</h3>
+        <p>La cercanía solo elige candidatos (30 m); decide Jev comparando texto y foto. En la prueba, un bache y basura a 12 m quedaron separados, y con dos candidatos eligió el correcto aunque era el más lejano. Si duda, revisión.</p>
+      </div>
+      <div>
+        <h3>"¿Quién lo usa? ¿Por qué lo adoptaría una intendencia?"</h3>
+        <p>El operador del ente público. Cambia leer y juntar avisos uno por uno por una lista de incidentes únicos ya ordenados. No reemplaza los canales actuales: el triage es lo que viene después de recibir el aviso. No afirmar integraciones con sistemas de la IM.</p>
+      </div>
+      <div>
+        <h3>"¿Esto ya existe?"</h3>
+        <p>Hay plataformas de reporte ciudadano, pero en general piden elegir una categoría y dejan los duplicados al vecino o a un operador. Lo nuestro es el triage automático. No nombrar productos concretos si no los conocen bien.</p>
+      </div>
+      <div>
+        <h3>"¿Escala a otra ciudad?"</h3>
+        <p>Montevideo es configuración: barrios, catálogo, umbrales y textos viven en la base, no en el código. Si <code>feat/territorio-b</code> está mergeado: "lo probamos con un segundo territorio".</p>
+      </div>
+      <div>
+        <h3>"¿Y si se cae el proveedor de IA?"</h3>
+        <p>El aviso se guarda antes de cualquier llamada. Si Jev no responde a tiempo, el vecino ve "recibido, analizando", la evaluación sigue en segundo plano con reintentos, y si falla queda en revisión. No se pierde ningún aviso.</p>
+      </div>
+      <div>
+        <h3>"¿Y avisos falsos o manipulación?"</h3>
+        <p>El texto del vecino es evidencia, no instrucciones: probamos meterle una instrucción oculta al extractor de direcciones y no la siguió. Una foto que no coincide se marca como contradicción. Y como la cantidad no sube la prioridad, inundar de reportes no adelanta nada.</p>
       </div>
       <div>
         <h3>"¿Cómo es hoy?"</h3>
-        <p>Muchos canales: teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial. Mediana de resolución de 8 días y 11,8% que tarda más de 90. Decirlo como dato de proceso, no como crítica. No afirmar cómo se hace hoy el triage por dentro: no lo sabemos.</p>
+        <p>Muchos canales: teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial. Mediana de resolución de 8 días y 11,8% que tarda más de 90. Dato de proceso, no crítica. No afirmar cómo se hace hoy el triage por dentro.</p>
       </div>
       <div>
         <h3>"¿Por qué no coinciden los números de incendios?"</h3>
-        <p>Los números públicos de Bomberos y de la Intendencia no coinciden; por eso usamos el de Bomberos de 2025. Que no coincidan también muestra que falta un registro único.</p>
-      </div>
-      <div>
-        <h3>"¿Por qué importa?"</h3>
-        <p>Solo si preguntan, y sin tono político: La Cachimba del Piojo, en La Teja, asfaltó su calle principal recién en septiembre de 2026, después de años de reclamo, cuando el caso se hizo viral.</p>
+        <p>Los números públicos de Bomberos y de la Intendencia no coinciden; por eso usamos el de Bomberos de 2025. Que no coincidan muestra que falta un registro único.</p>
       </div>
       <div>
         <h3>"¿Privacidad?"</h3>
         <p>No se piden datos de identidad (sesión con token opaco), fotos en storage privado con URLs firmadas, el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap.</p>
       </div>
+    </div>
+
+    <div class="nogo">
+      <p><b>Qué no decir</b></p>
+      <ul>
+        <li>"Es un chat", "es como ChatGPT para reclamos".</li>
+        <li>Un costo por aviso, un porcentaje de precisión o un ahorro en dinero: no los medimos.</li>
+        <li>Que está integrado con la Intendencia o con el SUR.</li>
+        <li>Que despacha órdenes o que la cuadrilla recibe la orden en el celular, hasta que exista.</li>
+        <li>Críticas a la gestión de la Intendencia.</li>
+      </ul>
     </div>
   </section>
 
