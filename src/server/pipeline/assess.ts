@@ -6,25 +6,25 @@ import { assessIncident, type IncidentAssessmentResult } from "../ai/jev/assess-
 import { chosenProbability } from "../ai/jev/thresholds";
 import { recordAiRun } from "../ai/runs";
 import { appendEvent } from "../events/append";
-import { applyOverrides, liveOverrides, markIncompatibleAssignment, mergeAssessment, type Assessed } from "../incidents/overrides";
+import { latestAssessed, recomputeEffective } from "../incidents/effective";
+import { mergeAssessment } from "../incidents/overrides";
 import { loadEvidence } from "../intake/drafts";
 import type { IntakeDeps } from "../intake/orchestrator";
-import { enqueue, type Job } from "../jobs/queue";
+import type { Job } from "../jobs/queue";
 import { openReviewItem } from "../review/items";
-import { computePriority } from "./priority";
 
 const OPEN_STATUSES = ["open", "assigned", "in_progress"];
 
-type IncidentRow = Assessed & {
-  id: string; territory_id: string; revision: number; status: string; created_at: Date; area_name: string | null;
-  priority_band: string; problem_type_name: string | null;
+type IncidentRow = {
+  id: string; territory_id: string; revision: number; status: string; created_at: Date; problem_type_name: string | null;
+  severity: string; active_hazard: boolean; passage: string; accessibility: string;
 };
 
 async function loadIncident(db: Db, id: string, lock = false): Promise<IncidentRow | null> {
   const { rows } = await db.query<IncidentRow>(
-    `select i.id, i.territory_id, i.revision, i.status, i.created_at, i.priority_band, a.name as area_name, pt.name as problem_type_name,
-       i.problem_type_id as "problemTypeId", i.severity, i.active_hazard as "activeHazard", i.passage, i.accessibility
-     from incidents i left join areas a on a.id = i.area_id left join problem_types pt on pt.id = i.problem_type_id
+    `select i.id, i.territory_id, i.revision, i.status, i.created_at, pt.name as problem_type_name,
+       i.severity, i.active_hazard, i.passage, i.accessibility
+     from incidents i left join problem_types pt on pt.id = i.problem_type_id
      where i.id = $1 ${lock ? "for update of i" : ""}`,
     [id],
   );
@@ -72,9 +72,9 @@ const aiSnapshot = (ai: IncidentAssessmentResult) => {
 };
 
 /**
- * `assess_incident`: reevaluación con la evidencia acumulada. Jev fuera de la transacción; bajo el lock del territorio
- * se descarta si el incidente cambió de revisión. Conserva overrides, recalcula prioridad, sube la revisión si cambió
- * algo efectivo y encola `plan`. Si solo cambió una corrección (mismos reportes), reutiliza la respuesta anterior de Jev.
+ * `assess_incident`: reevaluación con la evidencia acumulada (se encola cuando cambian los reportes del incidente).
+ * Jev fuera de la transacción; bajo el lock del territorio se descarta si el incidente cambió de revisión.
+ * La IA parte de su evaluación anterior (nunca de valores corregidos por humanos); las correcciones se aplican después.
  */
 export async function runAssessIncident(deps: IntakeDeps, job: Job): Promise<void> {
   const pool = deps.pool;
@@ -85,122 +85,74 @@ export async function runAssessIncident(deps: IntakeDeps, job: Job): Promise<voi
   const planning = await getActivePolicy(pool, territoryId, "planning");
   const { all, chosen } = await pickReports(pool, inc0.id, policy.config.assessment.max_reports);
   if (!all.length) return; // sin reportes: lo archiva el flujo de desasociación
-  const considered = all.map((r) => r.id).sort();
+  const reportsConsidered = chosen.map((r) => r.id).sort(); // solo lo que Jev efectivamente ve
 
-  // ¿Misma evidencia que la última evaluación con Jev? (p. ej. el cambio fue una corrección del operador)
-  const prev = await pool.query<{ ai_run_id: string; reports_considered: string[]; evidence_summary: { ai?: unknown; ai_result?: IncidentAssessmentResult } }>(
-    "select ai_run_id, reports_considered, evidence_summary from incident_assessments where incident_id = $1 and ai_run_id is not null order by incident_revision desc limit 1",
-    [inc0.id],
+  const counts = await sourceCounts(pool, inc0.id, planning.config.window_hours);
+  const catalog = await getActiveCatalog(pool, territoryId);
+  const reports = await Promise.all(
+    chosen.map(async (r) => {
+      const ev = await loadEvidence(pool, deps.storage, r.id);
+      return { reportId: r.id, confirmedAt: r.confirmed_at.toISOString(), messages: ev.messages, images: ev.images };
+    }),
   );
-  const reusable = prev.rows[0] && prev.rows[0].evidence_summary.ai_result
-    && [...prev.rows[0].reports_considered].sort().join() === considered.join();
-
-  let ai: IncidentAssessmentResult;
-  let aiRunId: string;
-  if (reusable) {
-    ai = prev.rows[0].evidence_summary.ai_result!;
-    aiRunId = prev.rows[0].ai_run_id;
-  } else {
-    const counts = await sourceCounts(pool, inc0.id, planning.config.window_hours);
-    const catalog = await getActiveCatalog(pool, territoryId);
-    const reports = await Promise.all(
-      chosen.map(async (r) => {
-        const ev = await loadEvidence(pool, deps.storage, r.id);
-        return { reportId: r.id, confirmedAt: r.confirmed_at.toISOString(), messages: ev.messages, images: ev.images };
-      }),
-    );
-    const res = await assessIncident(
-      {
-        incidentId: inc0.id,
-        incidentRevision: inc0.revision,
-        current: {
-          problemType: inc0.problem_type_name, severity: inc0.severity, activeHazard: inc0.activeHazard,
-          passage: inc0.passage, accessibility: inc0.accessibility, firstReportedAt: inc0.created_at.toISOString(),
-        },
-        counts: { reports: counts.reports, messages: counts.messages, sources: counts.sources, repeatedEvidence: counts.repeated_evidence },
-        reports,
-        catalog: catalog.types,
-        policy,
+  const res = await assessIncident(
+    {
+      incidentId: inc0.id,
+      incidentRevision: inc0.revision,
+      current: {
+        problemType: inc0.problem_type_name, severity: inc0.severity, activeHazard: inc0.active_hazard,
+        passage: inc0.passage, accessibility: inc0.accessibility, firstReportedAt: inc0.created_at.toISOString(),
       },
-      { jev: deps.jev, recordRun: (run) => recordAiRun(pool, run) },
-    );
-    if (!res.ok) throw new Error(`reevaluación fallida (${res.error.kind}): ${res.error.message}`);
-    ai = res.value;
-    aiRunId = res.aiRunId;
-  }
+      counts: { reports: counts.reports, messages: counts.messages, sources: counts.sources, repeatedEvidence: counts.repeated_evidence },
+      reports,
+      catalog: catalog.types,
+      policy,
+    },
+    { jev: deps.jev, recordRun: (run) => recordAiRun(pool, run) },
+  );
+  if (!res.ok) throw new Error(`reevaluación fallida (${res.error.kind}): ${res.error.message}`);
+  const ai = res.value;
 
   await withTx(async (c) => {
     await c.query("select pg_advisory_xact_lock(hashtext($1))", [territoryId]);
     const inc = await loadIncident(c, inc0.id, true);
     if (!inc || !OPEN_STATUSES.includes(inc.status) || inc.revision !== job.entity_revision) return; // cambió mientras Jev evaluaba
-    const counts = await sourceCounts(c, inc.id, planning.config.window_hours);
-    const previous: Assessed = { problemTypeId: inc.problemTypeId, severity: inc.severity, activeHazard: inc.activeHazard, passage: inc.passage, accessibility: inc.accessibility };
-    const assessed = mergeAssessment(previous, ai, policy.config.assessment);
-    const { effective, bandOverride, discrepancies } = applyOverrides(assessed, await liveOverrides(c, inc.id));
+    const already = await c.query("select 1 from incident_assessments where incident_id = $1 and incident_revision = $2", [inc.id, inc.revision]);
+    if (already.rows[0]) return; // reintento de una revisión ya evaluada
 
-    const priorityPolicy = await getActivePolicy(c, territoryId, "priority");
-    const computed = computePriority(effective, inc.created_at, new Date(), priorityPolicy.config);
-    const band = bandOverride ?? computed.band;
-    const breakdown = { ...computed.breakdown, computed_band: computed.band, ...(bandOverride ? { band_override: bandOverride } : {}) };
-
-    const fields = ["problemTypeId", "severity", "activeHazard", "passage", "accessibility"] as const;
-    const changes: Record<string, unknown>[] = fields
-      .filter((f) => previous[f] !== effective[f])
-      .map((f) => ({ field: f, from: previous[f], to: effective[f], source: discrepancies.some((d) => d.field === toColumn(f)) ? "override" : "ai" }));
-    if (inc.priority_band !== band) changes.push({ field: "priority_band", from: inc.priority_band, to: band, source: bandOverride ? "override" : "rules" });
-    changes.push(...discrepancies);
-
-    const ins = await c.query(
+    const assessed = mergeAssessment(await latestAssessed(c, inc.id), ai, policy.config.assessment);
+    const freshCounts = await sourceCounts(c, inc.id, planning.config.window_hours);
+    const r = await recomputeEffective(c, inc.id, assessed, { reason: "assessment" });
+    await c.query(
       `insert into incident_assessments (incident_id, incident_revision, ai_run_id, reports_considered, problem_type_id, severity, active_hazard,
          evidence_summary, changes, source_counts)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict (incident_id, incident_revision) do nothing`,
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
-        inc.id, inc.revision, aiRunId, considered, effective.problemTypeId, effective.severity, effective.activeHazard,
-        JSON.stringify({ ai: aiSnapshot(ai), ai_result: ai, assessed, effective, reused_ai_run: reusable ?? false }),
-        JSON.stringify(changes), JSON.stringify(counts),
+        inc.id, inc.revision, res.aiRunId, reportsConsidered, assessed.problemTypeId, assessed.severity, assessed.activeHazard,
+        JSON.stringify({ ai: aiSnapshot(ai), assessed, all_report_ids: all.map((x) => x.id).sort(), policy_version_id: policy.id, catalog_hash: catalog.hash }),
+        JSON.stringify(r.changes), JSON.stringify(freshCounts),
       ],
     );
-    if (!ins.rowCount) return; // ya evaluada esta revisión (reintento)
-
-    const materialChange = changes.some((ch) => !("override" in ch));
-    if (materialChange) {
-      const typeName = effective.problemTypeId
-        ? (await c.query<{ name: string }>("select name from problem_types where id = $1", [effective.problemTypeId])).rows[0]?.name
-        : null;
-      await c.query(
-        `update incidents set problem_type_id = $2, severity = $3, active_hazard = $4, passage = $5, accessibility = $6,
-           priority_band = $7, priority_breakdown = $8, title = $9, revision = revision + 1, updated_at = now() where id = $1`,
-        [inc.id, effective.problemTypeId, effective.severity, effective.activeHazard, effective.passage, effective.accessibility,
-          band, breakdown, [typeName ?? "Problema sin clasificar", inc.area_name ? `— ${inc.area_name}` : null].filter(Boolean).join(" ")],
-      );
-    } else {
-      await c.query("update incidents set priority_breakdown = $2, updated_at = now() where id = $1", [inc.id, breakdown]);
-    }
-
-    // Un cambio de tipo o un peligro activo nuevo cambia la capacidad requerida: una orden activa ya no corresponde.
-    const typeChanged = previous.problemTypeId !== effective.problemTypeId;
-    const hazardOn = !previous.activeHazard && effective.activeHazard;
-    if (typeChanged || hazardOn) {
-      await markIncompatibleAssignment(c, { id: inc.id, territoryId }, [{ code: typeChanged ? "type_changed" : "active_hazard_detected", source: "assessment" }]);
-    }
     if (ai.consistency.choice === "contradiction" && chosenProbability(ai.consistency) >= policy.config.assessment.min_contradiction) {
       await openReviewItem(c, {
         territoryId, kind: "contradiction", entityType: "incident", entityId: inc.id,
-        reasons: [{ code: "reports_contradict", ai_run_id: aiRunId }], evidenceRefs: considered.map((report_id) => ({ report_id })),
+        reasons: [{ code: "reports_contradict", ai_run_id: res.aiRunId }], evidenceRefs: reportsConsidered.map((report_id) => ({ report_id })),
       });
     }
     await appendEvent(c, {
       entityType: "incident", entityId: inc.id, kind: "assessed", actorType: "system",
-      data: { revision: inc.revision, ai_run_id: aiRunId, reused: reusable ?? false, band, changes },
+      data: { revision: inc.revision, ai_run_id: res.aiRunId, band: r.band, changes: r.changes },
     });
-    await enqueue(c, { kind: "plan", entityType: "territory", entityId: territoryId, entityRevision: 0, territoryId, dedupeSuffix: `assess:${inc.id}:${inc.revision}` });
   }, pool);
 }
 
-const toColumn = (f: string) => (f === "problemTypeId" ? "problem_type_id" : f);
-
-/** Al agotar reintentos: el incidente queda con sus valores vigentes y en revisión (sin despacho automático). */
+/**
+ * Al agotar reintentos: el incidente queda con sus valores vigentes y en revisión (sin despacho automático).
+ * Si el job ya era obsoleto (el incidente cambió o se cerró), no se abre nada: otro job lo reevalúa.
+ */
 export async function onAssessIncidentFailed(deps: IntakeDeps, job: Job, error: string): Promise<void> {
+  const inc = await loadIncident(deps.pool, job.entity_id);
+  if (!inc || !OPEN_STATUSES.includes(inc.status) || inc.revision !== job.entity_revision) return;
   await openReviewItem(deps.pool, {
     territoryId: job.territory_id, kind: "provider_failure", entityType: "incident", entityId: job.entity_id,
     reasons: [{ code: "provider_failure", stage: "assess_incident", revision: job.entity_revision, error: error.slice(0, 500) }],
