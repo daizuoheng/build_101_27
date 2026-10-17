@@ -69,6 +69,22 @@ El smoke encontró dos falsos positivos de los patrones prohibidos, que ya está
 
 El título ya no recibe las descripciones de los reportes: sale solo de tipo y lugar.
 
+## Patrones prohibidos: detector de humo, no garantía
+
+Durante la revisión, la lista de `forbidden_patterns` creció para cubrir cada conjugación, negación y construcción
+del español, y cada vuelta encontraba otra. Por decisión del equipo (17 oct) quedó reducida a 5 patrones de alta
+precisión, casi sin falsos positivos:
+
+- plazo concreto de llegada o resolución («llegará en 30 minutos», «se resolverá en 24 horas»);
+- «en camino» como aviso;
+- despacho afirmado con el actor pegado al verbo («se envió una cuadrilla»);
+- «despachar».
+
+La garantía no depende de esa lista: los hechos que recibe el LLM nunca traen estado, unidades, despacho ni
+tiempos, y las instrucciones lo prohíben. La lista no se amplía salvo que aparezca un caso real en producción.
+Si hiciera falta un control semántico, la opción evaluada es una pregunta Noul de Jev sobre el texto antes de
+guardarlo.
+
 ## Para las bases existentes
 
 La política `textgen` tiene campos nuevos: `max_chars`, `max_references`, `max_reference_chars`,

@@ -87,28 +87,6 @@ const judgement = {
   },
 };
 
-/**
- * Patrones de «actor del servicio + acción» para textgen.forbidden_patterns, armados con fragmentos compartidos
- * para que las dos direcciones no se desincronicen. Siguen siendo datos de la política (strings); el código no los conoce.
- * - Rechaza: «se envió una cuadrilla», «la unidad llegará», «están enviándole una cuadrilla», «la cuadrilla llegó»
- *   (el pasado afirmativo afirmaría un estado que el backend no dio).
- * - Pasa: una negación hasta 25 caracteres antes del verbo («no ha podido llegar», «ninguna cuadrilla llegó»,
- *   «no está asignada») dentro de la misma cláusula, el actor como destinatario de un objeto («fotos al equipo»)
- *   y los pedidos en subjuntivo («piden que envíen una cuadrilla»). Con «a» personal pegada al verbo el actor es el
- *   objeto directo y se rechaza («se envió a la cuadrilla»).
- */
-const L = String.raw`(?<![\p{L}\p{N}])`;
-const R = String.raw`(?![\p{L}\p{N}])`;
-const NEGATED = String.raw`(?<!(?:^|[^\p{L}\p{N}])(?:no(?!\s+solo)|ni(?!\s+bien)|nunca|jam[áa]s|tampoco|sin que|ning[úu]n\p{L}*)(?![\p{L}\p{N}])(?:(?!\s(?:pero|y|si|que)\s)[^.;,:]){0,25})`;
-const ACTOR = String.raw`(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?|m[óo]vil(?:es)?|inspector(?:es|as?)?|[óo]rden(?:es)?)`;
-const AS_RECIPIENT = String.raw`(?<!(?:al|a la|a las|a los|del|de la|de las|de los|para el|para la|para los|a ning[úu]n\p{L}*)\s+)`;
-const VERB = String.raw`(?:lleg\p{L}*|arrib\p{L}*|(?:va|van|vamos)\s+a\s+\p{L}+|ir(?:á|án)|yendo|pasar(?:á|án)|sal(?:e|en|ió|ieron|drá|drán|iendo)|en camino|asign\p{L}*|(?:envi|enví|mand)(?!(?:e|es|en|emos)(?![\p{L}\p{N}]))\p{L}*|despach\p{L}*|derivad[oa]s?)`;
-const ACTOR_PATTERNS = [
-  String.raw`${L}${NEGATED}${VERB}${R}\s+(?:a|al|a la|a las|a los)\s+${ACTOR}${R}`,
-  `${L}${ACTOR}${R}[^.;]{0,40}?${L}${NEGATED}${VERB}${R}`,
-  `${L}${NEGATED}${VERB}${R}[^.;]{0,40}?${L}${AS_RECIPIENT}${ACTOR}${R}`,
-];
-
 export const policies = {
   intake: {
     jev_timeout_ms: 8000,
@@ -239,22 +217,18 @@ export const policies = {
     max_references: 5,
     // Las descripciones las escribe el ciudadano: se recortan antes de pasarlas al LLM.
     max_reference_chars: 500,
-    // El texto se rechaza (y va la plantilla) si promete despacho o tiempos: eso lo decide el backend, no el LLM.
-    // Es una segunda barrera, no la principal: los hechos nunca traen estado ni despacho y las instrucciones lo
-    // prohíben. Se prioriza no rechazar narración legítima de los reportes; los casos nuevos se suman con tests.
-    // Límites de palabra Unicode: \b es ASCII en JS y no corta después de «á». Se compilan con flags "iu".
+    // Detector de humo, no la garantía: la garantía es que los hechos nunca traen estado, unidades, despacho ni
+    // tiempos, y las instrucciones lo prohíben. Solo patrones de alta precisión (casi sin falsos positivos); no se
+    // amplían para cubrir cada forma del español. Se compilan con flags "iu"; límites de palabra Unicode.
     forbidden_patterns: [
-      // Actor del servicio + acción: ver ACTOR_PATTERNS.
-      ...ACTOR_PATTERNS,
-      // Futuro de llegada o resolución con plazo, aunque no nombre al actor: «llegará en 30 minutos», «se demorará 5 horas». El presente narrativo pasa: «el camión demora 5 días en pasar».
-      "(?<![\\p{L}\\p{N}])(?:llegará|llegarán|arribará|arribarán|irá|irán|pasará|pasarán|demorará|demorarán|tardará|tardarán|estará|estarán)\\s+(?:en|dentro de|hoy|mañana|pronto|enseguida|\\d|unos?|unas?|dos|tres|media|pocos?|pocas?)(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])(?:se\\s+(?:resolverá|solucionará|reparará|arreglará|atenderá|limpiará|levantará)|(?:será|serán)\\s+(?:resuelt|reparad|atendid|solucionad|arreglad|limpiad|levantad)\\p{L}*)(?![\\p{L}\\p{N}])",
-      // Llegada inminente sin plazo numérico: «llegan mañana», «van hoy».
-      "(?<![\\p{L}\\p{N}])(?:llega|llegan|va|van|vamos)\\s+(?:hoy|mañana|pronto|enseguida)(?![\\p{L}\\p{N}])",
-      // «en camino» como aviso al final de la frase («ya está en camino.»). «Un árbol caído en camino a la escuela» y «en Camino Carrasco» pasan.
-      "(?<![\\p{L}\\p{N}])(?:está|están|va|van|vamos|sigue|siguen)\\s+en camino(?=\\s*(?:$|[.;:!?]))",
-      // Despachar como verbo (no «despacho de pan»).
-      "(?<![\\p{L}\\p{N}])despach(?:ar|amos|ará|arán|ó|aron|ad[oa]s?|ando)(?![\\p{L}\\p{N}])",
+      // Plazo concreto de llegada o resolución: «llegará en 30 minutos», «se resolverá en 24 horas».
+      String.raw`(?<![\p{L}\p{N}])(?:llegará|llegarán|arribará|arribarán|demorará|demorarán|tardará|tardarán|estará|estarán)\s+(?:en|dentro de)\s+\d+\s*(?:minutos?|min|horas?|hs?|días?)(?![\p{L}\p{N}])`,
+      String.raw`(?<![\p{L}\p{N}])se\s+(?:resolverá|solucionará|reparará|arreglará|atenderá)\s+(?:en|dentro de)\s+\d+\s*(?:minutos?|min|horas?|hs?|días?)(?![\p{L}\p{N}])`,
+      // «en camino» como aviso al final de la frase: «ya está en camino.». «En Camino Carrasco» pasa.
+      String.raw`(?<![\p{L}\p{N}])(?:está|están|va|van)\s+en camino(?=\s*(?:$|[.;:!?]))`,
+      // Despacho afirmado con el actor pegado al verbo: «se envió una cuadrilla», «se asignó la unidad».
+      String.raw`(?<![\p{L}\p{N}])se\s+(?:le\s+|les\s+)?(?:envió|enviaron|enviará|enviarán|asignó|asignaron|asignará|asignarán|mandó|mandaron|mandará|mandarán)\s+(?:a\s+)?(?:una?|el|la|los|las|\d+)?\s*(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?)(?![\p{L}\p{N}])`,
+      String.raw`(?<![\p{L}\p{N}])despach(?:ar|amos|ará|arán|ó|aron|ad[oa]s?|ando)(?![\p{L}\p{N}])`,
     ],
     instructions: {
       common:

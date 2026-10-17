@@ -141,7 +141,7 @@ describe("textos generados (textgen)", () => {
   it("una plantilla de respaldo que viola la política falla en vez de mostrarse y cachearse", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);
-    await pool.query("update message_templates set body = 'Una cuadrilla ya está en camino a {{place}}' where key = 'textgen_title'");
+    await pool.query("update message_templates set body = 'Una cuadrilla llegará en 20 minutos a {{place}}' where key = 'textgen_title'");
     await expect(generateText({ pool, llm: fakeLlm(() => "") }, await titleInput(pool, incidentId))).rejects.toThrow(/plantilla 'textgen_title' inválida/);
     expect((await texts(pool)).rows).toEqual([]);
   });
@@ -163,7 +163,7 @@ describe("textos generados (textgen)", () => {
     const input = await titleInput(pool, incidentId);
     input.facts.place = "esquina donde la cuadrilla está en camino";
     const res = await generateText({ pool, llm: null }, input);
-    expect(res.body).toBe("Bache — esquina donde la [dato omitido]");
+    expect(res.body).toBe("Bache — esquina donde la cuadrilla [dato omitido]");
   });
 
   it("el recorte de la plantilla no parte emojis", async () => {
@@ -231,7 +231,7 @@ describe("textos generados (textgen)", () => {
   it("una plantilla que arma una frase prohibida con datos numéricos es error de configuración", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);
-    await pool.query("update message_templates set body = 'Llegará {{count}} veces' where key = 'textgen_title'");
+    await pool.query("update message_templates set body = 'Llegará en {{count}} minutos' where key = 'textgen_title'");
     const input = { ...(await titleInput(pool, incidentId)), facts: { count: 5 } };
     await expect(generateText({ pool, llm: null }, input)).rejects.toThrow(/datos numéricos/);
   });
