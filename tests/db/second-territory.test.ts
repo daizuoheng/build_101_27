@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
-import { seedDemo } from "../../seeds/demo";
+import { refreshDemoPositions, seedDemo } from "../../seeds/demo";
 import { demoB, seedTerritoryDemoB } from "../../seeds/territory-demo-b";
 import { getActiveCatalog } from "@/server/config/catalog";
 import { getActivePolicy } from "@/server/config/policies";
@@ -17,7 +17,10 @@ import { resetDb, testDb } from "./setup";
 const INSIDE_B = { lon: 0.006, lat: 0.003 };
 const PLAZA_INDEPENDENCIA = { lon: -56.1993, lat: -34.9068 };
 
-/** Unidades habilitadas candidatas de un territorio: el filtro es por territorio, nunca por cercanía sola. */
+/**
+ * Contrato para el snapshot de `runPlan` (todavía no existe código de producción que elija unidades): las
+ * candidatas de un territorio se filtran por `territory_id`, nunca por cercanía. Ver la nota del segundo territorio.
+ */
 const unitsOf = async (territory: string) =>
   (await (await testDb()).query<{ slug: string }>("select slug from response_units where territory_id = $1 and status = 'enabled' order by slug", [territory])).rows.map((r) => r.slug);
 
@@ -57,7 +60,7 @@ describe("segundo territorio (Montevideo es configuración)", () => {
     expect(await getTerritoryView(pool, { slug: "demo-b" })).toMatchObject({ name: demoB.name, areaLabel: "Sector", zoom: 15 });
   });
 
-  it("las unidades del territorio no incluyen las de Montevideo, aunque una esté físicamente dentro de demo-b", async () => {
+  it("contrato para runPlan: la unidad de Montevideo sigue en su territorio aunque se mueva dentro de demo-b", async () => {
     const pool = await testDb();
     expect(await unitsOf(b)).toEqual(["cuadrilla-b"]);
     expect(await unitsOf(mvd)).not.toContain("cuadrilla-b");
@@ -100,7 +103,7 @@ describe("segundo territorio (Montevideo es configuración)", () => {
   it("reseedear tras cambiar la config publica una versión nueva y conserva la anterior", async () => {
     const pool = await testDb();
     const v1 = await getActivePolicy(pool, b, "grouping");
-    await seedTerritoryDemoB(pool, { policies: { grouping: { ...demoB.policies.grouping, radius_m: 120 } } });
+    await seedTerritoryDemoB(pool, { policies: { ...demoB.policies, grouping: { ...demoB.policies.grouping, radius_m: 120 } } });
 
     const v2 = await getActivePolicy(pool, b, "grouping");
     expect(v2).toMatchObject({ version: v1.version + 1, config: { radius_m: 120 } });
@@ -113,6 +116,42 @@ describe("segundo territorio (Montevideo es configuración)", () => {
     await seedTerritoryDemoB(pool);
     expect((await getActivePolicy(pool, b, "grouping")).config.radius_m).toBe(75);
     expect(await activeCounts(b)).toEqual(Object.fromEntries(Object.keys(demoB.policies).map((k) => [k, 1])));
+  });
+
+  it("reseedear converge territorio, área, catálogo y unidad al archivo", async () => {
+    const pool = await testDb();
+    const unitState = async () =>
+      (await pool.query(
+        `select st_x(location::geometry) as lon, location_updated_at, array(select cap.slug from unit_capabilities uc
+           join capabilities cap on cap.id = uc.capability_id where uc.unit_id = u.id order by cap.slug) as caps
+         from response_units u where territory_id = $1`,
+        [b],
+      )).rows;
+    expect(await unitState()).toEqual([{ lon: demoB.unit.position.lon, location_updated_at: null, caps: ["limpieza", "vialidad"] }]);
+    await refreshDemoPositions(pool, "demo-b");
+
+    await seedTerritoryDemoB(pool, {
+      defaultZoom: 14,
+      square: { minLon: 0, minLat: 0, maxLon: 0.02, maxLat: 0.02 },
+      problemTypes: ["bache"],
+      unit: { ...demoB.unit, capabilities: ["vialidad"], position: { lon: 0.015, lat: 0.015 } },
+    });
+    expect(await getTerritoryView(pool, { slug: "demo-b" })).toMatchObject({ zoom: 14 });
+    expect(await locatePoint(pool, 0.015, 0.015)).toMatchObject({ territoryId: b, areaName: demoB.area.name });
+    expect((await getActiveCatalog(pool, b)).types.map((t) => t.slug)).toEqual(["bache"]);
+    // La posición cambió: la fecha de la anterior no vale para la nueva.
+    expect(await unitState()).toEqual([{ lon: 0.015, location_updated_at: null, caps: ["vialidad"] }]);
+
+    await seedTerritoryDemoB(pool);
+    expect((await getActiveCatalog(pool, b)).types.map((t) => t.slug).sort()).toEqual(["bache", "basura_acumulada"]);
+    expect(await locatePoint(pool, 0.015, 0.015)).toBeNull();
+    expect(await unitState()).toEqual([{ lon: demoB.unit.position.lon, location_updated_at: null, caps: ["limpieza", "vialidad"] }]);
+    const seeded = await pool.query("select count(*)::int as n from events where kind = 'demo_seeded' and entity_id = (select id from response_units where territory_id = $1)", [b]);
+    expect(seeded.rows[0].n).toBe(1);
+    // Con la misma posición, reseedear no le quita la vigencia.
+    await refreshDemoPositions(pool, "demo-b");
+    await seedTerritoryDemoB(pool);
+    expect((await unitState())[0].location_updated_at).not.toBeNull();
   });
 
   it("reseedear con la versión 1 inactiva deja una versión activa con la config del seed", async () => {

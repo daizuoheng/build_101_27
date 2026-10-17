@@ -3,9 +3,8 @@
 import type { Pool } from "pg";
 import { isValidPolicy, type PolicyKind } from "../src/server/config/policies";
 import { withTx } from "../src/server/db/tx";
+import { appendEvent } from "../src/server/events/append";
 import { policies } from "./policies";
-
-const SQUARE = { minLon: 0, minLat: 0, maxLon: 0.01, maxLat: 0.01 };
 
 export const demoB = {
   slug: "demo-b",
@@ -15,7 +14,8 @@ export const demoB = {
   defaultZoom: 15,
   locale: "es",
   emergencyChannel: { text: "canal de emergencias de prueba." },
-  square: SQUARE,
+  /** Cobertura del territorio y geometría de su única área. */
+  square: { minLon: 0, minLat: 0, maxLon: 0.01, maxLat: 0.01 },
   area: { externalId: "sector-unico", name: "Sector único" },
   /** Catálogo propio: solo dos tipos habilitados. */
   problemTypes: ["bache", "basura_acumulada"],
@@ -36,67 +36,108 @@ export const demoB = {
   },
 };
 
+export type DemoB = typeof demoB;
+
 /**
- * Requiere `seedAll` antes (catálogo y capacidades globales). Idempotente por clave natural.
- * `opts.policies` reemplaza por kind las políticas de `demoB` (los tests lo usan para simular un cambio de config).
+ * Requiere `seedAll` antes (catálogo y capacidades globales). Reejecutable y convergente: a diferencia de
+ * `seedAll`, que nunca pisa lo que pudo cambiar operación, demo-b es sintético y no tiene operación, así que
+ * cada corrida lo deja como dice `demoB` (con `overrides` encima; los tests lo usan para simular un cambio).
+ * No toca el estado de la unidad ni le pone fecha de posición: eso es `refreshDemoPositions`.
  */
-export async function seedTerritoryDemoB(
-  pool: Pool,
-  opts: { policies?: Partial<Record<PolicyKind, unknown>> } = {},
-): Promise<{ territoryId: string; unitId: string }> {
-  const t = demoB;
-  const env = `st_multi(st_makeenvelope(${SQUARE.minLon}, ${SQUARE.minLat}, ${SQUARE.maxLon}, ${SQUARE.maxLat}, 4326))`;
+export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> = {}): Promise<{ territoryId: string; unitId: string }> {
+  const t = { ...demoB, ...overrides };
+  const sq = t.square;
+  const env = "st_multi(st_makeenvelope($1::float8, $2::float8, $3::float8, $4::float8, 4326))";
+  const sqParams = [sq.minLon, sq.minLat, sq.maxLon, sq.maxLat];
   return withTx(async (c) => {
     const terr = await c.query<{ id: string }>(
       `insert into territories (slug, name, area_label, center, default_zoom, coverage, emergency_channel, locale)
-       values ($1, $2, $3, st_setsrid(st_makepoint($4, $5), 4326)::geography, $6, ${env}, $7, $8)
-       on conflict (slug) do update set slug = excluded.slug returning id`,
-      [t.slug, t.name, t.areaLabel, t.center.lon, t.center.lat, t.defaultZoom, t.emergencyChannel, t.locale],
+       values ($5, $6, $7, st_setsrid(st_makepoint($8, $9), 4326)::geography, $10, ${env}, $11, $12)
+       on conflict (slug) do update set name = excluded.name, area_label = excluded.area_label, center = excluded.center,
+         default_zoom = excluded.default_zoom, coverage = excluded.coverage, emergency_channel = excluded.emergency_channel,
+         locale = excluded.locale, updated_at = now()
+       returning id`,
+      [...sqParams, t.slug, t.name, t.areaLabel, t.center.lon, t.center.lat, t.defaultZoom, t.emergencyChannel, t.locale],
     );
     const territoryId = terr.rows[0].id;
     await c.query(
       `insert into areas (territory_id, external_id, name, geom, source_url, source_date, checksum)
-       values ($1, $2, $3, ${env}, 'synthetic', current_date, 'synthetic') on conflict (territory_id, external_id) do nothing`,
-      [territoryId, t.area.externalId, t.area.name],
+       values ($5, $6, $7, ${env}, 'synthetic', current_date, 'synthetic')
+       on conflict (territory_id, external_id) do update set name = excluded.name, geom = excluded.geom`,
+      [...sqParams, territoryId, t.area.externalId, t.area.name],
     );
+
+    // Catálogo: habilita los tipos de la lista y deshabilita los que salieron de ella.
     await c.query(
       `insert into territory_problem_types (territory_id, problem_type_id)
-       select $1, id from problem_types where slug = any($2) on conflict do nothing`,
+       select $1, id from problem_types where slug = any($2)
+       on conflict (territory_id, problem_type_id) do update set enabled = true`,
       [territoryId, t.problemTypes],
     );
-    const enabled = await c.query<{ n: number }>("select count(*)::int as n from territory_problem_types where territory_id = $1", [territoryId]);
+    await c.query(
+      `update territory_problem_types set enabled = false where territory_id = $1 and enabled
+         and problem_type_id not in (select id from problem_types where slug = any($2))`,
+      [territoryId, t.problemTypes],
+    );
+    const enabled = await c.query<{ n: number }>(
+      "select count(*)::int as n from territory_problem_types where territory_id = $1 and enabled",
+      [territoryId],
+    );
     if (enabled.rows[0].n !== t.problemTypes.length) throw new Error("catálogo de demo-b incompleto (¿falta seedAll?)");
-    // demo-b es sintético y su única fuente de verdad es este archivo: si la política activa falta o difiere
-    // de la del seed, se publica la del seed como versión nueva activa. Se versiona y no se edita (como
-    // `policy-upgrade`), porque evaluaciones y decisiones guardan el `policy_version_id` con que se calcularon.
-    for (const [kind, config] of Object.entries({ ...t.policies, ...opts.policies }) as [PolicyKind, unknown][]) {
+
+    // Políticas: si la activa falta o difiere de la del seed, se publica la del seed como versión nueva activa.
+    // Se versiona y no se edita (como `policy-upgrade`): evaluaciones y decisiones guardan el `policy_version_id`
+    // con que se calcularon, y editar esa fila reescribiría su traza.
+    for (const [kind, config] of Object.entries(t.policies) as [PolicyKind, unknown][]) {
       if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' de demo-b no valida contra su esquema`);
       const active = await c.query<{ same: boolean }>(
         "select config = $3::jsonb as same from policy_versions where territory_id = $1 and kind = $2 and active",
-        [territoryId, kind, JSON.stringify(config)],
+        [territoryId, kind, config],
       );
       if (active.rows[0]?.same) continue;
       await c.query("update policy_versions set active = false where territory_id = $1 and kind = $2 and active", [territoryId, kind]);
       await c.query(
         `insert into policy_versions (territory_id, kind, version, config, active)
          select $1, $2, coalesce(max(version), 0) + 1, $3, true from policy_versions where territory_id = $1 and kind = $2`,
-        [territoryId, kind, JSON.stringify(config)],
+        [territoryId, kind, config],
       );
     }
+
     const u = t.unit;
-    await c.query(
-      `insert into response_units (territory_id, slug, name, unit_kind, capacity, location, location_updated_at, service_radius_m, is_demo)
-       values ($1, $2, $3, $4, $5, st_setsrid(st_makepoint($6, $7), 4326)::geography, now(), $8, true)
-       on conflict (territory_id, slug) do nothing`,
-      [territoryId, u.slug, u.name, u.unitKind, u.capacity, u.position.lon, u.position.lat, u.serviceRadiusM],
+    const unitParams = [territoryId, u.slug, u.name, u.unitKind, u.capacity, u.position.lon, u.position.lat, u.serviceRadiusM];
+    const ins = await c.query<{ id: string }>(
+      `insert into response_units (territory_id, slug, name, unit_kind, capacity, location, service_radius_m, is_demo)
+       values ($1, $2, $3, $4, $5, st_setsrid(st_makepoint($6, $7), 4326)::geography, $8, true)
+       on conflict (territory_id, slug) do nothing returning id`,
+      unitParams,
     );
-    const unitId = (await c.query<{ id: string }>("select id from response_units where territory_id = $1 and slug = $2", [territoryId, u.slug])).rows[0].id;
-    const caps = await c.query(
-      "insert into unit_capabilities (unit_id, capability_id) select $1, id from capabilities where slug = any($2) on conflict do nothing returning 1",
+    let unitId = ins.rows[0]?.id;
+    if (unitId) {
+      await appendEvent(c, { entityType: "response_unit", entityId: unitId, kind: "demo_seeded", actorType: "system" });
+    } else {
+      // Una posición nueva no hereda la vigencia de la anterior: si cambió, se borra su fecha.
+      const upd = await c.query<{ id: string }>(
+        `update response_units set name = $3, unit_kind = $4, capacity = $5, service_radius_m = $8, updated_at = now(),
+           location_updated_at = case when st_equals(location::geometry, st_setsrid(st_makepoint($6, $7), 4326))
+             then location_updated_at end,
+           location = st_setsrid(st_makepoint($6, $7), 4326)::geography
+         where territory_id = $1 and slug = $2 returning id`,
+        unitParams,
+      );
+      unitId = upd.rows[0].id;
+    }
+
+    // Capacidades: exactamente las de la lista.
+    await c.query(
+      "delete from unit_capabilities where unit_id = $1 and capability_id not in (select id from capabilities where slug = any($2))",
+      [unitId, u.capabilities],
+    );
+    await c.query(
+      "insert into unit_capabilities (unit_id, capability_id) select $1, id from capabilities where slug = any($2) on conflict do nothing",
       [unitId, u.capabilities],
     );
     const linked = await c.query<{ n: number }>("select count(*)::int as n from unit_capabilities where unit_id = $1", [unitId]);
-    if (linked.rows[0].n !== u.capabilities.length) throw new Error(`capacidades de demo-b incompletas (${caps.rowCount} nuevas)`);
+    if (linked.rows[0].n !== u.capabilities.length) throw new Error("capacidades de demo-b incompletas (¿falta seedAll?)");
     return { territoryId, unitId };
   }, pool);
 }

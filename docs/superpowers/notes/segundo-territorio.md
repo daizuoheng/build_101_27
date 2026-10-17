@@ -6,7 +6,8 @@ en `seedAll`. Tiene:
 - un cuadrado de ~1 km en (0°, 0°), con cobertura y un área;
 - dos tipos habilitados (`bache`, `basura_acumulada`);
 - las políticas del seed con dos diferencias: `grouping.radius_m = 75` y `textgen.enabled = false`;
-- una cuadrilla (`cuadrilla-b`).
+- una cuadrilla (`cuadrilla-b`), sin fecha de posición como el resto de las unidades de demo
+  (`refreshDemoPositions(pool, "demo-b")` la marca vigente).
 
 ## Qué prueba `tests/db/second-territory.test.ts`
 
@@ -15,26 +16,36 @@ en `seedAll`. Tiene:
 - Las políticas y el catálogo se leen por territorio: radio de agrupación 75 contra 30, `textgen` apagado contra
   prendido, catálogo de 2 tipos con `catalog_hash` distinto. La vista del territorio usa su nombre, su etiqueta de
   área ("Sector") y su zoom.
-- La consulta de unidades por territorio devuelve solo `cuadrilla-b`, aunque una cuadrilla de Montevideo se mueva
-  físicamente dentro de `demo-b`. El filtro es por territorio, no por cercanía.
+- Contrato para el planificador: una consulta de unidades filtrada por territorio devuelve solo `cuadrilla-b`, aunque
+  una cuadrilla de Montevideo se mueva físicamente dentro de `demo-b`. Es una consulta del test, no de producción
+  (todavía no hay código que elija unidades; ver **Pendiente**).
 - Un reporte en `demo-b` recorre recepción → confirmación → worker (`process_report`) y crea el incidente en `demo-b`,
   con su área.
 - `seedAll` de producción no crea `demo-b`, y reseedear `demo-b` es idempotente.
 - Reseedear `demo-b` con otra config publica una versión nueva activa y deja la anterior intacta e inactiva; si no
   queda ninguna activa (p. ej. la v1 desactivada), el reseed publica una. Siempre hay exactamente una activa por kind.
+- Reseedear con otro zoom, cuadrado, catálogo, capacidades o posición deja `demo-b` como dice el archivo: el tipo que
+  sale del catálogo queda deshabilitado, la capacidad que sale se borra y una posición nueva pierde la fecha de la
+  anterior. El evento `demo_seeded` se registra una sola vez, al crear la unidad.
 
 **Pendiente**: el plan pide además que "su plan solo considera unidades de demo-b". El snapshot del planificador
 (`src/server/pipeline/plan.ts`, sesión A) todavía no existe en `epic/nucleo`. Por ahora el test fija la consulta de
 unidades por territorio que ese snapshot tiene que respetar. Cuando entre `runPlan`, conviene agregar el caso:
 `runPlan(demo-b)` ⇒ `plan_items` solo con `cuadrilla-b`.
 
-## Políticas de `demo-b`: se versionan, no se editan
+## El seed de `demo-b` converge al archivo
 
-`seedAll` nunca pisa una política válida, porque en Montevideo la puede haber cambiado operación. `demo-b` no tiene
-operación: su única fuente de verdad es `seeds/territory-demo-b.ts`. Por eso su seed compara la versión activa con
-la del archivo y, si falta o difiere, publica la del archivo como `max(version) + 1` activa, igual que
-`policy-upgrade`. No usa `on conflict do update set config`: las evaluaciones y decisiones guardan el
-`policy_version_id` con que se calcularon, y editar esa fila cambiaría a posteriori lo que dice esa traza.
+`seedAll` nunca pisa lo existente, porque en Montevideo lo puede haber cambiado operación. `demo-b` no tiene
+operación: su única fuente de verdad es `seeds/territory-demo-b.ts`, así que cada corrida lo deja como dice el
+archivo (el estado de la unidad sí queda fuera, porque los tests lo cambian a propósito).
+
+Las políticas se versionan, no se editan: el seed compara la versión activa con la del archivo y, si falta o
+difiere, publica la del archivo como `max(version) + 1` activa, igual que `policy-upgrade`. No usa
+`on conflict do update set config`: las evaluaciones y decisiones guardan el `policy_version_id` con que se
+calcularon, y editar esa fila cambiaría a posteriori lo que dice esa traza.
+
+Ese SQL de publicación hoy está repetido en `seeds/index.ts`, `scripts/policy-upgrade.ts` y este seed. Un helper
+compartido (`publishPolicyVersion`) los unificaría, pero toca archivos de otras tareas: queda para después.
 
 ## Referencias a Montevideo y al locale en `src/`
 
