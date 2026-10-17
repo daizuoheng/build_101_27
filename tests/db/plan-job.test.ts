@@ -120,8 +120,6 @@ describe("job plan", () => {
 
   it("con otra corrida del territorio en curso no calcula en paralelo: difiere el pedido a un único job, sin perder ninguno", async () => {
     await incident(pool, t, { slug: "bache" });
-    // Tramo largo (1 h) para que los dos pedidos caigan, salvo cruce exacto de la hora entre ambos, en el mismo job diferido.
-    await pool.query("update policy_versions set config = config || '{\"busy_retry_sec\": 3600}' where territory_id = $1 and kind = 'planning' and active", [t]);
     for (const s of ["a", "b", "c"]) await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: s });
     const [a, b, c] = (await pool.query("select * from jobs where kind = 'plan' order by created_at")).rows;
     await pool.query("update jobs set status = 'running' where id = any($1)", [[a.id, b.id]]); // reclamados por otros workers
@@ -149,6 +147,78 @@ describe("job plan", () => {
     await planHandler(testPlanner).run({ pool }, job);
     expect((await pool.query("select trigger from plan_runs")).rows).toEqual([{ trigger: "deferred:event+1" }]);
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and status = 'pending'")).n).toBe(0);
+  });
+
+  it("una corrida junta el job diferido pendiente aunque no haya vencido; un pedido posterior se difiere en uno nuevo", async () => {
+    await incident(pool, t, { slug: "bache" });
+    for (const s of ["a", "b"]) await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: s });
+    const [a, b] = (await pool.query("select * from jobs where kind = 'plan' order by created_at")).rows;
+    const deferWhileBusy = async (job: typeof a) => {
+      await pool.query("update jobs set status = 'running' where id = $1", [job.id]); // reclamado por un worker
+      const busy = await pool.connect();
+      try {
+        await busy.query("begin");
+        await busy.query("select pg_advisory_xact_lock(hashtext('plan'), hashtext($1))", [t]);
+        await planHandler(testPlanner).run({ pool }, { ...job, territory_id: t, payload: { trigger: "event" } });
+      } finally {
+        await busy.query("rollback");
+        busy.release();
+      }
+    };
+    await deferWhileBusy(a);
+    const first = (await one(pool, "select id, run_after > now() as later from jobs where dedupe_key like '%:deferred:%'"));
+    expect(first.later).toBe(true);
+
+    // Otra corrida (el pedido b) arranca antes de que venza el diferido: lo junta en vez de dejarlo para un plan repetido.
+    await planHandler(testPlanner).run({ pool }, { ...b, territory_id: t, payload: { trigger: "event" } });
+    expect((await one(pool, "select status, last_error from jobs where id = $1", [first.id]))).toEqual({ status: "done", last_error: `coalesced:${b.id}` });
+    expect((await one(pool, "select trigger from plan_runs")).trigger).toBe("event+1");
+
+    // Un pedido diferido después no reutiliza el job ya juntado: crea uno nuevo pendiente.
+    await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: "c" });
+    const c = (await pool.query("select * from jobs where kind = 'plan' and dedupe_key like '%:c'")).rows[0];
+    await deferWhileBusy(c);
+    const pending = await pool.query("select id from jobs where kind = 'plan' and status = 'pending' and dedupe_key like '%:deferred:%'");
+    expect(pending.rows).toHaveLength(1);
+    expect(pending.rows[0].id).not.toBe(first.id);
+  });
+
+  it("si el job diferido está tomado por una corrida en curso o ya falló un intento, difiere en uno nuevo sin esperar", async () => {
+    await incident(pool, t, { slug: "bache" });
+    for (const s of ["a", "b"]) await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: s });
+    const [a, b] = (await pool.query("select * from jobs where kind = 'plan' order by created_at")).rows;
+    const later = new Date(Date.now() + 60_000);
+    const d1 = await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: "deferred:x", runAfter: later });
+    const d2 = await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: "deferred:y", runAfter: later });
+    await pool.query("update jobs set attempts = 1 where id = $1", [d2.id]); // en espera tras un intento fallido
+    await pool.query("update jobs set status = 'running' where id = any($1)", [[a.id, b.id]]);
+
+    // Una corrida en curso: tiene el lock de plan y ya juntó d1 (sin confirmar todavía).
+    const busy = await pool.connect();
+    try {
+      await busy.query("begin");
+      await busy.query("select pg_advisory_xact_lock(hashtext('plan'), hashtext($1))", [t]);
+      await busy.query("update jobs set status = 'done' where id = $1", [d1.id]);
+      const run = planHandler(testPlanner).run({ pool }, { ...a, territory_id: t, payload: { trigger: "event" } });
+      const settled = await Promise.race([run.then(() => true), new Promise((r) => setTimeout(() => r(false), 2000))]);
+      expect(settled).toBe(true); // no se quedó esperando la fila de d1
+    } finally {
+      await busy.query("rollback");
+      busy.release();
+    }
+    const fresh = await one(pool, "select id, status from jobs where dedupe_key like $1", [`%:deferred:${a.id}`]);
+    expect(fresh.status).toBe("pending");
+    expect([d1.id, d2.id]).not.toContain(fresh.id);
+  });
+
+  it("una base con la política planning anterior (sin busy_retry_sec) la actualiza el seed como versión nueva", async () => {
+    await pool.query("update policy_versions set config = config - 'busy_retry_sec' where territory_id = $1 and kind = 'planning' and active", [t]);
+    await expect(runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner })).rejects.toThrow(/busy_retry_sec/);
+    await seedAll(pool, { importAreas: false });
+    const active = await one(pool, "select version, config from policy_versions where territory_id = $1 and kind = 'planning' and active", [t]);
+    expect(active.version).toBe(2);
+    expect(active.config.busy_retry_sec).toBe(10);
+    expect((await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner })).planRunId).toEqual(expect.any(String));
   });
 
   it("runPlan directo espera la corrida en curso en vez de diferirse", async () => {
