@@ -92,9 +92,11 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
 
     // Políticas: si la activa falta o difiere de la del seed, se publica la del seed como versión nueva activa.
     // Se versiona y no se edita (como `policy-upgrade`): evaluaciones y decisiones guardan el `policy_version_id`
-    // con que se calcularon, y editar esa fila reescribiría su traza.
+    // con que se calcularon, y editar esa fila reescribiría su traza. El lock es el mismo de `policy-upgrade`,
+    // para que dos publicaciones del mismo kind no choquen en `max(version) + 1`.
     for (const [kind, config] of Object.entries(t.policies) as [PolicyKind, unknown][]) {
       if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' de demo-b no valida contra su esquema`);
+      await c.query("select pg_advisory_xact_lock(hashtext($1))", [`policy:${territoryId}:${kind}`]);
       const active = await c.query<{ same: boolean }>(
         "select config = $3::jsonb as same from policy_versions where territory_id = $1 and kind = $2 and active",
         [territoryId, kind, config],
@@ -108,28 +110,23 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       );
     }
 
+    // Unidad: un solo upsert. Una posición nueva no hereda la vigencia de la anterior: si cambió, se borra su fecha.
+    // `xmax = 0` distingue la fila recién insertada, la única que registra `demo_seeded` (como `seedDemo`).
     const u = t.unit;
-    const unitParams = [territoryId, u.slug, u.name, u.unitKind, u.capacity, u.position.lon, u.position.lat, u.serviceRadiusM];
-    const ins = await c.query<{ id: string }>(
+    const unit = await c.query<{ id: string; inserted: boolean }>(
       `insert into response_units (territory_id, slug, name, unit_kind, capacity, location, service_radius_m, is_demo)
        values ($1, $2, $3, $4, $5, st_setsrid(st_makepoint($6, $7), 4326)::geography, $8, true)
-       on conflict (territory_id, slug) do nothing returning id`,
-      unitParams,
+       on conflict (territory_id, slug) do update set name = excluded.name, unit_kind = excluded.unit_kind,
+         capacity = excluded.capacity, service_radius_m = excluded.service_radius_m, is_demo = true, updated_at = now(),
+         location_updated_at = case when st_equals(response_units.location::geometry, excluded.location::geometry)
+           then response_units.location_updated_at end,
+         location = excluded.location
+       returning id, (xmax = 0) as inserted`,
+      [territoryId, u.slug, u.name, u.unitKind, u.capacity, u.position.lon, u.position.lat, u.serviceRadiusM],
     );
-    let unitId = ins.rows[0]?.id;
-    if (unitId) {
+    const unitId = unit.rows[0].id;
+    if (unit.rows[0].inserted) {
       await appendEvent(c, { entityType: "response_unit", entityId: unitId, kind: "demo_seeded", actorType: "system" });
-    } else {
-      // Una posición nueva no hereda la vigencia de la anterior: si cambió, se borra su fecha.
-      const upd = await c.query<{ id: string }>(
-        `update response_units set name = $3, unit_kind = $4, capacity = $5, service_radius_m = $8, is_demo = true, updated_at = now(),
-           location_updated_at = case when st_equals(location::geometry, st_setsrid(st_makepoint($6, $7), 4326))
-             then location_updated_at end,
-           location = st_setsrid(st_makepoint($6, $7), 4326)::geography
-         where territory_id = $1 and slug = $2 returning id`,
-        unitParams,
-      );
-      unitId = upd.rows[0].id;
     }
 
     // Capacidades: exactamente las de la lista.

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
 import { refreshDemoPositions, seedDemo } from "../../seeds/demo";
+import { policies } from "../../seeds/policies";
 import { demoB, seedTerritoryDemoB } from "../../seeds/territory-demo-b";
 import { getActiveCatalog } from "@/server/config/catalog";
 import { getActivePolicy } from "@/server/config/policies";
@@ -47,8 +48,11 @@ describe("segundo territorio (Montevideo es configuración)", () => {
 
   it("políticas y catálogo se leen por territorio", async () => {
     const pool = await testDb();
+    // Montevideo se compara con el seed, no con un número: el test es sobre el borde entre territorios.
+    expect(policies.grouping.radius_m).not.toBe(75);
+    expect(policies.textgen.enabled).toBe(true);
     expect((await getActivePolicy(pool, b, "grouping")).config.radius_m).toBe(75);
-    expect((await getActivePolicy(pool, mvd, "grouping")).config.radius_m).toBe(30);
+    expect((await getActivePolicy(pool, mvd, "grouping")).config.radius_m).toBe(policies.grouping.radius_m);
     expect((await getActivePolicy(pool, b, "textgen")).config.enabled).toBe(false);
     expect((await getActivePolicy(pool, mvd, "textgen")).config.enabled).toBe(true);
 
