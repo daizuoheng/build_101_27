@@ -82,6 +82,7 @@ export async function getDraftView(db: Db, reportId: string, sessionId: string):
       : null,
     card: {
       typeName,
+      description: r.description?.trim() || null,
       severity: (latest?.severity as DraftView["card"]["severity"]) ?? null,
       place: r.location_text,
       areaName: area,

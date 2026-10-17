@@ -1,3 +1,4 @@
+import { isUuid } from "../ids";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { Db } from "../db/pool";
@@ -44,7 +45,7 @@ export async function getReport(db: Db, reportId: string, opts: { forUpdate?: bo
 
 /** Carga el reporte verificando que pertenezca a la sesión ciudadana (el id visible no autoriza). */
 export async function getOwnedReport(db: Db, reportId: string, sessionId: string, opts: { forUpdate?: boolean } = {}) {
-  if (!/^[0-9a-f-]{36}$/i.test(reportId)) throw notFound("Reporte inexistente.");
+  if (!isUuid(reportId)) throw notFound("Reporte inexistente.");
   const r = await getReport(db, reportId, opts);
   if (r.citizen_session_id !== sessionId) throw forbidden();
   return r;
@@ -102,6 +103,23 @@ export async function appendCitizenMessage(
   );
   const revision = await bumpRevision(db, r);
   return { messageId: rows[0].id, duplicate: false, revision };
+}
+
+/**
+ * Saca de la descripción un mensaje que no es relato del problema (una respuesta corta como «sí» o «enviar», una
+ * consulta de estado o una dirección escrita en respuesta a un pedido de ubicación). El mensaje queda en la
+ * conversación; solo deja de formar parte de la descripción que ven la ficha, Jev al procesar y la unidad.
+ * Solo quita la última línea si es exactamente ese texto (es lo que agregó `appendCitizenMessage`).
+ */
+export async function excludeFromDescription(db: Db, reportId: string, body: string): Promise<void> {
+  await db.query(
+    `update reports set description = nullif(case
+       when description = $2 then ''
+       when right(description, length($2) + 1) = E'\\n' || $2 then left(description, length(description) - length($2) - 1)
+       else description end, '')
+     where id = $1`,
+    [reportId, body],
+  );
 }
 
 export async function appendAssistantMessage(
