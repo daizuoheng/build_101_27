@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { seedAll } from "../../seeds";
 import { seedDemo } from "../../seeds/demo";
-import { buildSnapshot, enqueuePeriodicPlans, planHandler, runPlan } from "@/server/pipeline/plan";
+import { buildSnapshot, enqueuePeriodicPlans, periodicPlanTask, planHandler, runPlan } from "@/server/pipeline/plan";
 import { enqueue } from "@/server/jobs/queue";
 import type { BuildPlan } from "@/shared/contracts/plan";
 import { resetDb, testDb } from "./setup";
@@ -68,6 +68,42 @@ describe("job plan", () => {
     expect(snapshot.strategies[alumbrado]).toBe("zone_owner");
     expect(snapshot.defaultStrategy).toBe("nearest_mobile");
     expect(policy).toMatchObject({ window_hours: 24, weight_hours: 2, cap_hours: 12, max_distance_m: 3000, position_max_age_min: 30 });
+  });
+
+  it("una banda promovida por antigüedad actualiza el desglose, invalida la explicación de prioridad y reencola textgen", async () => {
+    const viejo = await incident(pool, t, { slug: "bache", severity: "low", hoursAgo: 50 }); // priority_band 'low' en el insert
+    await pool.query(
+      `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body) values
+         ('explain_priority', 'incident', $1, 1, 'Prioridad baja'), ('title', 'incident', $1, 1, 'Bache')`,
+      [viejo],
+    );
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    const inc = await one(pool, "select priority_band, priority_breakdown from incidents where id = $1", [viejo]);
+    expect(inc.priority_band).toBe("medium");
+    expect(inc.priority_breakdown).toMatchObject({ promoted_by_age: true, computed_band: "medium" });
+    expect((await pool.query("select purpose from generated_texts where entity_id = $1 order by purpose", [viejo])).rows).toEqual([{ purpose: "title" }]);
+    const job = await one(pool, "select entity_revision, dedupe_key from jobs where kind = 'textgen' and entity_id = $1", [viejo]);
+    expect(job).toMatchObject({ entity_revision: 1 });
+    expect(job.dedupe_key).toMatch(/:band:medium:/);
+
+    // Segunda corrida sin cambio de banda: no borra ni encola de nuevo.
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'textgen' and entity_id = $1", [viejo])).n).toBe(1);
+  });
+
+  it("si la banda vuelve a un valor que ya tuvo en la misma revisión, la explicación se vuelve a pedir", async () => {
+    const viejo = await incident(pool, t, { slug: "bache", severity: "low", hoursAgo: 50 });
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner }); // low → medium
+    await pool.query("update jobs set status = 'done' where kind = 'textgen' and entity_id = $1", [viejo]); // el worker lo corrió
+    await pool.query(
+      "insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body) values ('explain_priority', 'incident', $1, 1, 'Prioridad baja')",
+      [viejo],
+    );
+    // La banda vuelve a low sin revisión nueva (p. ej. una versión de política que se revierte) y el plan la promueve otra vez.
+    await pool.query("update incidents set priority_band = 'low' where id = $1", [viejo]);
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    expect((await one(pool, "select count(*)::int as n from generated_texts where entity_id = $1 and purpose = 'explain_priority'", [viejo])).n).toBe(0);
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'textgen' and entity_id = $1 and status = 'pending'", [viejo])).n).toBe(1);
   });
 
   it("guarda el plan, deja obsoleto el anterior y encola dispatch si hay propuestas", async () => {
@@ -244,10 +280,29 @@ describe("job plan", () => {
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan'")).n).toBe(0);
   });
 
+  it("la tarea periódica del worker solo existe si hay handler para plan", async () => {
+    expect(periodicPlanTask({}, pool)).toBeUndefined(); // sin handler: no se llena la cola de jobs que fallan
+    const task = periodicPlanTask({ plan: planHandler(testPlanner) }, pool)!;
+    expect(task.everyMs).toBe(60_000);
+    await task.run();
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan'")).n).toBe(1);
+  });
+
   it("la replanificación periódica encola un job por territorio por intervalo", async () => {
     const now = new Date("2026-10-17T22:00:00Z");
     expect(await enqueuePeriodicPlans(pool, now)).toBe(1);
     expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 60_000))).toBe(0); // mismo intervalo de 5 min
     expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 6 * 60_000))).toBe(1);
+  });
+
+  it("un job periódico que agotó sus intentos no se revive en el mismo intervalo; el siguiente encola otro", async () => {
+    const now = new Date("2026-10-17T22:00:00Z");
+    expect(await enqueuePeriodicPlans(pool, now)).toBe(1);
+    await pool.query("update jobs set status = 'failed', attempts = 3, last_error = 'roto' where kind = 'plan'");
+    // El worker mira el reloj cada minuto: el tick siguiente cae en el mismo intervalo de 5 min.
+    expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 60_000))).toBe(0);
+    expect(await one(pool, "select status, attempts from jobs where kind = 'plan'")).toEqual({ status: "failed", attempts: 3 });
+    expect(await enqueuePeriodicPlans(pool, new Date(now.getTime() + 6 * 60_000))).toBe(1);
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and status = 'pending'")).n).toBe(1);
   });
 });
