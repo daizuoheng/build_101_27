@@ -2,9 +2,19 @@
 
 Actualizado: 17 de octubre de 2026 (segunda sesión). Workspace: `/Users/fededallo/Desktop/hackaton`, repo `daizuoheng/build_101_27`, rama `main`.
 
-## Estado real
+## Estado real (actualizado 17 oct, ~16:00, rama `feat/mvp`)
 
-Diseño y plan **acordados y commiteados**. **No hay código de aplicación todavía**: ni dependencias, ni migraciones, ni tests, ni despliegue. No se ejecutaron llamadas a Jev ni a DeepSeek. No se crearon recursos en Supabase ni Railway.
+**Primer recorrido completo funcionando en local con IA real**: chat → borrador → confirmación idempotente → job → evaluación Jev → incidente visible en `/operacion`. Ver `docs/superpowers/notes/recorrido-1.md` (cómo correrlo) y `docs/superpowers/notes/jev-smoke.md` (validación de Jev 18/18, DeepSeek y Nominatim). Hechas las Tareas 1, 2, 3 y 7, y las partes de las 4, 5, 6, 8 y 13 que pide el recorrido. 29 tests (`pnpm test`).
+
+Falta: despliegue (esperando cuentas de Supabase y Railway), agrupación (T9), reevaluación y overrides (T10), planificador (T11), despacho y bandeja de unidad (T12), cola de revisión (T14) y textos generados con unidades de demo (T15).
+
+Para arrancar en local: `pnpm install && pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`. `.env` lleva las claves de Jev y DeepSeek. `.env.local` lleva `DATABASE_URL`, `SESSION_SECRET` y `DEMO_*_PASSWORD` (ver `.env.example`).
+
+Ojo: el hook de `rtk` reescribe `git` y choca con la protección del worktree; dentro del worktree usar `/usr/bin/git`.
+
+## Estado anterior (primera sesión)
+
+Diseño y plan acordados y commiteados. No se crearon recursos en Supabase ni Railway.
 
 Marco operativo confirmado: unas 12 horas desde la tarde del 17 de octubre, 3 personas más Claude, demo desde celulares reales por internet (ciudadano y bandeja de unidad) y dashboard en Mac. Por eso **se despliega** en Railway (web + worker) y Supabase (PostgreSQL con PostGIS, Storage privado); el equipo provisiona eso más adelante.
 
