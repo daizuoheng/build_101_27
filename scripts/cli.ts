@@ -56,7 +56,7 @@ const commands: Record<string, () => Promise<Command>> = {
       idProperty: args["id-property"] ?? "id",
       sourceUrl: args["source-url"],
     });
-    console.log(`áreas insertadas: ${r.inserted}, total: ${r.total}`);
+    console.log(`áreas insertadas: ${r.inserted}, actualizadas: ${r.updated}, total: ${r.total}`);
   },
 };
 

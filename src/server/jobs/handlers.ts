@@ -1,6 +1,7 @@
 import { getReport } from "../intake/drafts";
 import { evaluateRevision, respondToEvaluation } from "../intake/orchestrator";
 import { onProcessReportFailed, processReport } from "../pipeline/process-report";
+import { openReviewItem } from "../review/items";
 import type { JobKind } from "./queue";
 import type { Handler } from "./worker-loop";
 
@@ -16,6 +17,16 @@ export const handlers: Partial<Record<JobKind, Handler>> = {
         throw new Error(`${res.error.kind}: ${res.error.message}`);
       }
       await respondToEvaluation(deps, r.id, r.revision, res.value);
+    },
+    /** Sin evaluación tras agotar intentos: a revisión. El borrador sigue editable y se puede enviar igual. */
+    async onFailed(deps, job, error) {
+      await openReviewItem(deps.pool, {
+        territoryId: job.territory_id,
+        kind: "provider_failure",
+        entityType: "report",
+        entityId: job.entity_id,
+        reasons: [{ code: "provider_failure", stage: "evaluate_report", revision: job.entity_revision, error: error.slice(0, 500) }],
+      });
     },
   },
   process_report: { run: processReport, onFailed: onProcessReportFailed },

@@ -17,17 +17,27 @@ export async function runOnce(deps: IntakeDeps, handlers: Partial<Record<JobKind
   const log = opts.log ?? (() => {});
   const handler = handlers[job.kind];
   const t0 = Date.now();
+
+  // Retomado tras vencer el lease (el worker anterior murió sin cerrar) y ya sin intentos: no se corre de nuevo.
+  if (job.attempts > job.max_attempts) {
+    const msg = "el worker se interrumpió en todos los intentos (lease vencido)";
+    const { applied } = await failJob(deps.pool, { ...job, attempts: job.max_attempts }, opts.workerId, msg);
+    log(`✗ ${job.kind} ${job.entity_id}@${job.entity_revision}: ${msg}`);
+    if (applied && handler?.onFailed) await handler.onFailed(deps, job, msg).catch((e) => log(`onFailed: ${e}`));
+    return true;
+  }
+
   const heartbeat = setInterval(() => renewLease(deps.pool, job.id, opts.workerId, leaseSec).catch(() => {}), (leaseSec * 1000) / 3);
   try {
     if (!handler) throw new Error(`sin handler para ${job.kind}`);
     await handler.run(deps, job);
-    await completeJob(deps.pool, job.id);
-    log(`✓ ${job.kind} ${job.entity_id}@${job.entity_revision} ${Date.now() - t0}ms`);
+    const done = await completeJob(deps.pool, job.id, opts.workerId);
+    log(`${done ? "✓" : "⚠ lease perdido, otro worker lo retomó:"} ${job.kind} ${job.entity_id}@${job.entity_revision} ${Date.now() - t0}ms`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const { failed } = await failJob(deps.pool, job, msg);
-    log(`✗ ${job.kind} ${job.entity_id}@${job.entity_revision} intento ${job.attempts}/${job.max_attempts}: ${msg}`);
-    if (failed && handler?.onFailed) await handler.onFailed(deps, job, msg).catch((e) => log(`onFailed: ${e}`));
+    const { failed, applied } = await failJob(deps.pool, job, opts.workerId, msg);
+    log(`✗ ${job.kind} ${job.entity_id}@${job.entity_revision} intento ${job.attempts}/${job.max_attempts}: ${msg}${applied ? "" : " (lease perdido)"}`);
+    if (failed && applied && handler?.onFailed) await handler.onFailed(deps, job, msg).catch((e) => log(`onFailed: ${e}`));
   } finally {
     clearInterval(heartbeat);
   }
