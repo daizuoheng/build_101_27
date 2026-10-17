@@ -65,7 +65,7 @@ describe("segundo territorio (Montevideo es configuración)", () => {
     expect(await getTerritoryView(pool, { slug: "demo-b" })).toMatchObject({ name: demoB.name, areaLabel: "Sector", zoom: 15 });
   });
 
-  it("el geocodificador de demo-b usa su sufijo y su cuadrado, no los de Montevideo", async () => {
+  it("el geocodificador de demo-b usa su sufijo y la extensión de su área, no los de Montevideo", async () => {
     const pool = await testDb();
     const urls: URL[] = [];
     const fetchImpl = (async (u: string) => {

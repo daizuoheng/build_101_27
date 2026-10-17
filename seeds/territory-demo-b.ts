@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import { isValidPolicy, type PolicyKind } from "../src/server/config/policies";
 import { withTx } from "../src/server/db/tx";
 import { appendEvent } from "../src/server/events/append";
+import type { DemoUnit } from "./demo-units";
 import { policies } from "./policies";
 
 export const demoB = {
@@ -33,7 +34,7 @@ export const demoB = {
   unit: {
     slug: "cuadrilla-b",
     name: "Cuadrilla B (prueba)",
-    unitKind: "mobile_crew",
+    unitKind: "mobile_crew" as DemoUnit["unitKind"],
     capacity: 1,
     capabilities: ["vialidad", "limpieza"],
     position: { lon: 0.004, lat: 0.004 },
@@ -53,6 +54,11 @@ export type DemoB = typeof demoB;
  */
 export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> = {}): Promise<{ territoryId: string; unitId: string }> {
   const t = { ...demoB, ...overrides };
+  // Todas las políticas se validan antes de escribir nada.
+  const policyEntries = Object.entries(t.policies) as [PolicyKind, unknown][];
+  for (const [kind, config] of policyEntries) {
+    if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' de demo-b no valida contra su esquema`);
+  }
   const sq = t.square;
   const env = "st_multi(st_makeenvelope($1::float8, $2::float8, $3::float8, $4::float8, 4326))";
   const sqParams = [sq.minLon, sq.minLat, sq.maxLon, sq.maxLat];
@@ -95,8 +101,7 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
     // Se versiona y no se edita (como `policy-upgrade`): evaluaciones y decisiones guardan el `policy_version_id`
     // con que se calcularon, y editar esa fila reescribiría su traza. El lock es el mismo de `policy-upgrade`,
     // para que dos publicaciones del mismo kind no choquen en `max(version) + 1`.
-    for (const [kind, config] of Object.entries(t.policies) as [PolicyKind, unknown][]) {
-      if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' de demo-b no valida contra su esquema`);
+    for (const [kind, config] of policyEntries) {
       await c.query("select pg_advisory_xact_lock(hashtext($1))", [`policy:${territoryId}:${kind}`]);
       const active = await c.query<{ same: boolean }>(
         "select config = $3::jsonb as same from policy_versions where territory_id = $1 and kind = $2 and active",
