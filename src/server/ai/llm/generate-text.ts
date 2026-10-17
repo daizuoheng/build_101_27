@@ -42,17 +42,20 @@ function bodyViolation(policy: TextgenPolicy, purpose: TextPurpose, body: string
 /**
  * Plantilla de respaldo `textgen_<propósito>` con los hechos como variables. El texto fijo de la plantilla (sin
  * variables) que viola la política es un error de configuración y falla. Los datos que la completan (lugar, tipo)
- * pueden ser largos: el resultado se recorta al máximo en vez de fallar en cada reintento.
+ * pueden traer texto ciudadano: un dato con una frase prohibida se reemplaza por `labels.redacted`, y el resultado
+ * se recorta al máximo en vez de fallar en cada reintento.
  */
 async function fromTemplate(db: Db, policy: TextgenPolicy, input: TextInput, error: string): Promise<DraftedText> {
   const key = `textgen_${input.purpose}`;
   const bad = bodyViolation(policy, input.purpose, await renderTemplate(db, input.territoryId, key));
   if (bad) throw new Error(`plantilla '${key}' inválida: ${bad}`);
   const sep = policy.labels.list_separator;
-  const vars = Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, Array.isArray(v) ? v.join(sep) : v]));
-  const body = await renderTemplate(db, input.territoryId, key, vars);
+  const safe = (v: string | number) => (typeof v === "string" && policy.forbidden_patterns.some((p) => p.test(v)) ? policy.labels.redacted : v);
+  const vars = Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, safe(Array.isArray(v) ? v.join(sep) : v)]));
+  const chars = Array.from(await renderTemplate(db, input.territoryId, key, vars)); // por punto de código: no parte emojis
   const max = policy.max_chars[input.purpose];
-  return { body: body.length > max ? `${body.slice(0, max - 1)}…` : body, references: [], llmRunId: null, source: "template", error };
+  const body = chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : chars.join("");
+  return { body, references: [], llmRunId: null, source: "template", error };
 }
 
 /** Rechazos semánticos del LLM: los de la plantilla más referencias ajenas al input. */
@@ -135,17 +138,23 @@ export async function generateText(
   const drafted = await draftText({ db: deps.pool, llm: deps.llm }, policy, input);
 
   const persisted = await withTx(async (c) => {
-    if (opts.isCurrent && !(await opts.isCurrent(c))) return false;
-    await c.query(
+    if (opts.isCurrent && !(await opts.isCurrent(c))) return "discarded" as const;
+    const saved = await c.query(
       `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body, "references", llm_run_id)
        values ($1, $2, $3, $4, $5, $6, $7)
        on conflict (purpose, entity_type, entity_id, entity_revision) do update
          set body = excluded.body, "references" = excluded."references", llm_run_id = excluded.llm_run_id
-         where generated_texts.llm_run_id is null and excluded.llm_run_id is not null`,
+         where generated_texts.llm_run_id is null and excluded.llm_run_id is not null
+       returning id`,
       [input.purpose, input.entity.type, input.entity.id, input.entity.revision, drafted.body, JSON.stringify(drafted.references), drafted.llmRunId],
     );
-    return true;
+    // Sin fila: ya había un texto que no se pisa (otro worker con la misma revisión, o un LLM previo). Gana el guardado.
+    return saved.rowCount ? ("saved" as const) : await cached(c, input);
   }, deps.pool);
 
-  return { ...drafted, discarded: !persisted };
+  if (persisted === "discarded") return { ...drafted, discarded: true };
+  if (persisted !== "saved" && persisted) {
+    return { body: persisted.body, references: persisted.references, llmRunId: persisted.llm_run_id, source: "cache", discarded: false };
+  }
+  return { ...drafted, discarded: false };
 }

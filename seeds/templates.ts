@@ -89,8 +89,8 @@ export const templates: { key: string; locale: string; body: string; variables: 
   {
     key: "textgen_summary",
     locale: "es",
-    body: "{{problem_type}} en {{place}}. Reportes vinculados: {{report_count}}. Severidad {{severity}}.",
-    variables: ["problem_type", "place", "report_count", "severity"],
+    body: "{{problem_type}} en {{place}}: {{active_hazard}}, paso {{passage}}, accesibilidad {{accessibility}}. Severidad {{severity}}. Reportes vinculados: {{report_count}}.",
+    variables: ["problem_type", "place", "active_hazard", "passage", "accessibility", "severity", "report_count"],
   },
   {
     key: "textgen_explain_priority",

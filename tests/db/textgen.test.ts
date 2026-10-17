@@ -157,6 +157,56 @@ describe("textos generados (textgen)", () => {
     expect(res.body.endsWith("…")).toBe(true);
   });
 
+  it("un dato ciudadano con una frase prohibida se omite en la plantilla", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    input.facts.place = "esquina donde la cuadrilla está en camino";
+    const res = await generateText({ pool, llm: null }, input);
+    expect(res.body).toBe("Bache — [dato omitido]");
+  });
+
+  it("el recorte de la plantilla no parte emojis", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    input.facts.place = "🚧".repeat(120);
+    const res = await generateText({ pool, llm: null }, input);
+    expect(Array.from(res.body)).toHaveLength(90);
+    expect(res.body).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
+  it("si otro worker guardó un texto del LLM mientras este redactaba, devuelve el guardado y no el propio", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    const other = await pool.query<{ id: string }>(
+      "insert into llm_runs (purpose, provider, model, instructions_version, status) values ('title', 'otro', 'm', 'v', 'ok') returning id",
+    );
+    const llm = fakeLlm(async (call) => {
+      await pool.query(
+        `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body, llm_run_id) values ('title', 'incident', $1, 1, 'Guardado por otro worker', $2)`,
+        [incidentId, other.rows[0].id],
+      );
+      return citeFirst(call);
+    });
+    const res = await generateText({ pool, llm }, input);
+    expect(res).toMatchObject({ source: "cache", body: "Guardado por otro worker", llmRunId: other.rows[0].id, discarded: false });
+    expect((await texts(pool)).rows).toHaveLength(1);
+  });
+
+  it("el resumen de respaldo conserva peligro activo, paso y accesibilidad", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query("update incidents set active_hazard = true, passage = 'total' where id = $1", [incidentId]);
+    await pool.query("update policy_versions set config = jsonb_set(config, '{enabled}', 'false') where kind = 'textgen'");
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    await runTextgen({ pool, llm: null }, (await claimNext(pool, "w", 60))!);
+    const summary = (await texts(pool)).rows.find((r) => r.purpose === "summary")!;
+    expect(summary.body).toContain("hay peligro activo");
+    expect(summary.body).toContain("paso bloqueado");
+  });
+
   it("sin cliente LLM, una plantilla cacheada se reutiliza sin re-renderizar", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);

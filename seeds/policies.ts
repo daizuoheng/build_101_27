@@ -213,6 +213,7 @@ export const policies = {
       unknown_place: "ubicación sin barrio",
       list_separator: ", ",
       no_reasons: "sin motivos de riesgo registrados",
+      redacted: "[dato omitido]",
       severity: { low: "baja", medium: "media", high: "alta", undetermined: "sin determinar" },
       passage: { total: "bloqueado", partial: "parcialmente obstruido", none: "libre", undetermined: "sin determinar" },
       accessibility: { affected: "afectada", not_affected: "no afectada", undetermined: "sin determinar" },
