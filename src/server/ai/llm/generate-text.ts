@@ -94,7 +94,9 @@ export function userMessage(policy: TextgenPolicy, input: TextInput): string {
   const cap = (t: string) => Array.from(t).slice(0, policy.max_reference_chars).join(""); // por punto de código
   const redacted = redactFacts(policy, input.facts);
   const facts = Object.fromEntries(Object.entries(redacted).map(([k, v]) => [k, typeof v === "string" ? cap(v) : Array.isArray(v) ? v.map(cap) : v]));
-  const refs = input.references.map((r) => ({ id: r.id, text: cap(r.text) }));
+  // En las descripciones solo se tapa la frase prohibida: el resto es la evidencia que el resumen necesita.
+  const scrub = (t: string) => policy.forbidden_patterns.reduce((acc, p) => acc.replace(new RegExp(p.source, "giu"), policy.labels.redacted), t);
+  const refs = input.references.map((r) => ({ id: r.id, text: cap(scrub(r.text)) }));
   const block = (tag: string, v: unknown) => `<${tag}>\n${JSON.stringify(v).replace(/</g, "\\u003c")}\n</${tag}>`;
   return [block("hechos", { purpose: input.purpose, facts }), block("referencias", refs)].join("\n");
 }
@@ -170,9 +172,11 @@ export async function generateText(
        values ($1, $2, $3, $4, $5, $6, $7)
        on conflict (purpose, entity_type, entity_id, entity_revision) do update
          set body = excluded.body, "references" = excluded."references", llm_run_id = excluded.llm_run_id
-         where (generated_texts.llm_run_id is null and excluded.llm_run_id is not null) or $8
+         where (generated_texts.llm_run_id is null and excluded.llm_run_id is not null)
+            or ($8 and generated_texts.body = $9)
        returning id`,
-      [input.purpose, input.entity.type, input.entity.id, input.entity.revision, drafted.body, JSON.stringify(drafted.references), drafted.llmRunId, stale],
+      // Reemplazo por política vigente solo si la fila sigue siendo la vieja que se leyó (no pisa a otro worker).
+      [input.purpose, input.entity.type, input.entity.id, input.entity.revision, drafted.body, JSON.stringify(drafted.references), drafted.llmRunId, stale, hit?.body ?? null],
     );
     // Sin fila: ya había un texto que no se pisa (otro worker con la misma revisión, o un LLM previo). Gana el guardado.
     return saved.rowCount ? ("saved" as const) : await cached(c, input);
@@ -180,7 +184,8 @@ export async function generateText(
 
   if (persisted === "discarded") return { ...drafted, discarded: true };
   if (persisted !== "saved" && persisted) {
-    return { body: persisted.body, references: persisted.references, llmRunId: persisted.llm_run_id, source: "cache", discarded: false };
+    // Si este intento cayó a plantilla, se conserva el motivo para el log aunque se devuelva lo guardado.
+    return { body: persisted.body, references: persisted.references, llmRunId: persisted.llm_run_id, source: "cache", discarded: false, error: drafted.error };
   }
   return { ...drafted, discarded: false };
 }

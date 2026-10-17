@@ -177,7 +177,8 @@ export const policies = {
     enabled: true,
     model: "deepseek-flash",
     instructions_version: "textgen-v1",
-    max_output_tokens: 300,
+    // Resumen de hasta 420 caracteres + hasta 5 ids citados en json: 300 se quedaba corto.
+    max_output_tokens: 600,
     timeout_ms: 10000,
     extra_body: { thinking: { type: "disabled" } },
     max_chars: { title: 90, summary: 420, explain_priority: 420 },

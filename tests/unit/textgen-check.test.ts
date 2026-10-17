@@ -81,3 +81,13 @@ describe("hechos redactados", () => {
     expect(check(body + "🚧")).toMatch(/caracteres/);
   });
 });
+
+describe("referencias ciudadanas en el mensaje", () => {
+  it("se tapa solo la frase prohibida y se conserva el resto de la descripción", () => {
+    const msg = userMessage(policy, input([{ id: "r1", text: "Hay basura tirada; dicen que la cuadrilla llega en 20 minutos, ojalá." }]));
+    const refs = block(msg, "referencias") as { text: string }[];
+    expect(refs[0].text).toContain("Hay basura tirada");
+    expect(refs[0].text).toContain(policy.labels.redacted);
+    expect(refs[0].text).not.toMatch(/20 minutos/);
+  });
+});

@@ -25,12 +25,13 @@ type IncidentRow = {
   priority_band: string;
   priority_breakdown: { rules?: string[]; promoted_by_age?: boolean };
   report_count: number;
+  status: string;
 };
 
 async function loadIncident(db: Db, incidentId: string): Promise<IncidentRow | null> {
   const { rows } = await db.query<IncidentRow>(
     `select i.id, i.territory_id, i.revision, pt.name as type_name, a.name as area_name, i.location_text, i.severity,
-            i.active_hazard, i.passage, i.accessibility, i.priority_band, i.priority_breakdown,
+            i.active_hazard, i.passage, i.accessibility, i.priority_band, i.priority_breakdown, i.status,
             (select count(*) from report_incident_links l where l.incident_id = i.id and l.active) as report_count
      from incidents i
      left join problem_types pt on pt.id = i.problem_type_id
@@ -52,7 +53,7 @@ async function reportReferences(db: Db, incidentId: string, limit: number): Prom
 }
 
 /** Hechos y referencias por propósito, con las etiquetas de la política. Solo lo que está en base: sin estado ni despacho. */
-export function textInputs(inc: IncidentRow, reports: { id: string; text: string }[], policy: TextgenPolicy): Record<TextPurpose, TextInput> {
+export function textInputs(inc: Omit<IncidentRow, "status">, reports: { id: string; text: string }[], policy: TextgenPolicy): Record<TextPurpose, TextInput> {
   const L = policy.labels;
   const label = (map: Record<string, string>, code: string) => map[code] ?? code;
   const problemType = inc.type_name ?? L.unknown_type;
@@ -96,7 +97,8 @@ export async function runTextgen(
   job: Job,
 ): Promise<{ discarded: boolean; sources: Partial<Record<TextPurpose, string>>; fallbacks: Partial<Record<TextPurpose, string>> }> {
   const inc = await loadIncident(deps.pool, job.entity_id);
-  if (!inc || inc.revision !== job.entity_revision) return { discarded: true, sources: {}, fallbacks: {} };
+  // Archivado (sin reportes activos): ya no se muestra al operador, no se gasta LLM en él.
+  if (!inc || inc.revision !== job.entity_revision || inc.status === "archived") return { discarded: true, sources: {}, fallbacks: {} };
   const policy = (await getActivePolicy(deps.pool, inc.territory_id, "textgen")).config;
   const inputs = textInputs(inc, await reportReferences(deps.pool, inc.id, policy.max_references), policy);
   const isCurrent = async (c: PoolClient) =>
@@ -110,6 +112,6 @@ export async function runTextgen(
     discarded: results.some(([, r]) => r.discarded),
     sources: Object.fromEntries(results.map(([p, r]) => [p, r.source])),
     // Por qué cayó a plantilla (política apagada, sin cliente, salida inválida): para el log del worker.
-    fallbacks: Object.fromEntries(results.flatMap(([p, r]) => (r.source === "template" && r.error ? [[p, r.error]] : []))),
+    fallbacks: Object.fromEntries(results.flatMap(([p, r]) => (r.error ? [[p, r.error]] : []))),
   };
 }

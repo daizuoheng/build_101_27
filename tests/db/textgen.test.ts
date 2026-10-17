@@ -236,6 +236,32 @@ describe("textos generados (textgen)", () => {
     await expect(generateText({ pool, llm: null }, input)).rejects.toThrow(/datos numéricos/);
   });
 
+  it("el reemplazo por política vigente no pisa un texto válido que otro worker guardó mientras tanto", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    await generateText({ pool, llm: fakeLlm(() => JSON.stringify({ body: "Bache grande en Av. Italia 2450", references: [] })) }, input);
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{forbidden_patterns}', (config->'forbidden_patterns') || '["grande"]') where kind = 'textgen'`);
+    const llm = fakeLlm(async () => {
+      await pool.query("update generated_texts set body = 'Guardado válido de otro worker'"); // llegó primero
+      return "no es json";
+    });
+    const res = await generateText({ pool, llm }, input);
+    expect(res).toMatchObject({ source: "cache", body: "Guardado válido de otro worker" });
+    expect(res.error).toBeTruthy();
+    expect((await texts(pool)).rows.map((r) => r.body)).toEqual(["Guardado válido de otro worker"]);
+  });
+
+  it("un incidente archivado no genera textos", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query("update incidents set status = 'archived', archived_at = now() where id = $1", [incidentId]);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const llm = fakeLlm(citeFirst);
+    expect((await runTextgen({ pool, llm }, (await claimNext(pool, "w", 60))!)).discarded).toBe(true);
+    expect(llm.calls).toHaveLength(0);
+  });
+
   it("con textgen.enabled = false usa la plantilla sin llamar al LLM", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);
