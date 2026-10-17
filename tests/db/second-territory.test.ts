@@ -77,6 +77,7 @@ describe("segundo territorio (Montevideo es configuración)", () => {
     const p = urls[0].searchParams;
     expect(p.get("q")).toBe("Calle 1, Territorio de prueba B");
     expect(p.get("countrycodes") ?? "").toBe("");
+    expect(p.get("bounded")).toBe("1");
     expect(p.get("viewbox")?.split(",").map(Number)).toEqual([0, 0.01, 0.01, 0]);
   });
 

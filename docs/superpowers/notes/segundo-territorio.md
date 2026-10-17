@@ -13,7 +13,7 @@ en `seedAll`. Tiene:
 
 - Un punto dentro del cuadrado se localiza en `demo-b` (con su área) y no en Montevideo. Plaza Independencia se
   localiza en Montevideo. Un punto fuera de ambos da `null`.
-- Las políticas y el catálogo se leen por territorio: radio de agrupación 75 contra 30, `textgen` apagado contra
+- Las políticas y el catálogo se leen por territorio: radio de agrupación 75 contra el del seed, `textgen` apagado contra
   prendido, catálogo de 2 tipos con `catalog_hash` distinto. La vista del territorio usa su nombre, su etiqueta de
   área ("Sector") y su zoom.
 - Contrato para el planificador: una consulta de unidades filtrada por territorio devuelve solo `cuadrilla-b`, aunque
@@ -74,4 +74,7 @@ sí son de Montevideo, y un territorio nuevo que los reuse los hereda:
 - `intake.geocoder.query_suffix = "Montevideo, Uruguay"` y `country_codes = "uy"`: con eso el geocodificador no
   encuentra nada fuera de Uruguay. `demo-b` los reemplaza (prueba en el test del geocodificador).
 - Las instrucciones de las preguntas a Jev de `evaluation` y `grouping` dicen "(Spanish, Uruguay)". `demo-b` las
-  conserva porque sus tests no llaman a Jev. Un territorio real tiene que reescribirlas en su propia política.
+  conserva porque sus tests usan el Jev falso, que no lee las instrucciones. Un territorio real tiene que
+  reescribirlas en su propia política.
+- `textgen.enabled = false` en `demo-b` solo se comprueba guardado: todavía no hay código que lea la política
+  `textgen`, así que no hay comportamiento que verificar.

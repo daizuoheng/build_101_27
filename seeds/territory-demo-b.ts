@@ -74,16 +74,17 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       [...sqParams, territoryId, t.area.externalId, t.area.name],
     );
 
-    // Catálogo: habilita los tipos de la lista y deshabilita los que salieron de ella. Con `do update`,
-    // rowCount cuenta cada tipo encontrado (nuevo o existente); solo cuentan los activos, como en el catálogo.
-    const types = await c.query(
+    // Catálogo: habilita los tipos de la lista y deshabilita los que salieron de ella. Se valida antes de
+    // escribir, y solo cuentan los tipos activos, como en `getActiveCatalog`.
+    const knownTypes = await c.query<{ n: number }>("select count(*)::int as n from problem_types where slug = any($1) and active", [t.problemTypes]);
+    const missing = new Set(t.problemTypes).size - knownTypes.rows[0].n;
+    if (missing) throw new Error(`catálogo de demo-b incompleto: ${missing} tipo(s) inexistentes o inactivos (¿falta seedAll?)`);
+    await c.query(
       `insert into territory_problem_types (territory_id, problem_type_id)
        select $1, id from problem_types where slug = any($2) and active
        on conflict (territory_id, problem_type_id) do update set enabled = true`,
       [territoryId, t.problemTypes],
     );
-    const missing = new Set(t.problemTypes).size - (types.rowCount ?? 0);
-    if (missing) throw new Error(`catálogo de demo-b incompleto: ${missing} tipo(s) inexistentes o inactivos (¿falta seedAll?)`);
     await c.query(
       `update territory_problem_types set enabled = false where territory_id = $1 and enabled
          and problem_type_id not in (select id from problem_types where slug = any($2))`,
