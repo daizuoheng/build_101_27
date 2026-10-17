@@ -93,16 +93,18 @@ const judgement = {
  * - Rechaza: «se envió una cuadrilla», «la unidad llegará», «están enviándole una cuadrilla», «la cuadrilla llegó»
  *   (el pasado afirmativo afirmaría un estado que el backend no dio).
  * - Pasa: una negación hasta 25 caracteres antes del verbo («no ha podido llegar», «ninguna cuadrilla llegó»,
- *   «no está asignada»), el actor como destinatario («fotos al equipo», «a ninguna cuadrilla») y los pedidos en
- *   subjuntivo («piden que envíen una cuadrilla»).
+ *   «no está asignada») dentro de la misma cláusula, el actor como destinatario de un objeto («fotos al equipo»)
+ *   y los pedidos en subjuntivo («piden que envíen una cuadrilla»). Con «a» personal pegada al verbo el actor es el
+ *   objeto directo y se rechaza («se envió a la cuadrilla»).
  */
 const L = String.raw`(?<![\p{L}\p{N}])`;
 const R = String.raw`(?![\p{L}\p{N}])`;
-const NEGATED = String.raw`(?<!(?:^|[^\p{L}\p{N}])(?:no|ni|nunca|jam[áa]s|tampoco|sin que|ning[úu]n\p{L}*)(?![\p{L}\p{N}])[^.;]{0,25})`;
-const ACTOR = String.raw`(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?|móvil(?:es)?|inspector(?:es|as?)?|[óo]rden(?:es)?)`;
+const NEGATED = String.raw`(?<!(?:^|[^\p{L}\p{N}])(?:no(?!\s+solo)|ni(?!\s+bien)|nunca|jam[áa]s|tampoco|sin que|ning[úu]n\p{L}*)(?![\p{L}\p{N}])(?:(?!\s(?:pero|y|si|que)\s)[^.;,:]){0,25})`;
+const ACTOR = String.raw`(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?|m[óo]vil(?:es)?|inspector(?:es|as?)?|[óo]rden(?:es)?)`;
 const AS_RECIPIENT = String.raw`(?<!(?:al|a la|a las|a los|del|de la|de las|de los|para el|para la|para los|a ning[úu]n\p{L}*)\s+)`;
-const VERB = String.raw`(?:lleg\p{L}*|arrib\p{L}*|(?:va|van|vamos)\s+a\s+\p{L}+|ir(?:á|án)|yendo|pasar(?:á|án)|sal(?:e|en|ió|ieron|drá|drán|iendo)|en camino|asign\p{L}*|(?:envi|enví)(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas|ando|ándo\p{L}+)|mand(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas|ando|ándo\p{L}+)|despach\p{L}*|derivad[oa]s?)`;
+const VERB = String.raw`(?:lleg\p{L}*|arrib\p{L}*|(?:va|van|vamos)\s+a\s+\p{L}+|ir(?:á|án)|yendo|pasar(?:á|án)|sal(?:e|en|ió|ieron|drá|drán|iendo)|en camino|asign\p{L}*|(?:envi|enví|mand)(?!(?:e|es|en|emos)(?![\p{L}\p{N}]))\p{L}*|despach\p{L}*|derivad[oa]s?)`;
 const ACTOR_PATTERNS = [
+  String.raw`${L}${NEGATED}${VERB}${R}\s+(?:a|al|a la|a las|a los)\s+${ACTOR}${R}`,
   `${L}${ACTOR}${R}[^.;]{0,40}?${L}${NEGATED}${VERB}${R}`,
   `${L}${NEGATED}${VERB}${R}[^.;]{0,40}?${L}${AS_RECIPIENT}${ACTOR}${R}`,
 ];
