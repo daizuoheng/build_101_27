@@ -348,7 +348,11 @@ function UiControls({
   onFocusText: () => void;
 }) {
   const ui = message.ui!;
-  if (draft.location?.confirmed && (ui.kind === "ask_location" || ui.kind === "propose_location")) return null;
+  const loc = draft.location;
+  // Ubicación ya confirmada: no volver a pedirla. Un pin propuesto se oculta solo si es el punto ya confirmado;
+  // un pin de corrección (posterior a la ficha lista) apunta a otro lugar y tiene que poder aceptarse.
+  if (loc?.confirmed && ui.kind === "ask_location") return null;
+  if (loc?.confirmed && ui.kind === "propose_location" && Math.abs(loc.lon - ui.lon) < 1e-6 && Math.abs(loc.lat - ui.lat) < 1e-6) return null;
   switch (ui.kind) {
     case "ask_location":
       return (
