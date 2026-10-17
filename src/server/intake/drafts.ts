@@ -1,3 +1,4 @@
+import { isUuid } from "../ids";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { Db } from "../db/pool";
@@ -44,7 +45,7 @@ export async function getReport(db: Db, reportId: string, opts: { forUpdate?: bo
 
 /** Carga el reporte verificando que pertenezca a la sesión ciudadana (el id visible no autoriza). */
 export async function getOwnedReport(db: Db, reportId: string, sessionId: string, opts: { forUpdate?: boolean } = {}) {
-  if (!/^[0-9a-f-]{36}$/i.test(reportId)) throw notFound("Reporte inexistente.");
+  if (!isUuid(reportId)) throw notFound("Reporte inexistente.");
   const r = await getReport(db, reportId, opts);
   if (r.citizen_session_id !== sessionId) throw forbidden();
   return r;

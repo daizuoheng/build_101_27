@@ -1,3 +1,4 @@
+import { isUuid } from "../ids";
 import type { PoolClient } from "pg";
 import type { TransitionAssignment } from "../contracts";
 import { appendEvent } from "../events/append";
@@ -17,7 +18,7 @@ export async function performUnitAction(
   input: { assignmentId: string; unitId: string; userId: string; body: TransitionBody },
 ): Promise<UnitActionResult> {
   const { assignmentId, unitId, userId, body } = input;
-  if (!/^[0-9a-f-]{36}$/i.test(assignmentId)) throw notFound("Orden inexistente.");
+  if (!isUuid(assignmentId)) throw notFound("Orden inexistente.");
   // Serializa reintentos concurrentes con la misma clave sobre la misma orden.
   await c.query("select pg_advisory_xact_lock(hashtext($1))", [`unit_action:${assignmentId}:${body.idempotencyKey}`]);
 
