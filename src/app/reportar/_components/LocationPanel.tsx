@@ -5,16 +5,27 @@ import { useEffect, useState } from "react";
 import type { TerritoryView } from "@/shared/contracts/intake";
 import { api, errorMessage } from "@/app/_components/http";
 import type { LatLon } from "@/app/_components/LeafletMap";
+import { IconLocate, IconMap, IconPin } from "@/app/_components/icons";
 
 const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
   ssr: false,
-  loading: () => <div className="h-[280px] animate-pulse rounded-[var(--radius)] bg-surface-2" aria-hidden />,
+  loading: () => <div className="h-[260px] animate-pulse rounded-[var(--radius)] bg-surface-2" aria-hidden />,
 });
 
 export type LocationMode = "gps" | "map" | "address" | "proposed";
 export type Proposed = LatLon & { label: string };
 type Source = "gps" | "map" | "geocoded";
 
+const MODES: { mode: Exclude<LocationMode, "proposed">; label: string; Icon: typeof IconPin }[] = [
+  { mode: "address", label: "Dirección", Icon: IconPin },
+  { mode: "gps", label: "Mi ubicación", Icon: IconLocate },
+  { mode: "map", label: "En el mapa", Icon: IconMap },
+];
+
+/**
+ * Selector de ubicación dentro del chat. La persona siempre confirma el punto; la IA nunca lo confirma.
+ * Funciona en cualquier navegador: sin geolocalización (o sin permiso) cae al mapa.
+ */
 export function LocationPanel({
   draftId,
   territory,
@@ -32,30 +43,26 @@ export function LocationPanel({
   onConfirm: (p: { lon: number; lat: number; source: Source; text?: string }) => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<LocationMode>(initialMode);
+  const geoAvailable = typeof navigator !== "undefined" && "geolocation" in navigator;
+  const startsWithGps = initialMode === "gps" && geoAvailable;
+  const [mode, setMode] = useState<LocationMode>(initialMode === "gps" && !geoAvailable ? "map" : initialMode);
   const [pin, setPin] = useState<LatLon | null>(proposed ?? null);
   const [source, setSource] = useState<Source>(proposed ? "geocoded" : "map");
   const [label, setLabel] = useState<string | null>(proposed?.label ?? null);
   const [query, setQuery] = useState("");
-  const [note, setNote] = useState<string | null>(null);
-  const [locating, setLocating] = useState(false);
-  const [moving, setMoving] = useState(false);
+  const [note, setNote] = useState<string | null>(
+    proposed
+      ? `Encontré «${proposed.label}». Revisá el punto y confirmalo, o tocá el mapa para moverlo.`
+      : initialMode === "gps" && !geoAvailable
+        ? "Este navegador no permite usar la ubicación. Marcá el punto en el mapa."
+        : initialMode === "map"
+          ? "Tocá el mapa donde está el problema."
+          : null,
+  );
+  const [locating, setLocating] = useState(startsWithGps);
 
-  useEffect(() => {
-    if (initialMode === "gps") locate();
-    // solo al abrir el panel
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function locate() {
-    setMode("gps");
-    setNote(null);
-    if (!("geolocation" in navigator)) {
-      setNote("Tu navegador no permite usar la ubicación. Marcá el punto en el mapa.");
-      setMode("map");
-      return;
-    }
-    setLocating(true);
+  /** Pide la posición; el estado se actualiza solo en los callbacks (asíncronos). */
+  function requestPosition() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
@@ -64,13 +71,41 @@ export function LocationPanel({
         setLabel(null);
         setNote("Esta es tu ubicación actual. Si el problema está en otro lugar, tocá el mapa o arrastrá el punto.");
       },
-      () => {
+      (err) => {
         setLocating(false);
-        setNote("No pudimos obtener tu ubicación. Marcá el punto en el mapa.");
+        setNote(
+          err.code === err.PERMISSION_DENIED
+            ? "No diste permiso para usar tu ubicación. Marcá el punto en el mapa."
+            : "No pudimos obtener tu ubicación. Marcá el punto en el mapa.",
+        );
         setMode("map");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
     );
+  }
+
+  function locate() {
+    setMode("gps");
+    setNote(null);
+    if (!geoAvailable) {
+      setNote("Este navegador no permite usar la ubicación. Marcá el punto en el mapa.");
+      setMode("map");
+      return;
+    }
+    setLocating(true);
+    requestPosition();
+  }
+
+  useEffect(() => {
+    if (startsWithGps) requestPosition();
+    // solo al abrir el panel
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function choose(m: Exclude<LocationMode, "proposed">) {
+    if (m === "gps") return locate();
+    setMode(m);
+    setNote(m === "map" ? "Tocá el mapa donde está el problema." : null);
   }
 
   async function geocode(e: React.FormEvent) {
@@ -83,11 +118,11 @@ export function LocationPanel({
       const r = await api<Proposed | null>(`/api/reportar/geocode?draftId=${encodeURIComponent(draftId)}&q=${encodeURIComponent(q)}`);
       if (r) {
         setPin({ lon: r.lon, lat: r.lat });
-        setLabel(r.label);
+        setLabel(q);
         setSource("geocoded");
-        setNote(`Encontramos «${r.label}». Revisá el punto antes de confirmar.`);
+        setNote(`Encontré «${q}». Revisá el punto antes de confirmar.`);
       } else {
-        setNote(`No encontramos «${q}». Marcá el punto en el mapa; vamos a guardar lo que escribiste como referencia.`);
+        setNote(`No encontré «${q}». Marcá el punto en el mapa; guardamos lo que escribiste como referencia.`);
         setLabel(q);
         setMode("map");
         setSource("map");
@@ -105,28 +140,29 @@ export function LocationPanel({
     setSource("map");
   }
 
-  const canPick = mode === "map" || mode === "gps" || mode === "address" || moving;
   const showMap = mode !== "address" || pin !== null;
 
   return (
-    <section aria-label="Ubicación del problema" className="card flex flex-col gap-3 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-base font-bold">¿Dónde está el problema?</h2>
-        <button type="button" className="btn" onClick={onClose} aria-label="Cerrar selector de ubicación">
-          Cerrar
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Forma de indicar la ubicación">
-        <button type="button" className="btn" aria-pressed={mode === "gps"} onClick={locate} disabled={locating}>
-          Usar mi ubicación
-        </button>
-        <button type="button" className="btn" aria-pressed={mode === "map"} onClick={() => { setMode("map"); setNote("Tocá el mapa donde está el problema."); }}>
-          Elegir en el mapa
-        </button>
-        <button type="button" className="btn" aria-pressed={mode === "address"} onClick={() => { setMode("address"); setNote(null); }}>
-          Escribir dirección
-        </button>
+    <section aria-label="Ubicación del problema" className="card flex flex-col gap-3 p-3 sm:p-4">
+      <div role="group" aria-label="Forma de indicar la ubicación" className="grid grid-cols-3 gap-1 rounded-xl bg-surface-low p-1">
+        {MODES.map(({ mode: m, label: l, Icon }) => {
+          const on = mode === m || (mode === "proposed" && m === "address");
+          return (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={on}
+              disabled={locating && m === "gps"}
+              onClick={() => choose(m)}
+              className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-2 text-[15px] font-semibold ${
+                on ? "bg-surface text-primary shadow-sm" : "text-ink-2 hover:text-ink"
+              }`}
+            >
+              <Icon className="h-[18px] w-[18px] shrink-0" />
+              <span className="truncate">{l}</span>
+            </button>
+          );
+        })}
       </div>
 
       {mode === "address" && (
@@ -139,6 +175,7 @@ export function LocationPanel({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Calle y número, o esquina"
             autoComplete="street-address"
+            enterKeyHint="search"
           />
           <button className="btn btn-primary" disabled={locating || !query.trim()}>
             Buscar
@@ -147,32 +184,25 @@ export function LocationPanel({
       )}
 
       {locating && <p role="status" className="text-ink-2">Buscando…</p>}
-      {note && <p role="status" className="text-ink-2">{note}</p>}
+      {note && <p role="status" className="text-[15px] text-ink-2">{note}</p>}
 
       {showMap && (
-        <LeafletMap
-          label="Mapa para marcar la ubicación"
-          center={territory.center}
-          zoom={territory.zoom}
-          pin={pin}
-          onPick={canPick ? pick : undefined}
-        />
+        <LeafletMap label="Mapa para marcar la ubicación" center={territory.center} zoom={territory.zoom} pin={pin} onPick={pick} height={260} />
       )}
 
-      {mode === "proposed" && !moving && pin && (
-        <button type="button" className="btn" onClick={() => { setMoving(true); setNote("Tocá el mapa o arrastrá el punto."); }}>
-          Mover el punto
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button
+          type="button"
+          className="btn btn-primary flex-1"
+          disabled={!pin || busy}
+          onClick={() => pin && onConfirm({ lon: pin.lon, lat: pin.lat, source, text: label ?? undefined })}
+        >
+          {busy ? "Guardando…" : "Confirmar este punto"}
         </button>
-      )}
-
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={!pin || busy}
-        onClick={() => pin && onConfirm({ lon: pin.lon, lat: pin.lat, source, text: label ?? undefined })}
-      >
-        {busy ? "Guardando…" : "Confirmar ubicación"}
-      </button>
+        <button type="button" className="btn" onClick={onClose}>
+          Cancelar
+        </button>
+      </div>
     </section>
   );
 }
