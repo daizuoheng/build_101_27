@@ -54,6 +54,21 @@ Se repitió `pnpm cli smoke-llm` con los cambios de la revisión: las referencia
 ahora usan límites de palabra Unicode. De nuevo 9/9 textos vinieron del LLM y validaron, entre 0,9 y 1,7 s por
 llamada. Diferencias menores de redacción; por ejemplo, un resumen dice «la peligrosidad es alta» por la severidad.
 
+## Tras la revisión interna (tres pasadas)
+
+Corrida final con **4 incidentes**: se agregó "basura-antigua-camino", un incidente bajo promovido por antigüedad en
+Camino Maldonado 5600, y la rampa quedó con un desglose que `computePriority` puede producir. **12/12 textos
+vinieron del LLM y validaron**, entre 0,9 y 1,5 s por llamada.
+
+El smoke encontró dos falsos positivos de los patrones prohibidos, que ya están corregidos y cubiertos por tests:
+
+- «en camino» chocaba con calles de Montevideo (Camino Maldonado, Camino Carrasco). Ahora exige un verbo antes
+  («ya está en camino»).
+- `asign*` rechazaba «se le asigna prioridad media». Ahora solo cuenta asignar, enviar o mandar con personal como
+  objeto, o afirmar un estado («fue asignada»).
+
+El título ya no recibe las descripciones de los reportes: sale solo de tipo y lugar.
+
 ## Para las bases existentes
 
 La política `textgen` tiene campos nuevos: `max_chars`, `max_references`, `max_reference_chars`,

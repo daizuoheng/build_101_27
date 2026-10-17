@@ -44,7 +44,7 @@ async function loadIncident(db: Db, incidentId: string): Promise<IncidentRow | n
 async function reportReferences(db: Db, incidentId: string, limit: number): Promise<{ id: string; text: string }[]> {
   const { rows } = await db.query<{ id: string; description: string | null }>(
     `select r.id, r.description from report_incident_links l join reports r on r.id = l.report_id
-     where l.incident_id = $1 and l.active and coalesce(r.description, '') <> ''
+     where l.incident_id = $1 and l.active and btrim(coalesce(r.description, '')) <> ''
      order by r.confirmed_at nulls last, r.created_at limit $2`,
     [incidentId, limit],
   );
@@ -61,7 +61,8 @@ export function textInputs(inc: IncidentRow, reports: { id: string; text: string
   const reasons = rules.map((r) => label(L.priority_rule, r));
   const base = { territoryId: inc.territory_id, entity: { type: "incident", id: inc.id, revision: inc.revision } };
   return {
-    title: { ...base, purpose: "title", facts: { problem_type: problemType, place: inc.area_name ?? place }, references: reports },
+    // El título sale solo de tipo y lugar: sin descripciones ciudadanas que pagar ni que filtrar.
+    title: { ...base, purpose: "title", facts: { problem_type: problemType, place: inc.area_name ?? place }, references: [] },
     summary: {
       ...base,
       purpose: "summary",
@@ -90,9 +91,12 @@ export function textInputs(inc: IncidentRow, reports: { id: string; text: string
  * Si la revisión cambió (antes o durante la redacción), descarta: la revisión nueva trae su propio job.
  * Una falla del LLM cae a plantilla; solo fallan el job los errores de base o de política.
  */
-export async function runTextgen(deps: TextDeps, job: Job): Promise<{ discarded: boolean; sources: Partial<Record<TextPurpose, string>> }> {
+export async function runTextgen(
+  deps: TextDeps,
+  job: Job,
+): Promise<{ discarded: boolean; sources: Partial<Record<TextPurpose, string>>; fallbacks: Partial<Record<TextPurpose, string>> }> {
   const inc = await loadIncident(deps.pool, job.entity_id);
-  if (!inc || inc.revision !== job.entity_revision) return { discarded: true, sources: {} };
+  if (!inc || inc.revision !== job.entity_revision) return { discarded: true, sources: {}, fallbacks: {} };
   const policy = (await getActivePolicy(deps.pool, inc.territory_id, "textgen")).config;
   const inputs = textInputs(inc, await reportReferences(deps.pool, inc.id, policy.max_references), policy);
   const isCurrent = async (c: PoolClient) =>
@@ -101,6 +105,11 @@ export async function runTextgen(deps: TextDeps, job: Job): Promise<{ discarded:
   const settled = await Promise.allSettled(PURPOSES.map((p) => generateText(deps, inputs[p], { isCurrent, policy })));
   const failed = settled.find((r) => r.status === "rejected");
   if (failed) throw failed.reason;
-  const results = settled.map((r, i) => [PURPOSES[i], (r as PromiseFulfilledResult<Awaited<ReturnType<typeof generateText>>>).value] as const);
-  return { discarded: results.some(([, r]) => r.discarded), sources: Object.fromEntries(results.map(([p, r]) => [p, r.source])) };
+  const results = settled.flatMap((r, i) => (r.status === "fulfilled" ? [[PURPOSES[i], r.value] as const] : []));
+  return {
+    discarded: results.some(([, r]) => r.discarded),
+    sources: Object.fromEntries(results.map(([p, r]) => [p, r.source])),
+    // Por qué cayó a plantilla (política apagada, sin cliente, salida inválida): para el log del worker.
+    fallbacks: Object.fromEntries(results.flatMap(([p, r]) => (r.source === "template" && r.error ? [[p, r.error]] : []))),
+  };
 }

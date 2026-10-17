@@ -76,7 +76,7 @@ describe("textos generados (textgen)", () => {
     expect(job).toMatchObject({ kind: "textgen", entity_id: incidentId, entity_revision: 1 });
 
     const llm = fakeLlm(citeFirst);
-    expect(await runTextgen({ pool, llm }, job)).toEqual({ discarded: true, sources: {} });
+    expect(await runTextgen({ pool, llm }, job)).toEqual({ discarded: true, sources: {}, fallbacks: {} });
     expect(llm.calls).toHaveLength(0);
     expect((await texts(pool)).rows).toEqual([]);
   });
@@ -230,7 +230,7 @@ describe("textos generados (textgen)", () => {
     await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
     const job = (await claimNext(pool, "w", 60))!;
     const res = await runTextgen({ pool, llm: fakeLlm(citeFirst) }, job);
-    expect(res).toEqual({ discarded: false, sources: { title: "llm", summary: "llm", explain_priority: "llm" } });
+    expect(res).toEqual({ discarded: false, sources: { title: "llm", summary: "llm", explain_priority: "llm" }, fallbacks: {} });
     const rows = (await texts(pool)).rows;
     expect(rows.map((r) => r.purpose)).toEqual(["explain_priority", "summary", "title"]);
     expect(rows[0].references).toEqual(["severity_high"]);

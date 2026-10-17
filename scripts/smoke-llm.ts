@@ -27,14 +27,21 @@ const examples = [
     reports: [{ id: id(201), text: "Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda" }],
   },
   {
-    name: "rampa-obstruida-antigua",
+    name: "rampa-obstruida",
     incident: { type_name: "Accesibilidad obstruida", area_name: "CENTRO", location_text: "Rivera y Comercio", severity: "low", active_hazard: false,
-      passage: "none", accessibility: "affected", priority_band: "high", priority_breakdown: { rules: ["accessibility_affected"], promoted_by_age: true }, report_count: 3 },
+      passage: "none", accessibility: "affected", priority_band: "high", priority_breakdown: { rules: ["accessibility_affected"] }, report_count: 3 },
     reports: [
       { id: id(301), text: "Hay bolsas de basura tapando la rampa en Rivera y Comercio, no se puede pasar con la silla de ruedas" },
       { id: id(302), text: "La rampa de la esquina sigue tapada desde hace días" },
       { id: id(303), text: "Otra vez la rampa bloqueada con bolsas, mi madre no pudo cruzar" },
     ],
+  },
+  {
+    // Baja promovida a media por antigüedad (sin reglas de riesgo), en una calle que empieza con «Camino».
+    name: "basura-antigua-camino",
+    incident: { type_name: "Basura acumulada", area_name: "UNION", location_text: "Camino Maldonado 5600", severity: "low", active_hazard: false,
+      passage: "none", accessibility: "not_affected", priority_band: "medium", priority_breakdown: { rules: [], promoted_by_age: true }, report_count: 1 },
+    reports: [{ id: id(401), text: "Hace una semana que no levantan la basura en Camino Maldonado 5600, ya hay bolsas rotas en la vereda" }],
   },
 ];
 

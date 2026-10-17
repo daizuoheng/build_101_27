@@ -32,5 +32,10 @@ export const handlers: Partial<Record<JobKind, Handler>> = {
   },
   process_report: { run: processReport, onFailed: onProcessReportFailed },
   /** Textos del operador por revisión del incidente. Nunca bloquea otra etapa: sin LLM, plantilla. */
-  textgen: { run: async (deps, job) => void (await runTextgen(deps, job)) },
+  textgen: {
+    async run(deps, job) {
+      const { fallbacks } = await runTextgen(deps, job);
+      for (const [purpose, why] of Object.entries(fallbacks)) console.warn(`textgen ${job.entity_id}@${job.entity_revision} ${purpose}: plantilla (${why})`);
+    },
+  },
 };

@@ -191,9 +191,12 @@ export const policies = {
       // Promesas de llegada o demora: verbo en presente o futuro y una cantidad de tiempo (no narración pasada).
       "(?<![\\p{L}\\p{N}])(llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán)(?:\\s+\\p{L}+){0,3}?\\s+(?:(?:en|dentro de)\\s+)?(\\d+|unos?|unas?|pocos?|pocas?|media)\\s+(minutos?|min|horas?|hs|días?)(?![\\p{L}\\p{N}])",
       "(?<![\\p{L}\\p{N}])(llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán)\\s+(hoy|mañana|pronto|enseguida|ya)(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])en camino(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])(despach|asign)\\p{L}*",
-      "(?<![\\p{L}\\p{N}])(envi|mand)\\p{L}*\\s+(a\\s+)?(una?\\s+|el\\s+|la\\s+)?(cuadrillas?|unidad(es)?|equipos?|personal|móvil(es)?|operarios?)(?![\\p{L}\\p{N}])",
+      // «en camino» solo como promesa (verbo antes): «Bache en Camino Maldonado» es una dirección, no un aviso.
+      "(?<![\\p{L}\\p{N}])(está|están|estamos|va|van|vamos|ya|sigue|siguen|salió|salieron)\\s+(?:\\p{L}+\\s+){0,2}?en camino(?![\\p{L}\\p{N}])",
+      // Despacho: «despachar» siempre; asignar, enviar o mandar solo con personal como objeto («se le asigna prioridad» pasa).
+      "(?<![\\p{L}\\p{N}])despach\\p{L}*",
+      "(?<![\\p{L}\\p{N}])(fue|fueron|está|están|quedó|quedaron|ya)\\s+(asignad|enviad|derivad)[oa]s?(?![\\p{L}\\p{N}])",
+      "(?<![\\p{L}\\p{N}])(envi|mand|asign)\\p{L}*\\s+(a\\s+)?(una?\\s+|el\\s+|la\\s+)?(cuadrillas?|unidad(es)?|equipos?|personal|móvil(es)?|operarios?)(?![\\p{L}\\p{N}])",
     ],
     instructions: {
       common:

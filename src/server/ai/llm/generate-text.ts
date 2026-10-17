@@ -34,27 +34,44 @@ const Output = z.object({ body: z.string().trim().min(1), references: z.array(z.
 /** Largo máximo y frases prohibidas (despacho, tiempos): valen igual para el LLM y para la plantilla. */
 function bodyViolation(policy: TextgenPolicy, purpose: TextPurpose, body: string): string | null {
   const max = policy.max_chars[purpose];
-  if (body.length > max) return `texto de ${body.length} caracteres (máximo ${max})`;
+  const length = Array.from(body).length; // por punto de código, igual que el recorte de la plantilla
+  if (length > max) return `texto de ${length} caracteres (máximo ${max})`;
   const hit = policy.forbidden_patterns.find((p) => p.test(body));
   return hit ? `texto con contenido prohibido por política (${hit.source})` : null;
 }
 
 /**
+ * Hechos listos para cualquiera de los dos caminos: un dato (a menudo texto ciudadano, como el lugar) con una frase
+ * prohibida se reemplaza por `labels.redacted`. Así el LLM no la copia y la plantilla no la muestra.
+ */
+export function redactFacts(policy: TextgenPolicy, facts: TextInput["facts"]): TextInput["facts"] {
+  const bad = (v: string) => policy.forbidden_patterns.some((p) => p.test(v));
+  return Object.fromEntries(
+    Object.entries(facts).map(([k, v]) => [k, typeof v === "string" ? (bad(v) ? policy.labels.redacted : v) : Array.isArray(v) ? v.map((x) => (bad(x) ? policy.labels.redacted : x)) : v]),
+  );
+}
+
+/**
  * Plantilla de respaldo `textgen_<propósito>` con los hechos como variables. El texto fijo de la plantilla (sin
- * variables) que viola la política es un error de configuración y falla. Los datos que la completan (lugar, tipo)
- * pueden traer texto ciudadano: un dato con una frase prohibida se reemplaza por `labels.redacted`, y el resultado
- * se recorta al máximo en vez de fallar en cada reintento.
+ * variables) que viola la política es un error de configuración y falla. Los datos llegan ya redactados; si aun así
+ * el texto completo arma una frase prohibida (plantilla + dato), se omiten todos los datos de texto. El resultado se
+ * recorta al máximo en vez de fallar en cada reintento.
  */
 async function fromTemplate(db: Db, policy: TextgenPolicy, input: TextInput, error: string): Promise<DraftedText> {
   const key = `textgen_${input.purpose}`;
   const bad = bodyViolation(policy, input.purpose, await renderTemplate(db, input.territoryId, key));
   if (bad) throw new Error(`plantilla '${key}' inválida: ${bad}`);
   const sep = policy.labels.list_separator;
-  const safe = (v: string | number) => (typeof v === "string" && policy.forbidden_patterns.some((p) => p.test(v)) ? policy.labels.redacted : v);
-  const vars = Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, safe(Array.isArray(v) ? v.join(sep) : v)]));
-  const chars = Array.from(await renderTemplate(db, input.territoryId, key, vars)); // por punto de código: no parte emojis
   const max = policy.max_chars[input.purpose];
-  const body = chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : chars.join("");
+  const render = async (facts: TextInput["facts"]) => {
+    const vars = Object.fromEntries(Object.entries(facts).map(([k, v]) => [k, Array.isArray(v) ? v.join(sep) : v]));
+    const chars = Array.from(await renderTemplate(db, input.territoryId, key, vars)); // por punto de código: no parte emojis
+    return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : chars.join("");
+  };
+  let body = await render(redactFacts(policy, input.facts));
+  if (bodyViolation(policy, input.purpose, body)) {
+    body = await render(Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, typeof v === "number" ? v : policy.labels.redacted])));
+  }
   return { body, references: [], llmRunId: null, source: "template", error };
 }
 
@@ -73,7 +90,8 @@ export function checkText(policy: TextgenPolicy, input: TextInput, out: { body: 
  */
 export function userMessage(policy: TextgenPolicy, input: TextInput): string {
   const cap = (t: string) => t.slice(0, policy.max_reference_chars);
-  const facts = Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, typeof v === "string" ? cap(v) : Array.isArray(v) ? v.map(cap) : v]));
+  const redacted = redactFacts(policy, input.facts);
+  const facts = Object.fromEntries(Object.entries(redacted).map(([k, v]) => [k, typeof v === "string" ? cap(v) : Array.isArray(v) ? v.map(cap) : v]));
   const refs = input.references.map((r) => ({ id: r.id, text: cap(r.text) }));
   const block = (tag: string, v: unknown) => `<${tag}>\n${JSON.stringify(v).replace(/</g, "\\u003c")}\n</${tag}>`;
   return [block("hechos", { purpose: input.purpose, facts }), block("referencias", refs)].join("\n");
