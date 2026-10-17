@@ -243,9 +243,18 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
     case "orient":
       reply = { body: await t("greeting_other"), origin: "template", ui: null };
       break;
-    case "status":
-      reply = { body: await statusSummary(deps.pool, r.citizen_session_id, territoryId), origin: "template", ui: { kind: "status" } };
+    case "status": {
+      // Jev dice que es una consulta de estado: si menciona un código, se responde por ese código (cualquier frase);
+      // si no, los últimos reportes de esta sesión. El mensaje no es relato, así que sale de la descripción.
+      const ex = await lastExchange(deps.pool, r.conversation_id);
+      const code = ex && intake.config.status_lookup ? extractPublicCode(ex.text, { requireQueryOnly: false }) : null;
+      const body = code
+        ? await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId, code, max: intake.config.status_lookup!.max_per_hour }, t)
+        : await statusSummary(deps.pool, r.citizen_session_id, territoryId);
+      reply = { body, origin: "template", ui: { kind: "status" } };
+      if (ex) strip = ex.text;
       break;
+    }
     case "ask_location":
       reply = { body: await t("ask_location"), origin: "template", ui: { kind: "ask_location" } };
       break;
