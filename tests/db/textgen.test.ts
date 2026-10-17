@@ -231,7 +231,7 @@ describe("textos generados (textgen)", () => {
   it("una plantilla que arma una frase prohibida con datos numéricos es error de configuración", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);
-    await pool.query("update message_templates set body = 'Tarda {{count}} horas' where key = 'textgen_title'");
+    await pool.query("update message_templates set body = 'Llegará {{count}} veces' where key = 'textgen_title'");
     const input = { ...(await titleInput(pool, incidentId)), facts: { count: 5 } };
     await expect(generateText({ pool, llm: null }, input)).rejects.toThrow(/datos numéricos/);
   });

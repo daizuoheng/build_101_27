@@ -46,6 +46,18 @@ describe("patrones prohibidos de textgen (seed)", () => {
     "Bache en Camino Maldonado 1234, con paso parcialmente obstruido.",
     "Árbol caído en Camino Carrasco y Camino Ariel.",
     "Por severidad media se le asigna prioridad media.",
+    "Tres reportes fueron enviados por vecinos desde el lunes.",
+    "El primer reporte fue enviado hace 3 días; la foto fue enviada por un vecino.",
+    "El reclamo fue derivado por el municipio.",
+    "Según los vecinos, el camión demora 5 días en pasar.",
+    "El agua tarda dos días en bajar en Garibaldi.",
+    "Bache frente al despacho de pan de Rivera 2450.",
+    "Hay un árbol caído en camino a la escuela.",
+    "El agua llega ya a la puerta de las casas.",
+    "Cable colgando arriba de la vereda unos días.",
+    "La basura llega a la esquina en dos días.",
+    "Pozo en la calle Pará 2 h.",
+    "El anegamiento está derivado de una cañería rota.",
     "La basura está acumulada en Camino Maldonado 5600.",
     "El bache está en Camino Carrasco y Rivera.",
     "El camión no llega hace 5 días.",
@@ -97,7 +109,7 @@ describe("referencias ciudadanas en el mensaje", () => {
     const refs = block(msg, "referencias") as { text: string }[];
     expect(refs[0].text).toContain("Hay basura tirada");
     expect(refs[0].text).toContain(policy.labels.redacted);
-    expect(refs[0].text).not.toMatch(/20 minutos/);
+    expect(refs[0].text).not.toMatch(/cuadrilla llega/);
   });
 });
 

@@ -62,8 +62,9 @@ export function textInputs(inc: Omit<IncidentRow, "status">, reports: { id: stri
   const reasons = rules.map((r) => label(L.priority_rule, r));
   const base = { territoryId: inc.territory_id, entity: { type: "incident", id: inc.id, revision: inc.revision } };
   return {
-    // El título sale solo de tipo y lugar: sin descripciones ciudadanas que pagar ni que filtrar.
-    title: { ...base, purpose: "title", facts: { problem_type: problemType, place: inc.area_name ?? place }, references: [] },
+    // El título sale solo de tipo y lugar (dirección y barrio, para distinguir incidentes del mismo barrio):
+    // sin descripciones ciudadanas que pagar ni que filtrar.
+    title: { ...base, purpose: "title", facts: { problem_type: problemType, place }, references: [] },
     summary: {
       ...base,
       purpose: "summary",

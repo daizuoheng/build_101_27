@@ -188,21 +188,21 @@ export const policies = {
     max_reference_chars: 500,
     // El texto se rechaza (y va la plantilla) si promete despacho o tiempos: eso lo decide el backend, no el LLM.
     // Es una segunda barrera, no la principal: los hechos nunca traen estado ni despacho y las instrucciones lo
-    // prohíben. Ninguna lista de expresiones cubre todo el español; se suman casos a medida que aparecen.
+    // prohíben. Se prioriza no rechazar narración legítima de los reportes; los casos nuevos se suman con tests.
     // Límites de palabra Unicode: \b es ASCII en JS y no corta después de «á». Se compilan con flags "iu".
     forbidden_patterns: [
-      // Promesas de llegada, demora o resolución: verbo (presente, futuro o «va a …») y una cantidad de tiempo; no narración («no llega hace 5 días»).
-      "(?<![\\p{L}\\p{N}])(?:llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán|(?:va|van|vamos)\\s+a\\s+(?:llegar|arribar|demorar|tardar|ir|pasar|resolver))(?:\\s+(?!(?:hace|desde)(?![\\p{L}\\p{N}]))\\p{L}+){0,3}?\\s+(?:(?:en|dentro de)\\s+)?(?:\\d+\\s*|(?:unos?|unas?|pocos?|pocas?|media|dos|tres|cuatro|cinco|diez|veinte|treinta)\\s+)(?:minutos?|min|horas?|hs?|días?)(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])(?:llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán|(?:va|van|vamos)\\s+a\\s+(?:llegar|arribar|demorar|tardar|ir|pasar|resolver))\\s+(?:hoy|mañana|pronto|enseguida|ya)(?![\\p{L}\\p{N}])",
-      // Cualquier futuro (-rá/-rán) con plazo: «se resolverá en 24 horas», «irá mañana».
-      "(?<![\\p{L}\\p{N}])\\p{L}+r(?:á|án)(?:\\s+\\p{L}+){0,2}?\\s+(?:(?:en|dentro de)\\s+)?(?:\\d+\\s*|(?:unos?|unas?|pocos?|pocas?|media|dos|tres|cuatro|cinco|diez|veinte|treinta)\\s+)(?:minutos?|min|horas?|hs?|días?)(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])\\p{L}+r(?:á|án)\\s+(?:hoy|mañana|pronto|enseguida|ya)(?![\\p{L}\\p{N}])",
-      // «en camino» solo como aviso: seguido de fin de frase o «a/al/hacia/para». «El bache está en Camino Carrasco» es una dirección.
-      "(?<![\\p{L}\\p{N}])(?:hay|está|están|estamos|va|van|vamos|sigue|siguen|salió|salieron)(?:\\s+\\p{L}+){0,3}?\\s+en camino(?=\\s*(?:$|[.,;:!?)])|\\s+(?:a|al|hacia|para)(?![\\p{L}\\p{N}]))",
-      // Despacho: «despachar» siempre; asignar, enviar o mandar solo con personal como objeto («se le asigna prioridad» pasa).
-      "(?<![\\p{L}\\p{N}])despach\\p{L}*",
-      "(?<![\\p{L}\\p{N}])(?:fue|fueron|está|están|quedó|quedaron|ya)\\s+(?:asignad|enviad|derivad)[oa]s?(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])(?:envi|enví|mand|asign)\\p{L}*\\s+(?:a\\s+)?(?:(?:una?|el|la|los|las|\\d+|dos|tres|cuatro|cinco)\\s+)?(?:cuadrillas?|unidad(?:es)?|equipos?|personal|móvil(?:es)?|operarios?)(?![\\p{L}\\p{N}])",
+      // Despacho o llegada atribuidos a un actor del servicio, en cualquier orden y a menos de 40 caracteres: «se envió una cuadrilla», «la unidad llegará», «la orden fue asignada». Sin actor no cuenta: «reportes enviados por vecinos» o «el camión no llega hace días» pasan.
+      "(?<![\\p{L}\\p{N}])(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?|móvil(?:es)?|inspector(?:es|as?)?|órden(?:es)?|orden(?:es)?)(?![\\p{L}\\p{N}])[^.;]{0,40}?(?<![\\p{L}\\p{N}])(?:lleg\\p{L}*|arrib\\p{L}*|(?:va|van|vamos)\\s+a\\s+\\p{L}+|ir(?:á|án)|pasar(?:á|án)|sal(?:e|en|ió|ieron|drá|drán)|en camino|asign\\p{L}*|(?:envi|enví)(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas)|mand(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas)|despach\\p{L}*|derivad[oa]s?)(?![\\p{L}\\p{N}])",
+      "(?<![\\p{L}\\p{N}])(?:lleg\\p{L}*|arrib\\p{L}*|(?:va|van|vamos)\\s+a\\s+\\p{L}+|ir(?:á|án)|pasar(?:á|án)|sal(?:e|en|ió|ieron|drá|drán)|en camino|asign\\p{L}*|(?:envi|enví)(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas)|mand(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas)|despach\\p{L}*|derivad[oa]s?)(?![\\p{L}\\p{N}])[^.;]{0,40}?(?<![\\p{L}\\p{N}])(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?|móvil(?:es)?|inspector(?:es|as?)?|órden(?:es)?|orden(?:es)?)(?![\\p{L}\\p{N}])",
+      // Futuro de llegada o resolución con plazo, aunque no nombre al actor: «llegará en 30 minutos», «se demorará 5 horas». El presente narrativo pasa: «el camión demora 5 días en pasar».
+      "(?<![\\p{L}\\p{N}])(?:llegará|llegarán|arribará|arribarán|irá|irán|pasará|pasarán|demorará|demorarán|tardará|tardarán|estará|estarán)\\s+(?:en|dentro de|hoy|mañana|pronto|enseguida|\\d|unos?|unas?|dos|tres|media|pocos?|pocas?)(?![\\p{L}\\p{N}])",
+      "(?<![\\p{L}\\p{N}])(?:se\\s+(?:resolverá|solucionará|reparará|arreglará|atenderá|limpiará|levantará)|(?:será|serán)\\s+(?:resuelt|reparad|atendid|solucionad|arreglad|limpiad|levantad)\\p{L}*)(?![\\p{L}\\p{N}])",
+      // Llegada inminente sin plazo numérico: «llegan mañana», «van hoy».
+      "(?<![\\p{L}\\p{N}])(?:llega|llegan|va|van|vamos)\\s+(?:hoy|mañana|pronto|enseguida)(?![\\p{L}\\p{N}])",
+      // «en camino» como aviso al final de la frase («ya está en camino.»). «Un árbol caído en camino a la escuela» y «en Camino Carrasco» pasan.
+      "(?<![\\p{L}\\p{N}])(?:está|están|va|van|vamos|sigue|siguen)\\s+en camino(?=\\s*(?:$|[.;:!?]))",
+      // Despachar como verbo (no «despacho de pan»).
+      "(?<![\\p{L}\\p{N}])despach(?:ar|amos|ará|arán|ó|aron|ad[oa]s?|ando)(?![\\p{L}\\p{N}])",
     ],
     instructions: {
       common:
