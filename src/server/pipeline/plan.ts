@@ -14,7 +14,7 @@ const ACTIVE_ORDERS = ["offered", "accepted", "in_progress"];
  * Snapshot del territorio para `buildPlan`, todo desde la base y con un único instante `now`.
  * La banda se recalcula con la hora actual (promoción por antigüedad) salvo que haya una banda corregida a mano.
  */
-export async function buildSnapshot(db: Db, territoryId: string, now: Date): Promise<{ snapshot: PlanSnapshot; policy: PlanPolicy; policyVersionId: string; revisions: Record<string, number> }> {
+export async function buildSnapshot(db: Db, territoryId: string, now: Date): Promise<{ snapshot: PlanSnapshot; policy: PlanPolicy; policyVersionId: string; policyVersions: Record<string, string>; bands: Record<string, PriorityBand>; revisions: Record<string, number> }> {
   const planning = await getActivePolicy(db, territoryId, "planning");
   const dispatch = await getActivePolicy(db, territoryId, "dispatch");
   const priority = await getActivePolicy(db, territoryId, "priority");
@@ -39,7 +39,8 @@ export async function buildSnapshot(db: Db, territoryId: string, now: Date): Pro
       ?? computePriority({ severity: r.severity, activeHazard: r.active_hazard, passage: r.passage, accessibility: r.accessibility }, r.created_at, now, priority.config).band;
     return {
       id: r.id, revision: r.revision, band, activeHazard: r.active_hazard, createdAt: r.created_at, sourcesInWindow: r.sources_in_window,
-      dispatchBlocked: r.dispatch_blocked, problemTypeId: r.problem_type_id, requiredCapabilities: r.required,
+      // Sin tipo no hay capacidades requeridas: no se despacha a cualquier unidad hasta que alguien lo clasifique.
+      dispatchBlocked: r.dispatch_blocked || r.problem_type_id === null, problemTypeId: r.problem_type_id, requiredCapabilities: r.required,
       location: { lon: r.lon, lat: r.lat }, areaId: r.area_id,
     };
   });
@@ -87,6 +88,8 @@ export async function buildSnapshot(db: Db, territoryId: string, now: Date): Pro
       max_distance_m: dispatch.config.max_distance_m, position_max_age_min: dispatch.config.position_max_age_min,
     },
     policyVersionId: planning.id,
+    policyVersions: { planning: planning.id, dispatch: dispatch.id, priority: priority.id },
+    bands: Object.fromEntries(incidents.map((i) => [i.id, i.band])),
     revisions: Object.fromEntries(incidents.map((i) => [i.id, i.revision])),
   };
 }
@@ -98,14 +101,15 @@ export async function buildSnapshot(db: Db, territoryId: string, now: Date): Pro
 export async function runPlan(pool: Pool, input: { territoryId: string; trigger: string }, deps: { buildPlan: BuildPlan; now?: () => Date }): Promise<{ planRunId: string }> {
   return withTx(async (c) => {
     await c.query("select pg_advisory_xact_lock(hashtext($1))", [input.territoryId]); // mismo lock que los escritores de incidentes
-    const now = deps.now?.() ?? new Date();
-    const { snapshot, policy, policyVersionId, revisions } = await buildSnapshot(c, input.territoryId, now);
+    // Un único instante, del reloj de la base (no del worker): ordena bien los planes aunque haya varios workers.
+    const now = deps.now?.() ?? (await c.query<{ now: Date }>("select now() as now")).rows[0].now;
+    const { snapshot, policy, policyVersionId, policyVersions, bands, revisions } = await buildSnapshot(c, input.territoryId, now);
     const result = deps.buildPlan(snapshot, policy, now);
 
     const run = await c.query<{ id: string }>(
       `insert into plan_runs (territory_id, policy_version_id, computed_at, trigger, snapshot_refs, stats)
        values ($1, $2, $3, $4, $5, $6) returning id`,
-      [input.territoryId, policyVersionId, now, input.trigger, JSON.stringify({ incident_revisions: revisions, units: snapshot.units.map((u) => u.id) }),
+      [input.territoryId, policyVersionId, now, input.trigger, JSON.stringify({ incident_revisions: revisions, units: snapshot.units.map((u) => u.id), policy_versions: policyVersions }),
         JSON.stringify({ incidents: snapshot.incidents.length, units: snapshot.units.length, proposals: result.proposals.length, pending: result.pending.length })],
     );
     const planRunId = run.rows[0].id;
@@ -114,8 +118,20 @@ export async function runPlan(pool: Pool, input: { territoryId: string; trigger:
        where pr.id = pi.plan_run_id and pr.territory_id = $1 and pr.id <> $2 and pi.status in ('proposed', 'queued', 'blocked')`,
       [input.territoryId, planRunId],
     );
+    // Un despacho pendiente de un plan anterior ya no corresponde: este plan lo reemplaza.
+    await c.query(
+      `update jobs set status = 'done', last_error = 'superseded_by:' || $2, updated_at = now()
+       where kind = 'dispatch' and territory_id = $1 and status = 'pending'`,
+      [input.territoryId, planRunId],
+    );
+    // La banda con la que se ordenó (promoción por antigüedad) queda también en el incidente, para que la vista coincida.
+    for (const [id, band] of Object.entries(bands)) {
+      await c.query("update incidents set priority_band = $2 where id = $1 and priority_band <> $2", [id, band]);
+    }
     for (const q of result.queue) {
-      const status = q.proposal ? "proposed" : q.pendingReasons.length ? "blocked" : "queued";
+      // Un incidente ya asignado no está bloqueado: sigue en la cola con su orden activa.
+      const assigned = q.pendingReasons.includes("active_assignment");
+      const status = q.proposal ? "proposed" : q.pendingReasons.length && !assigned ? "blocked" : "queued";
       await c.query(
         `insert into plan_items (plan_run_id, incident_id, position, proposed_unit_id, score_breakdown, reasons, status, blocked_reason)
          values ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -136,18 +152,19 @@ export async function runPlan(pool: Pool, input: { territoryId: string; trigger:
  * Handler del job `plan`. Junta los pedidos pendientes del mismo territorio: una corrida cubre todos los eventos
  * anteriores a ella, así no se recalcula una vez por evento redundante.
  */
-export function planHandler(buildPlan: BuildPlan) {
-  return async (deps: { pool: Pool }, job: Job) => {
+export function planHandler(buildPlan: BuildPlan): { run: (deps: { pool: Pool }, job: Job) => Promise<void> } {
+  return { run: async (deps: { pool: Pool }, job: Job) => {
     const territoryId = job.territory_id ?? job.entity_id;
     const coalesced = await deps.pool.query<{ id: string }>(
       `update jobs set status = 'done', last_error = 'coalesced:' || $3, updated_at = now()
-       where kind = 'plan' and entity_id = $1 and status = 'pending' and id <> $2 and created_at <= (select created_at from jobs where id = $2)
+       where kind = 'plan' and entity_id = $1 and status = 'pending' and id <> $2 and run_after <= now()
+         and created_at <= (select created_at from jobs where id = $2)
        returning id`,
       [territoryId, job.id, job.id],
     );
     const trigger = String((job.payload as { trigger?: string }).trigger ?? job.payload?.reason ?? "event");
     await runPlan(deps.pool, { territoryId, trigger: coalesced.rows.length ? `${trigger}+${coalesced.rows.length}` : trigger }, { buildPlan });
-  };
+  } };
 }
 
 /** Replanificación periódica (factores temporales: antigüedad, ventana, vigencia de posiciones). Un job por intervalo. */

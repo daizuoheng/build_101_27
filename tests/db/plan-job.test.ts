@@ -91,9 +91,21 @@ describe("job plan", () => {
     for (const s of ["a", "b", "c"]) await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: s });
     const jobs = await pool.query("select * from jobs where kind = 'plan' order by created_at");
     const last = jobs.rows[2];
-    await planHandler(testPlanner)({ pool }, { ...last, territory_id: t, payload: { trigger: "event" } });
+    await planHandler(testPlanner).run({ pool }, { ...last, territory_id: t, payload: { trigger: "event" } });
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and status = 'pending' and id <> $1", [last.id])).n).toBe(0);
     expect((await one(pool, "select trigger from plan_runs")).trigger).toBe("event+2");
+  });
+
+  it("un plan nuevo reemplaza el despacho pendiente del anterior, bloquea incidentes sin tipo y deja la banda usada", async () => {
+    const sinTipo = (await one(pool, "insert into incidents (territory_id, location, severity) values ($1, st_setsrid(st_makepoint(-56.1993, -34.9068), 4326)::geography, 'high') returning id", [t])).id;
+    const viejo = await incident(pool, t, { slug: "bache", severity: "low", hoursAgo: 50 });
+    const first = await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    const second = await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    expect((await one(pool, "select status, last_error from jobs where kind = 'dispatch' and entity_id = $1", [first.planRunId]))).toEqual({ status: "done", last_error: `superseded_by:${second.planRunId}` });
+    expect((await one(pool, "select status from jobs where kind = 'dispatch' and entity_id = $1", [second.planRunId])).status).toBe("pending");
+    expect((await one(pool, "select status, blocked_reason from plan_items where plan_run_id = $1 and incident_id = $2", [second.planRunId, sinTipo]))).toEqual({ status: "blocked", blocked_reason: "dispatch_blocked" });
+    expect((await one(pool, "select priority_band from incidents where id = $1", [viejo])).priority_band).toBe("medium");
+    expect((await one(pool, "select snapshot_refs from plan_runs where id = $1", [second.planRunId])).snapshot_refs.policy_versions).toEqual(expect.objectContaining({ planning: expect.any(String), dispatch: expect.any(String), priority: expect.any(String) }));
   });
 
   it("la replanificación periódica encola un job por territorio por intervalo", async () => {
