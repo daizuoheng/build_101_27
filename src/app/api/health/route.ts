@@ -1,3 +1,4 @@
+import type { QueryConfig } from "pg";
 import { getPool } from "@/server/db/pool";
 
 /**
@@ -12,6 +13,13 @@ const HEALTH_TIMEOUT_MS = 5_000;
  */
 let inflight: Promise<unknown> | null = null;
 
+/**
+ * `query_timeout` corta la espera una vez tomada la conexión (p. ej. una medio abierta), así la compartida no queda
+ * colgada para siempre; el tope de `GET` cubre además la espera por conectar. `pg` lo acepta por consulta
+ * (lib/client.js) aunque `@types/pg` no lo declare en `QueryConfig`.
+ */
+const PING: QueryConfig & { query_timeout: number } = { text: "select 1", query_timeout: HEALTH_TIMEOUT_MS };
+
 /** Healthcheck del despliegue: el proceso responde y llega a la base. Sin detalles internos. */
 export async function GET() {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -20,7 +28,7 @@ export async function GET() {
   });
   try {
     inflight ??= getPool()
-      .query("select 1")
+      .query(PING)
       .finally(() => {
         inflight = null;
       });

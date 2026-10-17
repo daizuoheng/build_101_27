@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { createPool, poolConfig } from "@/server/db/pool";
 
@@ -81,12 +82,36 @@ describe("poolConfig", () => {
     expect(() => poolConfig(SESSION, { DATABASE_POOL_MAX: "cinco" })).toThrow(/DATABASE_POOL_MAX/);
   });
 
-  it("una conexión ociosa cortada por el servidor no tira el proceso", async () => {
+  it("una conexión cortada por el servidor no tira el proceso, ociosa o tomada con connect()", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const pool = createPool("postgres://localhost/radar_urbano");
-    expect(() => pool.emit("error", new Error("terminating connection due to administrator command"))).not.toThrow();
-    expect(spy).toHaveBeenCalled();
+    const client = new EventEmitter();
+    pool.emit("connect", client); // lo que hace pg-pool al abrir cada conexión
+    const err = new Error("terminating connection due to administrator command");
+    expect(() => client.emit("error", err)).not.toThrow(); // tomada: pg-pool ya no la escucha
+    expect(() => pool.emit("error", err, client)).not.toThrow(); // ociosa: pg-pool la reemite en el pool
+    expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
     await pool.end();
+  });
+
+  it("keepAlive para detectar conexiones medio abiertas", () => {
+    expect(poolConfig(SESSION, {}).keepAlive).toBe(true);
+  });
+
+  it("verify-ca verifica la cadena pero no el nombre (túnel por localhost)", () => {
+    const ssl = poolConfig("postgres://localhost:6432/postgres?sslmode=verify-ca", { DATABASE_CA_CERT: "PEM" }).ssl;
+    expect(ssl).toMatchObject({ ca: "PEM", rejectUnauthorized: true });
+    expect(typeof ssl === "object" && ssl.checkServerIdentity?.("localhost", {} as never)).toBeUndefined();
+  });
+
+  it("no-verify de pg y el ?ssl= booleano se respetan", () => {
+    expect(poolConfig(`${SESSION}?sslmode=no-verify`, { DATABASE_CA_CERT: "PEM" }).ssl).toEqual({ rejectUnauthorized: false });
+    expect(poolConfig("postgres://u:p@db:5432/app?ssl=0", {}).ssl).toBe(false);
+    expect(poolConfig("postgres://u:p@db:5432/app?ssl=false", {}).ssl).toBe(false);
+    const on = poolConfig("postgres://localhost/app?ssl=true", {});
+    expect(on.ssl).toEqual({ rejectUnauthorized: false });
+    expect(on.connectionString).not.toContain("ssl");
+    expect(() => poolConfig(`${SESSION}?ssl=quizas`, {})).toThrow(/no se admite/);
   });
 });

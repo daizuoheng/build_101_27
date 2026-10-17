@@ -29,7 +29,7 @@ class LocalStorage implements StorageAdapter {
  * Las claves nuevas (`sb_secret_…`) no son JWT y van solo en `apikey`; la `service_role` heredada (JWT)
  * va además como `Authorization: Bearer`.
  */
-export class SupabaseStorage implements StorageAdapter {
+class SupabaseStorage implements StorageAdapter {
   private readonly auth: Record<string, string>;
   constructor(private url: string, serviceKey: string, private bucket: string) {
     const jwt = serviceKey.split(".").length === 3;

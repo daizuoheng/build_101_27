@@ -19,13 +19,27 @@ const SSL_FILE_PARAMS = ["sslcert", "sslkey", "sslrootcert"];
 /** Modos que piden verificar el certificado: sin CA no se pueden cumplir y no se degradan en silencio. */
 const VERIFY_MODES = new Set(["verify-ca", "verify-full"]);
 
-/** `prefer`/`allow` de libpq caen a texto plano si el servidor no tiene TLS; `pg` no sabe hacerlo y no se finge. */
-const SSL_MODES = new Set(["disable", "require", ...VERIFY_MODES]);
+/**
+ * Los de libpq que `pg` puede cumplir, más `no-verify` (propio de `pg`). `prefer`/`allow` caen a texto plano si el
+ * servidor no tiene TLS; `pg` no sabe hacerlo y no se finge.
+ */
+const SSL_MODES = new Set(["disable", "no-verify", "require", ...VERIFY_MODES]);
 
 /** Host efectivo como lo resuelve `pg-connection-string`: `?host=` pisa al de la URL; `/…` es un socket Unix. */
 function isLocal(url: URL): boolean {
   const host = (url.searchParams.get("host") ?? decodeURIComponent(url.hostname)).toLowerCase();
   return LOCAL_HOSTS.has(host) || host.startsWith("/");
+}
+
+/** `sslmode` de la URL, o su equivalente si viene el `?ssl=` booleano que también acepta `pg`. */
+function sslMode(url: URL): string | undefined {
+  const raw = url.searchParams.get("sslmode") ?? undefined;
+  const flag = url.searchParams.get("ssl")?.toLowerCase();
+  const mode = raw?.toLowerCase() ?? (flag === "0" || flag === "false" ? "disable" : flag === "1" || flag === "true" ? "require" : flag);
+  if (mode !== undefined && !SSL_MODES.has(mode)) {
+    throw new Error(`DATABASE_URL trae ${raw ? `sslmode=${raw}` : `ssl=${flag}`}: no se admite; usá sslmode=disable, require, verify-ca o verify-full`);
+  }
+  return mode;
 }
 
 /**
@@ -34,16 +48,14 @@ function isLocal(url: URL): boolean {
  * Un `sslmode` explícito manda también en local (túnel o proxy hacia la base remota).
  */
 function resolveSsl(url: URL, ca: string | undefined): PoolConfig["ssl"] {
-  const raw = url.searchParams.get("sslmode");
-  const mode = raw?.toLowerCase();
-  if (mode !== undefined && !SSL_MODES.has(mode)) {
-    throw new Error(`DATABASE_URL trae sslmode=${raw}: no se admite; usá disable, require, verify-ca o verify-full`);
-  }
+  const mode = sslMode(url);
   if (mode === "disable") return false;
-  if (mode && VERIFY_MODES.has(mode) && !ca) throw new Error(`DATABASE_URL pide sslmode=${raw} pero falta DATABASE_CA_CERT`);
+  if (mode && VERIFY_MODES.has(mode) && !ca) throw new Error(`DATABASE_URL pide sslmode=${mode} pero falta DATABASE_CA_CERT`);
   if (!mode && isLocal(url)) return undefined;
-  // Con CA se verifica servidor y nombre (también para verify-ca); sin ella se cifra sin verificar (`require` de libpq).
-  return ca ? { ca, rejectUnauthorized: true } : { rejectUnauthorized: false };
+  if (mode === "no-verify" || !ca) return { rejectUnauthorized: false }; // cifra sin verificar (`require` de libpq)
+  // verify-ca como libpq: la cadena sí, el nombre no (túnel por localhost o conexión por IP).
+  if (mode === "verify-ca") return { ca, rejectUnauthorized: true, checkServerIdentity: () => undefined };
+  return { ca, rejectUnauthorized: true };
 }
 
 /**
@@ -65,14 +77,19 @@ export function poolConfig(connectionString: string, env: Record<string, string 
 
   const ssl = resolveSsl(url, env.DATABASE_CA_CERT?.replace(/\\n/g, "\n") || undefined);
   for (const k of [...url.searchParams.keys()]) if (k.startsWith("ssl")) url.searchParams.delete(k);
-  return { connectionString: url.toString(), max, ssl };
+  // keepAlive: detecta conexiones medio abiertas (NAT o Supavisor que las tira sin avisar) en vez de esperar al
+  // timeout de retransmisión del sistema.
+  return { connectionString: url.toString(), max, ssl, keepAlive: true };
 }
 
 export function createPool(connectionString: string): Pool {
   const p = new Pool(poolConfig(connectionString));
-  // Una conexión ociosa que el servidor corta (reinicio de Supavisor, mantenimiento, red) emite `error` en el pool;
-  // sin listener sería una excepción no capturada que tira el proceso. El pool ya descarta ese cliente.
-  p.on("error", (e) => console.error("pg pool: conexión ociosa perdida:", e.message));
+  // Si el servidor corta una conexión (reinicio de Supavisor, mantenimiento, red), el cliente emite `error`.
+  // pg-pool solo lo escucha mientras el cliente está ocioso; uno tomado con `connect()` (withTx, migrador) no tiene
+  // listener y la excepción no capturada tiraría el proceso. La consulta en curso igual falla con ese error.
+  p.on("connect", (client) => client.on("error", (e) => console.error("pg: conexión perdida:", e.message)));
+  // Con el cliente ocioso pg-pool lo reemite en el pool (y lo descarta): ya quedó logueado arriba.
+  p.on("error", () => {});
   return p;
 }
 

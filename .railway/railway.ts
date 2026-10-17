@@ -44,7 +44,7 @@ export default defineRailway(() => {
     preDeploy: migrate,
     healthcheck: "/api/health",
     healthcheckTimeout: 60,
-    deploy: { restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 5 },
+    deploy: { restartPolicyType: "ALWAYS" },
     env: { ...shared, SESSION_SECRET: preserve(), DATABASE_POOL_MAX: "4" },
   });
 

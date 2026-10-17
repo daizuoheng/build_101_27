@@ -40,19 +40,25 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
   `?host=` como `pg`) y con TLS en cualquier otro host. Con `DATABASE_CA_CERT` (certificado raíz de Supabase en PEM)
   se verifica servidor y nombre; sin él se cifra sin verificar (lo que libpq llama `sslmode=require`). `sslmode` no
   llega a `pg` a propósito: `pg-connection-string` 2.14 (el de `pg` 8.23) trata `sslmode=require` como `verify-full`
-  y fallaría sin CA. Un `sslmode` explícito (sin distinguir mayúsculas) manda también en local:
-  - `disable`: sin TLS (Postgres de CI o de red privada sin TLS);
-  - `require`: TLS, verificado solo si hay CA;
-  - `verify-ca`/`verify-full`: exigen `DATABASE_CA_CERT` (si falta, error en vez de conectarse sin verificar) y
-    verifican servidor y nombre;
+  y fallaría sin CA. Un `sslmode` explícito (sin distinguir mayúsculas; `?ssl=0|false|1|true` cuenta como `disable` o
+  `require`) manda también en local:
+  - `disable`: sin TLS (Postgres de CI o de red privada sin TLS; un Postgres de contenedor con host `db`/`postgres`
+    cuenta como remoto y lo necesita, igual que antes de este cambio);
+  - `require`: TLS, verificado solo si hay CA; `no-verify` (de `pg`): TLS sin verificar aunque haya CA;
+  - `verify-ca`/`verify-full`: exigen `DATABASE_CA_CERT` (si falta, error en vez de conectarse sin verificar);
+    `verify-full` verifica cadena y nombre, `verify-ca` solo la cadena (como libpq: sirve por túnel o por IP);
   - `prefer`/`allow` u otro valor: error (`pg` no sabe caer a texto plano como libpq).
   `sslcert`/`sslkey`/`sslrootcert` en la URL dan error en vez de ignorarse. El rechazo del puerto 6543 mira también
   `?port=`.
 - **Pool**: `DATABASE_POOL_MAX` vacío usa 10; un valor que no sea entero ≥ 1 falla al arrancar. Si el servidor corta
-  una conexión ociosa (reinicio de Supavisor, mantenimiento), el pool la descarta y lo loguea en vez de tirar el
-  proceso. El pool no tiene timeout de conexión (con el pool lleno las requests esperan turno, como antes);
-  `/api/health` tiene su propio tope de 5 s y con la base caída responde 503 en vez de quedar colgado; mientras su
-  consulta siga pendiente, los healthchecks siguientes la reusan en vez de encolar otra.
+  una conexión (reinicio de Supavisor, mantenimiento), ociosa o tomada por una transacción, se loguea
+  `pg: conexión perdida` en vez de tirar el proceso (la consulta en curso falla con ese error). `keepAlive` detecta
+  conexiones medio abiertas. El pool no tiene timeout de conexión (con el pool lleno las requests esperan turno, como
+  antes); `/api/health` tiene su propio tope de 5 s (también como `query_timeout` de su consulta) y con la base caída
+  responde 503 en vez de quedar colgado; mientras su consulta siga pendiente, los healthchecks siguientes la reusan en
+  vez de encolar otra.
+- **Reinicios**: web y worker con `restartPolicyType: ALWAYS`, para que una racha de caídas durante un corte de la
+  base no deje el servicio parado cuando vuelva.
 - **Conexiones a Supabase**: en modo sesión cada cliente ocupa un backend del pool de Supavisor. Web usa hasta 4 y
   worker hasta 3; durante un redeploy pueden coexistir el despliegue viejo y el nuevo: (4 + 3) × 2 = 14, más 1 del
   migrador del pre-deploy. `pg` abre conexiones a demanda y cierra las ociosas a los 10 s, así que es el peor caso.
@@ -174,8 +180,10 @@ unset DATABASE_URL
 - `pnpm typecheck` en un clon limpio (sin `next-env.d.ts` ni `.next/`): pasa gracias a `next typegen`.
 - Con `DATABASE_URL` apuntando a un host inalcanzable, `/api/health` responde 503 a los 5 s.
 - El build del worker (`tsc -p .railway/tsconfig.worker.json`) pasa en un clon limpio, sin `next typegen`.
-- Tests unitarios de `poolConfig` (TLS, CA, hosts locales incl. IPv6/mayúsculas/socket/`?host=`, `sslmode=disable`,
-  `verify-*` sin CA, rechazo de 6543 y de `sslrootcert`, `sslmode` en la URL, `DATABASE_POOL_MAX` vacío o inválido).
+- Tests unitarios de `poolConfig`/`createPool`: TLS y CA; hosts locales (IPv6, mayúsculas, socket, `?host=`); cada
+  `sslmode` y `?ssl=`; rechazo de 6543 (también `?port=`) y de `sslrootcert`; `DATABASE_POOL_MAX` vacío o inválido;
+  `keepAlive`; conexión cortada (ociosa o tomada) sin tirar el proceso.
+- Tres `/api/health` simultáneos con la base inalcanzable: los tres 503 a los 5 s.
 
 ## Bloqueado hasta tener cuentas (no simulado)
 
