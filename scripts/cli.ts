@@ -26,6 +26,31 @@ const commands: Record<string, () => Promise<Command>> = {
     const applied = await migrate(getPool());
     console.log(applied.length ? `aplicadas: ${applied.join(", ")}` : "sin migraciones pendientes");
   },
+  seed: async () => async () => {
+    const { getPool } = await import("../src/server/db/pool");
+    const { seedAll } = await import("../seeds");
+    await seedAll(getPool());
+    const { rows } = await getPool().query(`select
+      (select count(*) from problem_types)::int as tipos, (select count(*) from policy_versions where active)::int as politicas,
+      (select count(*) from message_templates)::int as plantillas, (select count(*) from areas)::int as areas`);
+    console.log("seed ok", rows[0]);
+  },
+  "import-areas": async () => async (args) => {
+    const { getPool } = await import("../src/server/db/pool");
+    const { importAreas } = await import("../src/server/geo/import-areas");
+    if (!args.territory || !args.file) {
+      console.error("uso: import-areas --territory <slug> --file <geojson> [--name-property barrio] [--id-property ogc_fid] [--source-url url]");
+      return 2;
+    }
+    const r = await importAreas(getPool(), {
+      territorySlug: args.territory,
+      file: args.file,
+      nameProperty: args["name-property"] ?? "name",
+      idProperty: args["id-property"] ?? "id",
+      sourceUrl: args["source-url"],
+    });
+    console.log(`áreas insertadas: ${r.inserted}, total: ${r.total}`);
+  },
 };
 
 async function main() {
