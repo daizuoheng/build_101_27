@@ -74,7 +74,7 @@ Hablado medido: 288 palabras (~1:55). Quedan ~40 s de colchón. **Regla de corte
 
 > Con personas, esto no escala. Con reglas fijas, no se entiende: la gente escribe como quiere y cuenta lo mismo de diez maneras.
 > Por eso la IA interpreta, y reglas auditables ordenan y asignan.
-> Lo medimos: acertó las once comparaciones de nuestro set de agrupación. Y cuando duda, no adivina: lo manda a revisión humana.
+> Lo medimos con la API real: acertó las cinco decisiones de agrupación de nuestra prueba. Y cuando duda, no adivina: lo manda a revisión humana.
 
 ## 7. Cierre · ~10 s
 
@@ -110,10 +110,10 @@ Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta
 
 *Respaldo:* sin Jev, no hay tipo, severidad, fuego activo ni agrupación; las reglas de prioridad no tienen hechos sobre los que operar.
 
-**2. "¿Cómo saben que funciona? Once casos es poco."**
-> Es poco, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno quemado hace dos días. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y de seis pares de agrupación, acertó los seis, igual en dos corridas.
+**2. "¿Cómo saben que funciona? Es una muestra muy chica."**
+> Es chica, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno ya quemado. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y si alguien reporta fuego donde ayer hubo un contenedor quemado, no los junta: lo manda a revisión. En total, cinco de cinco decisiones de agrupación y dieciocho de dieciocho respuestas de clasificación, iguales en dos corridas.
 
-*Respaldo:* cada llamada queda registrada (entrada, respuesta, latencia), así que el siguiente paso es un set etiquetado con avisos reales y medir precisión por tipo. Los casos de clasificación: 9 de 9 con el tipo o la rama correcta (`docs/superpowers/notes/jev-smoke.md`).
+*Respaldo:* cada llamada queda registrada (entrada, respuesta, latencia), así que el siguiente paso es un set etiquetado con avisos reales y medir precisión por tipo. **Límite a declarar si preguntan por las fotos:** son de Wikimedia Commons, no de reportes reales, y el caso "mismo bache" usa dos recortes de una misma foto; falta probar con dos fotos reales distintas del mismo problema (`docs/superpowers/notes/jev-smoke.md`).
 
 **3. "Probemos con un caso nuestro."** *(la rúbrica dice que pueden variar un caso)*
 > Dale. *(Pasarle el celular o tipear lo que diga.)* Si está en el catálogo lo clasifica; si es ambiguo o no alcanza la evidencia, lo pide o lo manda a revisión, no inventa.
@@ -121,14 +121,14 @@ Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta
 *Preparar:* el celular 2 listo con una sesión nueva. Si dicen algo vago ("hay un problema en mi barrio"), el resultado esperado es evidencia insuficiente y repregunta: eso es correcto, decirlo.
 
 **4. "¿Qué pasa cuando la IA se equivoca?"**
-> No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión humana y ese incidente no se despacha. Y si un operador corrige algo, esa corrección se respeta: una reevaluación no la pisa.
+> No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión humana y ese incidente queda bloqueado para despacho.
 
-*Respaldo:* umbrales de agrupación: 0,90 para "mismo incidente", 0,80 para "distinto" (`seeds/policies.ts`). Hoy la cola existe en datos y el operador la ve como aviso; la pantalla para resolverla no está.
+*Respaldo:* umbrales de agrupación: 0,90 para "mismo incidente", 0,80 para "distinto" (`seeds/policies.ts`). Hoy la cola existe en datos y el operador la ve como aviso; la pantalla para resolverla no está. Las correcciones humanas (tipo, severidad, prioridad, ubicación) están en el backend y una reevaluación no las pisa (`incidents/overrides.ts`), pero **todavía no hay pantalla para corregir**: decirlo así si preguntan.
 
 **5. "¿Qué es Jev? ¿Por qué no un LLM para todo?"**
-> Jev es un clasificador: le hacemos preguntas cerradas — ¿hay fuego activo?, ¿es el mismo incidente? — y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Además es rápido: medio segundo sin foto, poco más de un segundo con foto. El LLM lo usamos solo para extraer la dirección del texto, y no decide nada.
+> Jev es un clasificador: le hacemos preguntas cerradas — ¿hay fuego activo?, ¿es el mismo incidente? — y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Además es rápido: menos de medio segundo sin foto, alrededor de un segundo con foto. El LLM lo usamos solo para extraer la dirección del texto, y no decide nada.
 
-*Respaldo:* latencia medida 230–400 ms texto, 0,6–1,4 s con foto. Costo por aviso: no lo medimos todavía; decirlo así.
+*Respaldo:* latencia medida por evaluación completa: 230–400 ms solo texto, 640–1.100 ms con una foto; la comparación para agrupar, 0,5–1,4 s. Costo por aviso: no lo medimos todavía; decirlo así.
 
 **6. "¿Qué está simulado?"** *(la rúbrica pide declarar las simulaciones)*
 > La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, que están marcadas como demo. Y el contenedor desbordado del principio lo cargamos antes, pero por el mismo flujo, no a mano en la base.
@@ -161,7 +161,7 @@ Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta
 
 **"¿Por qué importa?"** Solo si preguntan, sin tono político: La Cachimba del Piojo asfaltó su calle principal en septiembre de 2026, después de años de reclamo, cuando el caso se hizo viral.
 
-**"¿Privacidad?"** No se piden datos de identidad (sesión con token opaco), fotos en storage privado con URLs firmadas, el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap (diseño §7b).
+**"¿Privacidad?"** No se piden datos de identidad (sesión con token opaco), solo se guarda el hash del token; fotos en storage privado, nunca con URL pública; el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap (diseño §7b).
 
 ### Qué no decir
 
@@ -173,18 +173,20 @@ Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta
 
 ## Qué no prometer como hecho
 
-Al momento de escribir esto no existen: el despacho de órdenes y la bandeja de la cuadrilla (`/unidad`), la pantalla para resolver la cola de revisión (el operador solo ve los avisos), y la geocodificación de esquinas tipo "Rivera y Comercio" (hay que poner un pin). El planificador está en `operacion/t11`, sin mergear: solo mostrarlo si está mergeado y probado. **Revisar esta lista contra el estado del sistema antes del pitch.**
+Al momento de escribir esto no existen: el despacho de órdenes y la bandeja de la cuadrilla (`/unidad`), la pantalla para resolver la cola de revisión (el operador solo ve los avisos), la pantalla para que el operador corrija un incidente (la lógica está en el backend), y la geocodificación de esquinas tipo "Rivera y Comercio" (hay que poner un pin). El planificador está en `operacion/t11`, sin mergear: solo mostrarlo si está mergeado y probado. **Revisar esta lista contra el estado del sistema antes del pitch.**
 
 ## Datos y fuentes
 
 | Dato | Fuente |
 |---|---|
-| ~40.000 llamados a Bomberos por quema de contenedores en 2025 | [Subrayado, 10/2/2026](https://www.subrayado.com.uy/contenedores-incendiados-bomberos-recibio-mas-50-mil-llamados-imm-espera-que-disminuya-el-plan-residuos-n999752) |
+| ~40.000 llamados a Bomberos por quema de contenedores en 2025 | [Subrayado, 10/2/2026](https://www.subrayado.com.uy/contenedores-incendiados-bomberos-recibio-mas-50-mil-llamados-imm-espera-que-disminuya-el-plan-residuos-n999752). Única fuente encontrada; la misma nota trae el "50 mil en enero" que no cierra. |
 | 727.637 reclamos de basura en 2025 | Intendencia (Desarrollo Ambiental) ante la Junta Departamental, rendición de cuentas 2025, vía [El Observador, 9/9/2026](https://www.elobservador.com.uy/nacional/basura-montevideo-mas-700000-denuncias-un-ano-la-meta-que-no-logro-cumplir-la-im-y-el-plan-piloto-450-contenedores-llave-digital-n6056766). Los ~2.000 por día son cuenta nuestra (727.637 ÷ 365). |
 | 33 horas/día de triage | Cuenta ilustrativa: 2.000 avisos × 1 min. No es un dato medido. |
 | Cierre de reclamos del SUR: mediana 13 días; 21,4% tarda más de 90 (315.782 finalizados entre 2024 y sep. 2026) | Calculado por nosotros con los [datos abiertos del SUR](https://catalogodatos.gub.uy/dataset/reclamos-registrados-en-el-sistema-unico-de-reclamos-de-la-intendencia-de-montevideo) (archivo del 11/10/2026). Script: `docs/pitch/datos/sur_tiempos.py`. |
 | Canales actuales: teléfono 1950, WhatsApp, formulario web del SUR, chatbot, Buzón Ciudadano, presencial | [Trámites IM](https://tramites.montevideo.gub.uy/tramite/contenedor-lleno-o-residuos-fuera-de-el) |
-| Agrupación: 5/5 decisiones y 11/11 respuestas por candidato correctas, estables en dos corridas | `docs/superpowers/notes/jev-smoke.md` (rama `nucleo/agrupacion`) |
+| Agrupación: 5/5 decisiones (5 pares) y 11/11 respuestas por candidato, iguales en dos corridas | `docs/superpowers/notes/jev-smoke.md` (rama `epic/nucleo`) |
+| Clasificación: 18/18 respuestas esperadas en 9 casos | Ídem. Fotos de Wikimedia Commons, no de reportes reales. |
+| Latencia: 230–400 ms solo texto, 640–1.100 ms con foto; agrupación 0,5–1,4 s | Ídem. |
 
 **Descartado:** la "mediana de 8 días y 11,8% más de 90" de un repositorio de GitHub sin revisión ([EmilianoGonLas/reclamos-montevideo](https://github.com/EmilianoGonLas/reclamos-montevideo)). Usa la misma fuente oficial, pero recalculado sobre los cerrados 2024–2026 da 13 días y 21,4%. Su 8 se parece a la mediana por año de ingreso 2025 (8 días), que subestima porque 19.650 reclamos de ese año siguen abiertos.
 

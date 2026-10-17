@@ -250,7 +250,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <div class="say">
             <p>Con personas, esto no escala. Con reglas fijas, no se entiende: la gente escribe como quiere y cuenta lo mismo de diez maneras.</p>
             <p>Por eso la IA interpreta, y reglas auditables ordenan y asignan.</p>
-            <p>Lo medimos: acertó las once comparaciones de nuestro set de agrupación. Y cuando duda, no adivina: lo manda a revisión humana.</p>
+            <p>Lo medimos con la API real: acertó las cinco decisiones de agrupación de nuestra prueba. Y cuando duda, no adivina: lo manda a revisión humana.</p>
           </div>
         </div>
       </article>
@@ -299,9 +299,9 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         <p>Respaldo: sin Jev no hay tipo, severidad, fuego activo ni agrupación; las reglas de prioridad no tienen hechos sobre los que operar.</p>
       </div>
       <div>
-        <h3>2. "¿Cómo saben que funciona? Once casos es poco."</h3>
-        <p><strong>Es poco, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno quemado hace dos días. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y de seis pares de agrupación, acertó los seis, igual en dos corridas.</strong></p>
-        <p>Respaldo: cada llamada queda registrada, así que el siguiente paso es un set etiquetado con avisos reales y medir precisión por tipo. Clasificación: 9 de 9 con el tipo o la rama correcta.</p>
+        <h3>2. "¿Cómo saben que funciona? Es una muestra muy chica."</h3>
+        <p><strong>Es chica, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno ya quemado. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y si alguien reporta fuego donde ayer hubo un contenedor quemado, no los junta: lo manda a revisión. En total, cinco de cinco decisiones de agrupación y dieciocho de dieciocho respuestas de clasificación, iguales en dos corridas.</strong></p>
+        <p>Respaldo: cada llamada queda registrada, así que el siguiente paso es un set etiquetado con avisos reales y medir precisión por tipo. <strong>Límite a declarar si preguntan por las fotos:</strong> son de Wikimedia Commons, no de reportes reales, y el "mismo bache" usa dos recortes de una misma foto.</p>
       </div>
       <div>
         <span class="tag">La rúbrica dice que pueden variar un caso</span>
@@ -311,13 +311,13 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       </div>
       <div>
         <h3>4. "¿Qué pasa cuando la IA se equivoca?"</h3>
-        <p><strong>No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión humana y ese incidente no se despacha. Y si un operador corrige algo, una reevaluación no lo pisa.</strong></p>
-        <p>Respaldo: umbrales de agrupación 0,90 "mismo" y 0,80 "distinto" (<code>seeds/policies.ts</code>). La cola existe en datos y el operador la ve como aviso; la pantalla para resolverla no está.</p>
+        <p><strong>No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión humana y ese incidente queda bloqueado para despacho.</strong></p>
+        <p>Respaldo: umbrales de agrupación 0,90 "mismo" y 0,80 "distinto" (<code>seeds/policies.ts</code>). La cola existe en datos y el operador la ve como aviso; la pantalla para resolverla no está. Las correcciones humanas están en el backend y una reevaluación no las pisa, pero todavía no hay pantalla para corregir: decirlo así.</p>
       </div>
       <div>
         <h3>5. "¿Qué es Jev? ¿Por qué no un LLM para todo?"</h3>
-        <p><strong>Jev es un clasificador: le hacemos preguntas cerradas, como ¿hay fuego activo? o ¿es el mismo incidente?, y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Es rápido: medio segundo sin foto, poco más de un segundo con foto. El LLM solo extrae la dirección, y no decide nada.</strong></p>
-        <p>Respaldo: latencia medida 230–400 ms texto, 0,6–1,4 s con foto. Costo por aviso: no lo medimos todavía; decirlo así.</p>
+        <p><strong>Jev es un clasificador: le hacemos preguntas cerradas, como ¿hay fuego activo? o ¿es el mismo incidente?, y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Es rápido: menos de medio segundo sin foto, alrededor de un segundo con foto. El LLM solo extrae la dirección, y no decide nada.</strong></p>
+        <p>Respaldo: latencia por evaluación completa 230–400 ms solo texto, 640–1.100 ms con foto; la comparación para agrupar 0,5–1,4 s. Costo por aviso: no lo medimos todavía; decirlo así.</p>
       </div>
       <div>
         <span class="tag">La rúbrica pide declararlo</span>
@@ -376,7 +376,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       </div>
       <div>
         <h3>"¿Privacidad?"</h3>
-        <p>No se piden datos de identidad (sesión con token opaco), fotos en storage privado con URLs firmadas, el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap.</p>
+        <p>No se piden datos de identidad (sesión con token opaco; solo se guarda su hash), fotos en storage privado, nunca con URL pública, y el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap.</p>
       </div>
     </div>
 
@@ -399,6 +399,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <ul>
         <li>El despacho de órdenes y la bandeja de la cuadrilla (<code>/unidad</code>).</li>
         <li>La pantalla para resolver la cola de revisión: el operador solo ve los avisos.</li>
+        <li>La pantalla para que el operador corrija un incidente: la lógica está en el backend.</li>
         <li>La geocodificación de esquinas tipo "Rivera y Comercio": hay que poner un pin.</li>
         <li>El planificador está en <code>operacion/t11</code>, sin mergear: mostrarlo solo si está mergeado y probado.</li>
       </ul>
@@ -412,12 +413,14 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <table>
         <thead><tr><th>Dato</th><th>Fuente</th></tr></thead>
         <tbody>
-          <tr><td>~40.000 llamados a Bomberos por quema de contenedores en 2025</td><td><a href="https://www.subrayado.com.uy/contenedores-incendiados-bomberos-recibio-mas-50-mil-llamados-imm-espera-que-disminuya-el-plan-residuos-n999752" target="_blank" rel="noopener">Subrayado, 10/2/2026</a></td></tr>
+          <tr><td>~40.000 llamados a Bomberos por quema de contenedores en 2025</td><td><a href="https://www.subrayado.com.uy/contenedores-incendiados-bomberos-recibio-mas-50-mil-llamados-imm-espera-que-disminuya-el-plan-residuos-n999752" target="_blank" rel="noopener">Subrayado, 10/2/2026</a>. Única fuente encontrada; la misma nota trae el "50 mil en enero" que no cierra.</td></tr>
           <tr><td>727.637 reclamos de basura en 2025</td><td>Intendencia ante la Junta Departamental (rendición de cuentas 2025), vía <a href="https://www.elobservador.com.uy/nacional/basura-montevideo-mas-700000-denuncias-un-ano-la-meta-que-no-logro-cumplir-la-im-y-el-plan-piloto-450-contenedores-llave-digital-n6056766" target="_blank" rel="noopener">El Observador, 9/9/2026</a>. Los ~2.000 por día son cuenta nuestra.</td></tr>
           <tr><td>33 horas por día de triage</td><td>Cuenta ilustrativa: 2.000 avisos × 1 min. No es un dato medido.</td></tr>
           <tr><td>Cierre de reclamos del SUR: mediana 13 días; 21,4% más de 90 (315.782 finalizados, 2024 a sep. 2026)</td><td>Calculado por nosotros con los <a href="https://catalogodatos.gub.uy/dataset/reclamos-registrados-en-el-sistema-unico-de-reclamos-de-la-intendencia-de-montevideo" target="_blank" rel="noopener">datos abiertos del SUR</a> (archivo del 11/10/2026). Script: <code>docs/pitch/datos/sur_tiempos.py</code>.</td></tr>
           <tr><td>Canales actuales de reclamo</td><td><a href="https://tramites.montevideo.gub.uy/tramite/contenedor-lleno-o-residuos-fuera-de-el" target="_blank" rel="noopener">Trámites IM</a></td></tr>
-          <tr><td>Agrupación: 5/5 decisiones y 11/11 respuestas por candidato correctas, estables en dos corridas</td><td><code>docs/superpowers/notes/jev-smoke.md</code></td></tr>
+          <tr><td>Agrupación: 5/5 decisiones (5 pares) y 11/11 respuestas por candidato, iguales en dos corridas</td><td><code>docs/superpowers/notes/jev-smoke.md</code></td></tr>
+          <tr><td>Clasificación: 18/18 respuestas esperadas en 9 casos</td><td>Ídem. Fotos de Wikimedia Commons, no de reportes reales.</td></tr>
+          <tr><td>Latencia: 230–400 ms solo texto, 640–1.100 ms con foto; agrupación 0,5–1,4 s</td><td>Ídem.</td></tr>
         </tbody>
       </table>
     </div>
