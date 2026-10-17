@@ -23,6 +23,9 @@ const shared = {
   NOMINATIM_USER_AGENT: preserve(),
 };
 
+// Conexiones: el pooler de sesión de Supabase da un backend por cliente. Peor caso en un redeploy, con el despliegue
+// viejo y el nuevo a la vez: (4 web + 3 worker) × 2 = 14 más el migrador del pre-deploy. El pool size del proyecto
+// (Database Settings → Connection pooling) tiene que alcanzar: ver la guía de despliegue.
 // Las dos aplican migraciones antes de arrancar; el advisory lock del migrador las serializa.
 const migrate = "pnpm cli migrate";
 
@@ -36,17 +39,17 @@ export default defineRailway(() => {
     healthcheck: "/api/health",
     healthcheckTimeout: 60,
     deploy: { restartPolicyType: "ON_FAILURE", restartPolicyMaxRetries: 5 },
-    env: { ...shared, SESSION_SECRET: preserve(), DATABASE_POOL_MAX: "5" },
+    env: { ...shared, SESSION_SECRET: preserve(), DATABASE_POOL_MAX: "4" },
   });
 
   const worker = service("worker", {
     source: github(REPO, { branch: BRANCH }),
-    // Corre con tsx: en vez de `next build`, el build verifica tipos para no desplegar un worker roto
-    // (`pnpm typecheck` genera antes los tipos de rutas con `next typegen`, que en un clon limpio no existen).
+    // Corre con tsx: en vez de `next build`, el build verifica los tipos de lo que el worker importa
+    // (no del repo entero: un error solo en src/app no debe frenar ni redesplegar al worker).
     build: {
       builder: "RAILPACK",
-      buildCommand: "pnpm typecheck",
-      // Lo que lee el worker en ejecución (tsx resuelve `@/*` con tsconfig.json) y su pre-deploy (scripts/cli.ts + migrations).
+      buildCommand: "pnpm exec tsc --noEmit -p .railway/tsconfig.worker.json",
+      // Lo que verifica el build, lo que lee en ejecución (tsx resuelve `@/*` con tsconfig.json) y su pre-deploy.
       watchPatterns: [
         "src/server/**",
         "src/shared/**",
@@ -57,6 +60,7 @@ export default defineRailway(() => {
         "package.json",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml",
+        ".railway/tsconfig.worker.json",
       ],
     },
     // tsx reenvía SIGTERM: el worker termina el job en curso y suelta el lease.

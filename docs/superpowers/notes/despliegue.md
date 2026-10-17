@@ -17,11 +17,13 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 - **Dos servicios del mismo repo**, rama `main`:
   - `web`: build `pnpm build`; arranca con `node_modules/.bin/next start` (toma `$PORT`); healthcheck `/api/health`
     (responde 200 si llega a la base).
-  - `worker`: build `pnpm typecheck` (no necesita `next build`; corre `next typegen` antes de `tsc`, porque en un clon
-    limpio no existen `next-env.d.ts` ni los tipos de rutas como `RouteContext`); arranca con
-    `node_modules/.bin/tsx src/worker/index.ts`. Solo se redespliega si cambia lo que lee en ejecución o en el
-    pre-deploy (`watchPatterns`: `src/server`, `src/shared`, `src/worker`, `migrations`, `scripts/cli.ts`,
-    `tsconfig.json`, `package.json` y archivos de pnpm).
+  - `worker`: build `tsc --noEmit -p .railway/tsconfig.worker.json` (no necesita `next build`): verifica los tipos
+    solo de lo que importa `src/worker/index.ts` (`src/server`, `src/shared`), así un error que esté solo en `src/app`
+    no frena su despliegue. Arranca con `node_modules/.bin/tsx src/worker/index.ts`. Solo se redespliega si cambia lo
+    que verifica, lo que lee en ejecución o su pre-deploy (`watchPatterns`: `src/server`, `src/shared`, `src/worker`,
+    `migrations`, `scripts/cli.ts`, `tsconfig.json`, `package.json`, archivos de pnpm y su tsconfig).
+  - `pnpm typecheck` (local/CI) corre `next typegen` antes de `tsc`, porque en un clon limpio no existen
+    `next-env.d.ts` ni los tipos de rutas como `RouteContext`, y verifica también `.railway/railway.ts`.
   - En los dos, el arranque usa el binario directo y no `pnpm start`: verificado en local que pnpm no reenvía SIGTERM
     al hijo, y con el binario directo el worker termina el job en curso y escribe `worker detenido`.
 - **Migraciones** como comando previo al despliegue (`pnpm cli migrate`) en los dos servicios; el advisory lock del
@@ -36,10 +38,18 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 - **TLS** siempre fuera de localhost (`localhost`, `127.0.0.1`, `[::1]` o socket Unix). Con `DATABASE_CA_CERT`
   (certificado raíz de Supabase en PEM) se verifica servidor y nombre; sin él se cifra sin verificar (lo que libpq
   llama `sslmode=require`). `sslmode` de la URL se descarta a propósito: `pg-connection-string` 2.14 (el de `pg` 8.23)
-  trata `sslmode=require` como `verify-full` y fallaría sin CA. Excepción: `sslmode=disable` apaga TLS (Postgres de CI
-  o de red privada sin TLS). `sslcert`/`sslkey`/`sslrootcert` en la URL dan error en vez de ignorarse.
-- **Pool**: `DATABASE_POOL_MAX` vacío usa 10; un valor que no sea entero ≥ 1 falla al arrancar. Conseguir conexión
-  tiene un tope de 10 s, así que con la base caída `/api/health` responde 503 en vez de quedar colgado.
+  trata `sslmode=require` como `verify-full` y fallaría sin CA. Excepciones: `sslmode=disable` apaga TLS (Postgres de CI
+  o de red privada sin TLS); `sslmode=verify-ca`/`verify-full` sin `DATABASE_CA_CERT` dan error en vez de conectarse
+  sin verificar; `sslcert`/`sslkey`/`sslrootcert` en la URL dan error en vez de ignorarse. El host efectivo para
+  decidir si es local respeta `?host=` (como `pg`).
+- **Pool**: `DATABASE_POOL_MAX` vacío usa 10; un valor que no sea entero ≥ 1 falla al arrancar. El pool no tiene
+  timeout de conexión (con el pool lleno las requests esperan turno, como antes); `/api/health` tiene su propio tope
+  de 5 s y con la base caída responde 503 en vez de quedar colgado.
+- **Conexiones a Supabase**: en modo sesión cada cliente ocupa un backend del pool de Supavisor. Web usa hasta 4 y
+  worker hasta 3; durante un redeploy pueden coexistir el despliegue viejo y el nuevo: (4 + 3) × 2 = 14, más 1 del
+  migrador del pre-deploy. `pg` abre conexiones a demanda y cierra las ociosas a los 10 s, así que es el peor caso.
+  **Sin verificar:** el pool size por defecto del plan (Database Settings → Connection pooling); si es menor que 15,
+  subirlo ahí o bajar `DATABASE_POOL_MAX` en el IaC. Síntoma si no alcanza: errores de "max clients" en los logs.
 - **Storage**: `STORAGE_DRIVER=supabase` sobre un bucket **privado**; las fotos se sirven solo a través de la app
   tras autorizar. En Railway (`RAILWAY_ENVIRONMENT_ID` definida), `STORAGE_DRIVER=local` falla a propósito en el primer
   uso del storage (web y worker no comparten disco); el IaC ya fija `STORAGE_DRIVER=supabase`.
@@ -52,7 +62,7 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 |---|---|---|---|
 | `DATABASE_URL` | ✓ | ✓ | Supabase → Connect → **Session pooler** (puerto 5432). Secreto. |
 | `DATABASE_CA_CERT` | opcional | opcional | PEM de Database Settings → SSL; se puede pegar con `\n` escapados. **No está en el IaC**: ver abajo. |
-| `DATABASE_POOL_MAX` | `5` | `3` | Ya en el IaC. El pooler de sesión cuenta cada conexión contra el límite del plan. |
+| `DATABASE_POOL_MAX` | `4` | `3` | Ya en el IaC. El pooler de sesión cuenta cada conexión contra el límite del plan. |
 | `TYPESAFE_API_KEY` | ✓ | ✓ | Jev. Secreto. |
 | `LLM_BASE_URL` | ✓ | ✓ | `https://api.deepseek.com` (ya en el IaC). |
 | `LLM_API_KEY` | ✓ | ✓ | DeepSeek. Secreto. |
@@ -154,9 +164,10 @@ unset DATABASE_URL
 - `.railway/railway.ts` compila con el SDK `railway@3.16.0` y su evaluación produce los dos servicios esperados;
   `pnpm typecheck` lo verifica (un campo mal escrito, p. ej. `healthcheckTimeot`, da error).
 - `pnpm typecheck` en un clon limpio (sin `next-env.d.ts` ni `.next/`): pasa gracias a `next typegen`.
-- Con `DATABASE_URL` apuntando a un host inalcanzable, `/api/health` responde 503 a los 10 s (timeout de conexión).
-- Tests unitarios de `poolConfig` (TLS, CA, IPv6 local, `sslmode=disable`, rechazo de 6543 y de `sslrootcert`,
-  `sslmode` en la URL, `DATABASE_POOL_MAX` vacío o inválido).
+- Con `DATABASE_URL` apuntando a un host inalcanzable, `/api/health` responde 503 a los 5 s.
+- El build del worker (`tsc -p .railway/tsconfig.worker.json`) pasa en un clon limpio, sin `next typegen`.
+- Tests unitarios de `poolConfig` (TLS, CA, hosts locales incl. IPv6/mayúsculas/socket/`?host=`, `sslmode=disable`,
+  `verify-*` sin CA, rechazo de 6543 y de `sslrootcert`, `sslmode` en la URL, `DATABASE_POOL_MAX` vacío o inválido).
 
 ## Bloqueado hasta tener cuentas (no simulado)
 

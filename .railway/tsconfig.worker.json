@@ -1,0 +1,7 @@
+{
+  "//": "Build del worker en Railway: verifica solo el grafo de src/worker/index.ts (src/server, src/shared), alineado con sus watchPatterns.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [],
+  "files": ["../src/worker/index.ts"]
+}

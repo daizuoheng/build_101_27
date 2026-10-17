@@ -4,10 +4,28 @@ import { poolConfig } from "@/server/db/pool";
 const SESSION = "postgresql://postgres.abcd:pw@aws-0-sa-east-1.pooler.supabase.com:5432/postgres";
 
 describe("poolConfig", () => {
-  it("local sin TLS (incluido IPv6 y socket Unix)", () => {
-    for (const url of ["postgres://localhost/radar_urbano", "postgres://[::1]:5432/radar_urbano", "postgres:///radar_urbano"]) {
-      expect(poolConfig(url, {}).ssl).toBeUndefined();
+  it("local sin TLS (IPv6, mayúsculas, host por defecto y socket Unix)", () => {
+    for (const url of [
+      "postgres://localhost/radar_urbano",
+      "postgres://LOCALHOST/radar_urbano",
+      "postgres://[::1]:5432/radar_urbano",
+      "postgres:///radar_urbano",
+      "postgres:///radar_urbano?host=/tmp",
+    ]) {
+      expect(poolConfig(url, {}).ssl, url).toBeUndefined();
     }
+  });
+
+  it("?host= remoto pisa al host vacío de la URL: va con TLS", () => {
+    expect(poolConfig("postgres:///app?host=db.remote.example", {}).ssl).toEqual({ rejectUnauthorized: false });
+  });
+
+  it("sslmode=verify-full sin DATABASE_CA_CERT falla en vez de degradar a TLS sin verificar", () => {
+    expect(() => poolConfig(`${SESSION}?sslmode=verify-full`, {})).toThrow(/DATABASE_CA_CERT/);
+    expect(() => poolConfig(`${SESSION}?sslmode=verify-ca`, { DATABASE_CA_CERT: "" })).toThrow(/DATABASE_CA_CERT/);
+    const cfg = poolConfig(`${SESSION}?sslmode=verify-full`, { DATABASE_CA_CERT: "PEM" });
+    expect(cfg.ssl).toEqual({ ca: "PEM", rejectUnauthorized: true });
+    expect(cfg.connectionString).not.toContain("sslmode");
   });
 
   it("sslmode=disable apaga TLS en un host remoto (CI, red privada)", () => {
@@ -44,9 +62,5 @@ describe("poolConfig", () => {
     expect(poolConfig(SESSION, { DATABASE_POOL_MAX: "" }).max).toBe(10);
     expect(() => poolConfig(SESSION, { DATABASE_POOL_MAX: "0" })).toThrow(/DATABASE_POOL_MAX/);
     expect(() => poolConfig(SESSION, { DATABASE_POOL_MAX: "cinco" })).toThrow(/DATABASE_POOL_MAX/);
-  });
-
-  it("timeout de conexión para no colgar el healthcheck", () => {
-    expect(poolConfig(SESSION, {}).connectionTimeoutMillis).toBeGreaterThan(0);
   });
 });

@@ -30,24 +30,24 @@ class LocalStorage implements StorageAdapter {
  * va además como `Authorization: Bearer`.
  */
 export class SupabaseStorage implements StorageAdapter {
-  constructor(private url: string, private serviceKey: string, private bucket: string) {}
+  private readonly auth: Record<string, string>;
+  constructor(private url: string, serviceKey: string, private bucket: string) {
+    const jwt = serviceKey.split(".").length === 3;
+    this.auth = jwt ? { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } : { apikey: serviceKey };
+  }
   private endpoint(key: string) {
     return `${this.url.replace(/\/$/, "")}/storage/v1/object/${this.bucket}/${key.split("/").map(encodeURIComponent).join("/")}`;
-  }
-  private auth(): Record<string, string> {
-    const jwt = this.serviceKey.split(".").length === 3;
-    return jwt ? { apikey: this.serviceKey, Authorization: `Bearer ${this.serviceKey}` } : { apikey: this.serviceKey };
   }
   async put(key: string, bytes: Buffer, contentType: string) {
     const res = await fetch(this.endpoint(key), {
       method: "POST",
-      headers: { ...this.auth(), "Content-Type": contentType, "x-upsert": "true" },
+      headers: { ...this.auth, "Content-Type": contentType, "x-upsert": "true" },
       body: new Uint8Array(bytes),
     });
     if (!res.ok) throw new Error(`Supabase Storage put ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
   async get(key: string) {
-    const res = await fetch(this.endpoint(key), { headers: this.auth() });
+    const res = await fetch(this.endpoint(key), { headers: this.auth });
     if (!res.ok) throw new Error(`Supabase Storage get ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return Buffer.from(await res.arrayBuffer());
   }
