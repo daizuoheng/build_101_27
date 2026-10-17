@@ -14,8 +14,10 @@ import { handlers } from "@/server/jobs/handlers";
 import { runOnce } from "@/server/jobs/worker-loop";
 import { performUnitAction } from "@/server/unit/actions";
 import { getUnitInbox } from "@/server/unit/inbox";
+import { getUnitPhoto } from "@/server/unit/photos";
+import { getOwnPhoto } from "@/server/intake/photos";
 import { ASSIGNMENT_TRANSITIONS } from "@/shared/contracts/assignment";
-import { fakeJev, newSession, territoryId, testDeps } from "./fakes";
+import { fakeJev, memoryStorage, newSession, territoryId, testDeps } from "./fakes";
 import { resetDb, testDb } from "./setup";
 
 const POINT = { lon: -56.1993, lat: -34.9068 };
@@ -127,6 +129,48 @@ describe("bandeja de unidad", () => {
     ).rejects.toMatchObject({ status: 409 });
     const ev = await pool.query("select count(*)::int as n from events where kind = 'unit_action'");
     expect(ev.rows[0].n).toBe(0);
+  });
+
+  it("fotos: la unidad de la orden activa ve el derivado JPEG; otra unidad o una orden cerrada ⇒ 404", async () => {
+    const { pool, unitId, otherUnitId, assignmentId } = await setupAssignment();
+    const storage = memoryStorage();
+    const r = await pool.query<{ id: string }>("select report_id as id from report_incident_links where active limit 1");
+    const orig = await pool.query<{ id: string }>(
+      `insert into attachments (report_id, storage_key, content_type, bytes, sha256, purpose) values ($1, 'k-orig', 'image/heic', 3, 'a', 'original') returning id`,
+      [r.rows[0].id],
+    );
+    await pool.query(
+      `insert into attachments (report_id, storage_key, content_type, bytes, sha256, purpose, derived_from_id) values ($1, 'k-jev', 'image/jpeg', 3, 'b', 'jev', $2)`,
+      [r.rows[0].id, orig.rows[0].id],
+    );
+    await storage.put("k-jev", Buffer.from("jpg"), "image/jpeg");
+
+    expect((await getUnitInbox(pool, unitId)).assignments[0].incident.photoIds).toEqual([orig.rows[0].id]);
+    expect((await getUnitPhoto(pool, storage, { unitId, attachmentId: orig.rows[0].id })).toString()).toBe("jpg");
+    await expect(getUnitPhoto(pool, storage, { unitId: otherUnitId, attachmentId: orig.rows[0].id })).rejects.toMatchObject({ status: 404 });
+    await pool.query("update assignments set status = 'completed' where id = $1", [assignmentId]);
+    await expect(getUnitPhoto(pool, storage, { unitId, attachmentId: orig.rows[0].id })).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("foto del borrador: solo para la sesión dueña", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    const s = await newSession(pool);
+    const other = await newSession(pool);
+    const storage = memoryStorage();
+    const id = await withTx((c) => createDraft(c, { sessionId: s, territoryId: t }), pool);
+    const orig = await pool.query<{ id: string }>(
+      `insert into attachments (report_id, storage_key, content_type, bytes, sha256, purpose) values ($1, 'o', 'image/heic', 1, 'a', 'original') returning id`,
+      [id],
+    );
+    await pool.query(
+      `insert into attachments (report_id, storage_key, content_type, bytes, sha256, purpose, derived_from_id) values ($1, 'j', 'image/jpeg', 1, 'b', 'jev', $2)`,
+      [id, orig.rows[0].id],
+    );
+    await storage.put("j", Buffer.from("jpg"), "image/jpeg");
+    expect((await getOwnPhoto(pool, storage, { reportId: id, sessionId: s, attachmentId: orig.rows[0].id })).toString()).toBe("jpg");
+    await expect(getOwnPhoto(pool, storage, { reportId: id, sessionId: other, attachmentId: orig.rows[0].id })).rejects.toMatchObject({ status: 403 });
+    await expect(getOwnPhoto(pool, storage, { reportId: id, sessionId: s, attachmentId: "00000000-0000-0000-0000-000000000000" })).rejects.toMatchObject({ status: 404 });
   });
 
   it("órdenes cerradas salen de la bandeja; review_blocked impide iniciar", async () => {
