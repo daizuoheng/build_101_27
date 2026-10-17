@@ -1,0 +1,225 @@
+/* Tema de la consola de Operación (diseño Stitch «Radar Urbano MVD»).
+   Solo redefine los tokens del proyecto dentro de `.ops`, así las utilidades existentes (bg-surface, text-ink-2,
+   border-line, .btn, .card, .field) toman la paleta del diseño sin tocar Recepción. Contrastes AA sobre blanco. */
+
+/* Apariencia: por defecto sigue al sistema (dark-mode.md); el selector Claro/Oscuro fija `data-theme` en el contenedor `.ops`.
+   Cada token define su par claro/oscuro con light-dark(), resuelto según `color-scheme`. */
+.ops {
+  color-scheme: light dark;
+  --bg: light-dark(#faf8ff, #0f1420);
+  --surface: light-dark(#ffffff, #171d2b);
+  --surface-2: light-dark(#f2f3ff, #1e2536);
+  --surface-3: light-dark(#eaedff, #283044);
+  --ink: light-dark(#131b2e, #eef0ff);
+  --ink-2: light-dark(#42474f, #b9c0d4);
+  --line: light-dark(#dfe3f2, #2f3850);
+  --outline: light-dark(#727780, #8a91a3);
+  --outline-variant: light-dark(#c2c7d1, #4a5268);
+  --accent: light-dark(#0f4c81, #a0c9ff);
+  --accent-ink: light-dark(#ffffff, #001c37);
+  --accent-soft: light-dark(#d2e4ff, #1d3a5c);
+  --accent-soft-ink: light-dark(#001c37, #d2e4ff);
+  --focus: light-dark(#0f4c81, #a0c9ff);
+  --danger: light-dark(#ba1a1a, #ffb4ab);
+  --danger-soft: light-dark(#ffdad6, #4a1414);
+  --warn: light-dark(#733c00, #ffb77d);
+  --warn-soft: light-dark(#ffdcc3, #3d2410);
+  --success: light-dark(#006c4a, #68dba9);
+  --success-soft: light-dark(#c9f7e2, #0f3326);
+  --on-signal: light-dark(#ffffff, #131b2e);
+  --info-soft: light-dark(#e2e7ff, #1e2a44);
+  --prio-high: light-dark(#ba1a1a, #ffb4ab);
+  --prio-medium: light-dark(#733c00, #ffb77d);
+  --prio-low: light-dark(#006c4a, #68dba9);
+  --prio-unknown: light-dark(#42474f, #b9c0d4);
+  --radius: 12px;
+  --shadow-1: 0 1px 3px light-dark(rgba(15, 23, 42, 0.05), rgba(0, 0, 0, 0.4)), 0 1px 2px light-dark(rgba(15, 23, 42, 0.03), rgba(0, 0, 0, 0.2));
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ops), var(--font-sans);
+}
+.ops[data-theme="light"] {
+  color-scheme: light;
+}
+.ops[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ops *,
+  .ops *::before,
+  .ops *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.ops .card {
+  border-color: var(--line);
+  box-shadow: var(--shadow-1);
+}
+
+.ops .field {
+  border-color: var(--outline);
+}
+
+.ops .btn {
+  border-color: var(--outline);
+}
+.ops .ops-btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+}
+.ops .ops-btn-ghost:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.ops-select {
+  min-height: 44px;
+  max-width: min(100%, 12rem);
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ops-select:hover {
+  background: var(--surface-3);
+}
+/* Celular: cada filtro ocupa el ancho completo (con «Prioridad: Todos» a 16 px no entran dos sin cortar). */
+@media (max-width: 639px) {
+  .ops-filters .ops-select {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
+.ops-search {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem 0.5rem 2.5rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 1rem;
+}
+.ops-search::placeholder {
+  color: var(--ink-2);
+}
+.ops-search:focus {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+/* Insignia de prioridad: texto + símbolo, legible sin color. */
+.ops-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  border-radius: 5px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.5rem;
+}
+.ops-badge--high { background: var(--danger); color: var(--on-signal); }
+.ops-badge--medium { background: var(--warn); color: var(--on-signal); }
+.ops-badge--low { background: var(--success); color: var(--on-signal); }
+.ops-badge--unknown { background: var(--surface-3); color: var(--ink-2); }
+
+.ops-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-soft-ink);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Código corto del incidente: dato, no enlace; neutro y con cifras tabulares. */
+.ops-code {
+  color: var(--ink-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.ops-eyebrow {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.ops-item {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.15s;
+}
+.ops-item:hover {
+  border-color: var(--outline-variant);
+}
+.ops-item[data-selected="true"] {
+  border: 2px solid var(--accent);
+}
+/* Patrón «tarjeta seleccionable»: el botón del título cubre la tarjeta entera, así se usa con teclado y lector. */
+.ops-item-action::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+}
+.ops-item-action:focus-visible {
+  outline: none;
+}
+.ops-item-action:focus-visible::after {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Control segmentado (selector de apariencia). Cada segmento ≥ 44 px de alto. */
+.ops-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.ops-segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 0.625rem;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+.ops-segment:hover {
+  color: var(--ink);
+  background: var(--surface-3);
+}
+.ops-segment[aria-checked="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-1);
+}
