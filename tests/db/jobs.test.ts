@@ -7,7 +7,7 @@ import { confirmReport } from "@/server/intake/confirm";
 import { claimNext, completeJob, enqueue, failJob } from "@/server/jobs/queue";
 import { handlers } from "@/server/jobs/handlers";
 import { runOnce } from "@/server/jobs/worker-loop";
-import { openReviewItem } from "@/server/review/items";
+import { incidentsAffectedByReviewItem, openReviewItem } from "@/server/review/items";
 import { newSession, territoryId, testDeps } from "./fakes";
 import { resetDb, testDb } from "./setup";
 
@@ -77,6 +77,21 @@ describe("cola de jobs (correcciones de revisión del PR #1)", () => {
     expect(row.reasons).toEqual(expect.arrayContaining([{ code: "provider_failure", error: "timeout 2" }, { code: "otro" }]));
     expect(row.reasons).toHaveLength(2);
     expect(row.evidence_refs).toEqual([{ report_id: ENTITY, attempt: 2 }]);
+  });
+
+  it("reabrir un uncertain_duplicate con otros candidatos conserva los anteriores; la misma lista no se duplica", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    const [c1, c2] = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
+    const open = (refs: unknown[]) =>
+      openReviewItem(pool, { territoryId: t, kind: "uncertain_duplicate", entityType: "report", entityId: ENTITY, reasons: [{ code: "ambiguous" }], evidenceRefs: refs });
+    const a = await open([{ report_id: ENTITY, candidate_incident_ids: [c1] }]);
+    await open([{ report_id: ENTITY, candidate_incident_ids: [c2] }]);
+    await open([{ report_id: ENTITY, candidate_incident_ids: [c2] }]);
+    await open([{ report_id: ENTITY, previous_incident_id: c1 }]);
+    const refs = (await pool.query("select evidence_refs from review_items where id = $1", [a.id])).rows[0].evidence_refs;
+    expect(refs).toHaveLength(3);
+    expect((await incidentsAffectedByReviewItem(pool, a.id)).sort()).toEqual([c1, c2]);
   });
 
   it("reimportar el mismo GeoJSON no cambia nada; uno corregido actualiza la geometría; otra fuente actualiza la procedencia", async () => {

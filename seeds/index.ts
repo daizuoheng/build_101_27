@@ -9,6 +9,16 @@ import { montevideo } from "./territory-montevideo";
 
 export const territories = [montevideo];
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Valores de `current` sobre los de `defaults`, recursivo en objetos; arrays y escalares de `current` se toman enteros. */
+function fillMissing(defaults: unknown, current: unknown): unknown {
+  if (!isObject(defaults) || !isObject(current)) return current === undefined ? defaults : current;
+  const out: Record<string, unknown> = { ...defaults };
+  for (const [k, v] of Object.entries(current)) out[k] = k in defaults ? fillMissing(defaults[k], v) : v;
+  return out;
+}
+
 /**
  * Inserta lo ausente por clave natural y nunca actualiza filas existentes, así no pisa cambios de operación.
  * Reejecutable: dos corridas dejan los mismos conteos.
@@ -56,24 +66,30 @@ export async function seedAll(pool: Pool, opts: { importAreas?: boolean } = {}):
 
       for (const [kind, config] of Object.entries(policies) as [PolicyKind, unknown][]) {
         if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' del seed no valida contra su esquema`);
+        // Mismo lock que policy-upgrade y el seed de demo-b: serializa el cálculo de la versión siguiente.
+        await c.query("select pg_advisory_xact_lock(hashtext($1))", [`policy:${territoryId}:${kind}`]);
         await c.query(
           `insert into policy_versions (territory_id, kind, version, config, active)
            values ($1, $2, 1, $3, not exists (select 1 from policy_versions where territory_id = $1 and kind = $2 and active))
            on conflict (territory_id, kind, version) do nothing`,
           [territoryId, kind, config],
         );
-        // Si el esquema cambió y la política activa ya no valida, se publica la del seed como versión nueva:
+        // Si no queda ninguna activa, o el esquema cambió y la activa ya no valida, se publica una versión nueva:
         // se versiona, no se edita, y una política válida (aunque la haya cambiado operación) no se toca.
+        // Sobre una activa inválida se conservan sus valores y el seed completa lo que falta; si aun así no valida, va la del seed.
         const active = await c.query<{ version: number; config: unknown }>(
           "select version, config from policy_versions where territory_id = $1 and kind = $2 and active",
           [territoryId, kind],
         );
-        if (active.rows[0] && !isValidPolicy(kind, active.rows[0].config)) {
+        const current = active.rows[0]?.config;
+        if (current === undefined || !isValidPolicy(kind, current)) {
+          const merged = current === undefined ? config : fillMissing(config, current);
+          const next = isValidPolicy(kind, merged) ? merged : config;
           await c.query("update policy_versions set active = false where territory_id = $1 and kind = $2 and active", [territoryId, kind]);
           await c.query(
             `insert into policy_versions (territory_id, kind, version, config, active)
              select $1, $2, coalesce(max(version), 0) + 1, $3, true from policy_versions where territory_id = $1 and kind = $2`,
-            [territoryId, kind, config],
+            [territoryId, kind, next],
           );
         }
       }

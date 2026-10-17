@@ -7,6 +7,8 @@ export type { ReviewKind };
  * Abre un ítem de revisión: uno abierto por (kind, entidad). Si ya hay uno abierto del mismo tipo, no se duplica,
  * pero sus motivos se suman: uno por `code` y una evidencia por `report_id`, quedando la versión más reciente
  * (un reintento con otro texto de error reemplaza, no acumula). Un motivo nuevo nunca se pierde.
+ * Una evidencia con otra lista de `candidate_incident_ids` no reemplaza a la anterior: esos candidatos quedaron
+ * bloqueados y el cierre del ítem tiene que verlos todos para desbloquearlos.
  * Sobre un incidente, bloquea el despacho automático hasta resolverlo.
  */
 export async function openReviewItem(
@@ -25,9 +27,10 @@ export async function openReviewItem(
          ) s),
        evidence_refs = (
          select coalesce(jsonb_agg(v order by ord), '[]') from (
-           select distinct on (coalesce(x->>'report_id', x::text)) x as v, ord
-           from jsonb_array_elements(review_items.evidence_refs || excluded.evidence_refs) with ordinality t(x, ord)
-           order by coalesce(x->>'report_id', x::text), ord desc
+           select distinct on (k) x as v, ord
+           from jsonb_array_elements(review_items.evidence_refs || excluded.evidence_refs) with ordinality t(x, ord),
+             lateral (select coalesce(x->>'report_id', x::text) || coalesce(':' || (x->'candidate_incident_ids')::text, '') as k) key
+           order by k, ord desc
          ) s),
        updated_at = now()
      returning id, (xmax = 0) as inserted`,
