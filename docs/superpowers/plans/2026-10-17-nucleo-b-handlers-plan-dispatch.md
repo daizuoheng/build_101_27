@@ -123,7 +123,7 @@ Expected: PASS.
 
 **Interfaces:**
 - Consumes: `planHandler(buildPlan)` de `src/server/pipeline/plan.ts` (devuelve `{ run(deps: { pool }, job) }`, compatible con `Handler`); `buildPlan: BuildPlan` de `@/server/planning/build-plan`; `seedDemo`, `refreshDemoPositions` de `seeds/demo.ts`; `runOnce` de `worker-loop.ts`.
-- Produces: `process_report`, cuando su resultado es `created` o `linked`, encola en la misma transacción `enqueue(c, { kind: "plan", entityType: "territory", entityId: territoryId, entityRevision: 0, territoryId, dedupeSuffix: \`report:${reportId}\` })`. Un pedido por reporte; el handler los junta (`coalesced`).
+- Produces: `process_report`, cuando su resultado es `applicable` con `incident_id` (los tres caminos: `grouping` `created`, `linked` y `kept_existing_link`, este último el reproceso de un reporte con vínculo manual, `process-report.ts:88`), encola en la misma transacción `enqueue(c, { kind: "plan", entityType: "territory", entityId: territoryId, entityRevision: 0, territoryId, dedupeSuffix: \`report:${reportId}\` })`. Un pedido por reporte; el handler los junta (`coalesced`).
 
 - [ ] **Step 1: Test que falla** en `tests/db/plan-job.test.ts`:
 
@@ -166,7 +166,7 @@ plan: planHandler(buildPlan),
 expect((await pool.query("select dedupe_key from jobs where kind = 'plan' and dedupe_key like $1", [`%:report:${reportId}`])).rows).toHaveLength(1);
 ```
 
-Correr → falla. Implementar el `enqueue` del bloque Interfaces en los dos caminos de `processReport` que terminan en `created` y `linked` (no en `review` ni `out_of_coverage`). Correr → pasa. Commit aparte: `fix(pipeline): un incidente nuevo o una fuente nueva piden plan del territorio`. Si el plan A ya está mergeado, `process-report.ts` tiene ahí su `enqueueTextgen`: agregar este `enqueue` al lado.
+Agregar la misma aserción al final de `"reprocesar un reporte que ya tiene vínculo conserva el vínculo y no crea otro incidente"` (camino `kept_existing_link`). Correr → falla. Implementar el `enqueue` del bloque Interfaces en los tres caminos de `processReport` que devuelven `incident_id` (`created`, `linked`, `kept_existing_link`; no en `review`, `out_of_coverage`, `unrelated` ni `insufficient`). Lo más simple es hacerlo en un solo lugar: en `finish` cuando recibe `incident_id`, si `finish` corre dentro de la transacción; si no, en cada uno de los tres `return`. Correr → pasa. Commit aparte: `fix(pipeline): un incidente nuevo o una fuente nueva piden plan del territorio`. Si el plan A ya está mergeado, `process-report.ts` tiene ahí su `enqueueTextgen`: agregar este `enqueue` al lado.
 
 - [ ] **Step 4: Tests → PASS, incluida la suite completa**
 
@@ -261,7 +261,7 @@ Expected: todo en verde, incluido `assess.test.ts` con los helpers importados.
 
 - [ ] **Step 1:** `pnpm cli reset-demo --yes && pnpm cli refresh-demo-positions`; `pnpm dev` + `pnpm worker`; `node --env-file=.env.local scripts/e2e-walkthrough.mjs`. En los logs del worker: `✓ process_report` y, después, `✓ plan`, `✓ dispatch` y `✓ textgen` (el orden entre `plan` y `textgen` depende de la cola; `assess_incident` solo aparece si el reporte se agrupó con uno existente). En base: una fila en `assignments` con `status = 'offered'`. Al minuto, una línea `replanificación periódica: 1 territorio(s)` y después un `✓ plan` cada `replan_interval_min` (5 min en el seed).
 - [ ] **Step 2:** Nota `docs/superpowers/notes/atencion-smoke.md`: qué se vio, latencias de `plan` y `dispatch`, y la regla "sin `onFailed` para plan/dispatch y por qué".
-- [ ] **Step 3:** Loop de `code-review` → corregir → `pnpm test && pnpm typecheck && pnpm lint` → push `nucleo/handlers-atencion` → PR contra `epic/nucleo` (`Núcleo: handlers plan y dispatch, replanificación periódica`) → check "Tenki Code Review" → merge. Después, PR `epic/nucleo → main` (segundo corte; el #15 fue el primero) diciendo que los jobs `plan` ya tienen handler y que hay que correr `pnpm cli seed` si cambió alguna política.
+- [ ] **Step 3:** Loop de `code-review` → corregir → `pnpm test && pnpm typecheck && pnpm lint` → push `nucleo/handlers-atencion` → PR contra `epic/nucleo` (`Núcleo: handlers plan y dispatch, replanificación periódica`) → check "Tenki Code Review" → merge. Después, el próximo corte `epic/nucleo → main` (no se numeran: antes de abrirlo, `gh pr list --base main --head epic/nucleo --state open`; si ya hay uno abierto, por ejemplo el del plan A, este trabajo entra en ese mismo PR en vez de abrir otro), diciendo que los jobs `plan` ya tienen handler y que hay que correr `pnpm cli seed` si cambió alguna política.
 
 ```bash
 /usr/bin/git add docs/superpowers/notes/atencion-smoke.md
