@@ -16,13 +16,15 @@
 
 | Task | Necesita en `main` (y traído a `epic/nucleo` con `/usr/bin/git merge origin/main`) |
 | --- | --- |
-| 1 (periódico) | nada: se puede hacer ya |
-| 2 (`plan`) | `src/server/planning/build-plan.ts` exportando `buildPlan: BuildPlan` — PR #11 de Operación (`operacion/t11 → epic/operacion`, todavía no en `main`) |
-| 3 (`dispatch`) | `src/server/dispatch/apply-plan.ts` exportando `applyPlan: ApplyPlan` — Tarea 12 de Operación, **sin PR ni rama** |
+| 1 (periódico) | nada: en ejecución en `nucleo/worker-periodico` |
+| 2 (`plan`) | `src/server/planning/build-plan.ts` exportando `buildPlan: BuildPlan` — PR #11 **mergeado en `epic/operacion`** (17 oct 23:04), falta el PR `epic/operacion → main` |
+| 3 (`dispatch`) | `src/server/dispatch/apply-plan.ts` exportando `applyPlan: ApplyPlan` — PR #17 (`operacion/t12 → epic/operacion`), abierto. Ya exporta `applyPlan` con la firma del contrato y devuelve `skipped: obsolete_plan` cuando el plan fue reemplazado. No toca `handlers.ts` |
 
 Hasta que entren, los jobs `plan` siguen fallando sin efecto (comportamiento conocido, documentado en el cuerpo del #15).
 
-Contingencia acordable con el equipo: si a la hora de congelar (01:00) la T12 no llegó, Núcleo implementa `applyPlan` mínimo según el contrato de `src/server/contracts.ts` (por propuesta: transacción, `FOR UPDATE` de incidente y unidad, revalidar `incidents.revision` contra `plan_runs.snapshot_refs.incident_revisions`, capacidad libre y sin orden activa, insertar `assignments(status 'offered')` + `events`, `plan_items.status = 'executed'`, `incidents.status = 'assigned'`; si una revisión cambió ⇒ `stoppedForReplan: true` y `enqueue('plan')`). Avisar antes: ese archivo es de Operación.
+**Atajo si `epic/operacion` tarda en llegar a `main`:** Tasks 2 y 3 se pueden preparar sobre `nucleo/handlers-atencion` con `/usr/bin/git merge origin/epic/operacion` para correr los tests, pero el PR a `epic/nucleo` **solo se abre cuando esos archivos estén en `main`** (si no, el PR arrastra código de Operación sin revisar por su dueño). La contingencia de implementar `applyPlan` en Núcleo queda descartada: existe el #17.
+
+**Despliegue continuo:** desde el 17 oct cada merge a `main` despliega en Railway. Registrar `plan`/`dispatch` en `main` hace que producción empiece a crear órdenes reales en la base de Supabase: antes del PR `epic/nucleo → main`, avisar al equipo y correr `pnpm cli refresh-demo-positions` contra Supabase solo cuando se quiera ver órdenes.
 
 ## Global Constraints
 
@@ -36,7 +38,7 @@ Contingencia acordable con el equipo: si a la hora de congelar (01:00) la T12 no
 1. Worker que arranca con un job `plan` ya pendiente de antes del despliegue (hoy `failed`): `enqueue` revive un `failed` solo si alguien reencola; el periódico encola uno nuevo (otra `dedupe_key`) ⇒ el territorio se replanifica igual. Test en Task 1 (el tick corre al arrancar, no recién a los N ms).
 2. Unidades de demo con posición vencida (`position_max_age_min = 30`): el plan deja todo `stale_position` y no hay órdenes. No es bug; `refresh-demo-positions` antes de la demo. Test en Task 2 verifica el camino con posiciones frescas y el plan C lo deja en el guion.
 3. Dos workers (Railway puede solapar el viejo y el nuevo en un redeploy) tomando `plan` del mismo territorio: `planHandler` ya difiere con `pg_try_advisory_xact_lock`. Sin test nuevo; cubierto en `plan-job.test.ts`.
-4. `dispatch` sobre un `plan_run` que ya no es el último (job tomado justo antes de que un plan nuevo lo marque `superseded_by`): `applyPlan` revalida revisiones bajo lock; si Operación no lo hace, se detiene y encola `plan` (contrato). Test en Task 3: un plan nuevo entre el `plan` y el `dispatch` ⇒ el dispatch viejo no crea órdenes.
+4. `dispatch` sobre un `plan_run` que ya no es el último (job tomado justo antes de que un plan nuevo lo marque `superseded_by`): el `applyPlan` del #17 devuelve `skipped: obsolete_plan` sin crear órdenes. Test en Task 3: un plan nuevo entre el `plan` y el `dispatch` ⇒ el dispatch viejo no crea órdenes.
 5. Incidente sin `problem_type_id` (Jev `unknown`): `buildSnapshot` lo marca `dispatchBlocked` ⇒ nunca recibe propuesta aunque haya unidades. Ya testeado en `plan-job.test.ts`.
 
 ---
@@ -170,7 +172,7 @@ Expected: PASS. Atención: hasta hoy `plan` no tenía handler y varios tests lo 
 
 ### Task 3: Registrar `dispatch` con `applyPlan` de Operación y recorrido completo
 
-**Precondición:** `src/server/dispatch/apply-plan.ts` en `epic/nucleo` (traer `main`), o la contingencia de arriba acordada.
+**Precondición:** `src/server/dispatch/apply-plan.ts` en `epic/nucleo` (PR #17 mergeado en `epic/operacion`, `epic/operacion` en `main`, traer `main`).
 
 **Files:**
 - Modify: `src/server/jobs/handlers.ts` (agregar entrada `dispatch`)

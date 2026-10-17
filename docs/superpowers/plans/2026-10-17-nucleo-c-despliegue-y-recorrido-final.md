@@ -4,7 +4,7 @@
 
 **Goal:** Desplegar `main` en Railway + Supabase, probar el recorrido completo desde celulares reales y dejar `HANDOFF.md` con el estado verdadero.
 
-**Architecture:** No hay código nuevo salvo correcciones que surjan del despliegue. Todo lo técnico del despliegue ya está decidido y documentado en `docs/superpowers/notes/despliegue.md` ("Pasos cuando lleguen las cuentas" y "Bloqueado hasta tener cuentas"); este plan **ejecuta** esa nota, registra lo que estaba marcado "sin verificar" y agrega el guion de demo. `main` ya tiene todo Núcleo (PR #15, `18e645a`); se despliega `main` y, cuando entren los planes A y B, se redespliega solo.
+**Architecture:** No hay código nuevo salvo correcciones que surjan del despliegue. **El equipo ya provisionó Railway y Supabase desde sus dashboards** (17 oct, noche) y **cada merge a `main` despliega solo**; ningún commit de ese setup está en el repo (`main` sigue en `18e645a`). Por eso este plan ya no crea infraestructura: **verifica** lo provisionado contra `docs/superpowers/notes/despliegue.md`, resuelve lo marcado "sin verificar", reconcilia `.railway/railway.ts` con lo que existe y agrega el guion de demo. `main` ya tiene todo Núcleo (PR #15).
 
 **Tech Stack:** Railway (Railpack, `.railway/railway.ts`), Supabase (Postgres + PostGIS, Storage privado), `pnpm cli`.
 
@@ -13,9 +13,10 @@
 ## Global Constraints
 
 - **Nunca imprimir secretos** (claves de Jev, DeepSeek, Supabase, contraseñas de demo). Van por variables de Railway y por el gestor del equipo.
-- `main` es la rama que Railway despliega: nada se prueba en producción desde una rama.
+- `main` es la rama que Railway despliega, **en cada merge**: todo PR a `main` es un despliegue a producción. Nada se prueba en producción desde una rama.
+- **No correr `railway config apply`** hasta reconciliar `.railway/railway.ts` con lo creado en el dashboard (Task 1 paso 3): el IaC es declarativo y marca para borrar servicios y variables que no declara.
 - Pooler de Supabase en **modo sesión, puerto 5432**; `createPool` rechaza 6543 a propósito.
-- Seeds solo a mano y una vez (`pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`); nunca en el despliegue.
+- Seeds a mano, nunca en el despliegue. La primera vez: `migrate && seed && seed-demo`. Después, **tras cada merge a `main` que cambie `seeds/policies.ts`, `seeds/templates.ts` o el catálogo, correr `pnpm cli seed` contra Supabase** (`seedAll` republica la política activa que ya no valida); si no, `assess_incident` falla en producción con `PolicyInvalidError`. Las migraciones sí corren solas en el pre-deploy.
 - Las posiciones de demo vencen a los 30 min (`dispatch.position_max_age_min`): `pnpm cli refresh-demo-positions` **inmediatamente antes** de cada ensayo y de la demo.
 - Flujo de PR de `AGENTS.md`: loop de `code-review`, Tenki, merge si limpio.
 
@@ -29,34 +30,35 @@
 
 ---
 
-### Task 1: Desplegar `main` en Railway y Supabase
+### Task 1: Verificar el despliegue provisionado por el equipo
 
-**Precondición:** cuentas de Railway y Supabase creadas por el equipo; CLI de Railway ≥ 5.42.1 instalada en una Mac del equipo.
+**Precondición:** credenciales compartidas por el equipo (por el gestor, nunca por chat ni repo): URL del pooler de sesión de Supabase, clave de servicio, acceso al proyecto de Railway (`railway login` + `railway link`), dominio de `web`.
 
 **Files:**
-- Modify: `docs/superpowers/notes/despliegue.md` (sección nueva "Desplegado el <fecha>": cada "sin verificar" pasa a verificado o a corregido)
+- Modify: `docs/superpowers/notes/despliegue.md` (sección nueva "Desplegado el <fecha>": qué se provisionó y cómo, cada "sin verificar" pasa a verificado o corregido, y la regla del seed tras cada merge)
 - Modify (si hace falta): `.railway/railway.ts`, `package.json#engines`, `src/server/db/pool.ts`, `src/server/storage/supabase.ts`
 
-- [ ] **Step 1: Supabase.** Seguir `despliegue.md` §1 (extensión PostGIS en `extensions`, bucket `report-photos` privado, URL del pooler de sesión, clave de servicio).
-- [ ] **Step 2: Base.** Desde una Mac del equipo, `despliegue.md` §2 tal cual (`migrate`, `seed`, `seed-demo` con `DEMO_*_PASSWORD`, `refresh-demo-positions`). Verificar: `select count(*) from areas` ⇒ 62; `select slug from response_units` ⇒ las 4 unidades de demo.
-- [ ] **Step 3: Railway.** `despliegue.md` §3. Registrar en la nota qué pasó con los tres puntos "sin verificar": `preserve()` de variables inexistentes en el primer `apply`; dominio generado y `railway config plan` posterior; build de Railpack con Node `26.x` desde `engines` (si falla, fijar la versión exacta en `engines.node` y commitear).
+- [ ] **Step 1: Supabase contra `despliegue.md` §1.** Sin crear nada, verificar en el SQL Editor y el dashboard: `select extname, extnamespace::regnamespace from pg_extension where extname = 'postgis'` (en `extensions` o `public`); `show search_path` la incluye; bucket `report-photos` con `public = false`; la URL que usa Railway es la del **pooler de sesión, puerto 5432**. Cualquier diferencia: corregir en Supabase y anotarla.
+- [ ] **Step 2: Base.** Con `DATABASE_URL` de Supabase exportada solo en esa terminal: `pnpm cli migrate` (debe decir `sin migraciones pendientes` si el pre-deploy ya corrió) y, si la base no tiene datos, `pnpm cli seed && pnpm cli seed-demo` (con `DEMO_*_PASSWORD` del gestor). Verificar: `select count(*) from areas` ⇒ 62; `select slug from response_units` ⇒ las 4 unidades de demo; `select kind, version from policy_versions where active` ⇒ 7 filas válidas. Si la base ya estaba sembrada antes del #15, `pnpm cli seed` igual (republica `planning` con `busy_retry_sec`).
+- [ ] **Step 3: Railway contra `.railway/railway.ts`.** `railway config pull` a un archivo temporal (no sobre el del repo) y comparar con `.railway/railway.ts`: nombres de servicios (`web`, `worker`), comandos de build/arranque/pre-deploy, healthcheck `/api/health`, `watchPatterns` y variables. Decidir con quien lo provisionó: (a) traer lo real al archivo del repo (PR chico a `main`) para que un `apply` futuro no borre nada, o (b) declarar en `despliegue.md` que la fuente de verdad es el dashboard y que `apply` no se usa. Recomendado (a) si las diferencias son de nombre o variables; (b) si el dashboard tiene servicios que el IaC no modela. Registrar los tres "sin verificar" de la nota: `preserve()` (no aplica si se elige b), dominio generado, build de Railpack con Node `26.x` (ver el log del último build).
 - [ ] **Step 4: Health.** `https://<dominio>/api/health` ⇒ `{"ok":true}`; logs de `web` con `sin migraciones pendientes`; logs de `worker` con `worker … iniciado` y, al minuto, `replanificación periódica` (si el plan B ya está en `main`).
 - [ ] **Step 5: Celular.** `despliegue.md` §4 pasos 1–5 por datos móviles. Guardar el `public_code` del reporte de prueba en la nota.
 - [ ] **Step 6: Resiliencia.** Redeploy del `worker` con un job en curso ⇒ `worker detenido`; dejar el sistema 20 min quieto ⇒ el `worker` sigue vivo (ver Review Focus 1 y 2).
-- [ ] **Step 7: Nota y commit.** Sección "Desplegado el <fecha>" en `despliegue.md` con dominio (sin credenciales), resultados de los pasos 3–6 y cualquier corrección hecha.
+- [ ] **Step 7: Despliegue continuo.** Mergear a `main` un cambio inocuo (por ejemplo, la nota de este paso) y confirmar que `web` y `worker` se redesplegan solos y que `worker` **no** se redespliega si el cambio es solo de `docs/` (por `watchPatterns`). Anotar cuánto tarda de merge a health verde.
+- [ ] **Step 8: Nota y commit.** Sección "Desplegado el <fecha>" en `despliegue.md` con: quién provisionó qué y desde dónde (dashboard), dominio (sin credenciales), resultado de los pasos 1–7, la decisión del paso 3 y la regla "tras un merge que cambie seeds de políticas, `pnpm cli seed` contra Supabase". Agregar esa regla también a `AGENTS.md` en la sección del flujo de integración.
 
 ```bash
-/usr/bin/git add docs/superpowers/notes/despliegue.md .railway package.json
-/usr/bin/git commit -m "docs(despliegue): resultado del despliegue real en Railway y Supabase"
+/usr/bin/git add docs/superpowers/notes/despliegue.md AGENTS.md .railway package.json
+/usr/bin/git commit -m "docs(despliegue): verificación del despliegue provisionado y regla del seed tras merge"
 ```
 
-(PR chico a `main`; si hubo cambios de código, con sus tests.)
+(PR chico a `main`, que se despliega al mergear; si hubo cambios de código, con sus tests.)
 
 ---
 
 ### Task 2: Guion de demo y recorrido final
 
-**Precondición:** plan A y plan B mergeados a `main` y desplegados; bandeja `/unidad` (Recepción, PR #13) y vistas de Operación (plan, revisión, detalle) en `main`.
+**Precondición:** plan A y plan B en `main` (con el despliegue continuo, mergear ya es desplegar); `epic/operacion` en `main` con T11 (#11), T12 (#17) y las vistas; `epic/recepcion` en `main` con la bandeja `/unidad` (#13 → #6). Después del último merge, `pnpm cli seed` contra Supabase si alguno tocó políticas.
 
 **Files:**
 - Create: `docs/superpowers/notes/recorrido-final.md`
