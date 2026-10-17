@@ -104,6 +104,8 @@ export const PlanningPolicy = z.object({
   weight_hours: z.number().nonnegative(),
   cap_hours: z.number().nonnegative(),
   replan_interval_min: z.number().positive(),
+  /** Si otra corrida de plan del territorio está en curso, el pedido se reintenta en un job único a estos segundos. */
+  busy_retry_sec: z.number().int().positive(),
 });
 
 export const DispatchPolicy = z.object({
