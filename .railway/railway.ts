@@ -70,12 +70,14 @@ export default defineRailway(() => {
         "/.railway/tsconfig.worker.json",
       ],
     },
-    // tsx reenvía SIGTERM: el worker termina el job en curso y suelta el lease.
+    // tsx reenvía SIGTERM al worker, que deja de tomar jobs; el que está en curso no se cancela: termina y lo cierra
+    // (completeJob/failJob) si le alcanza el drenaje.
     start: "node_modules/.bin/tsx src/worker/index.ts",
     preDeploy: migrate,
-    // Railway da por defecto 0 s entre SIGTERM y SIGKILL: sin drenaje el apagado limpio no llega a correr.
-    // 60 s = el lease de un job; uno que tarde más lo retoma otro worker al vencer.
-    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 60 },
+    // Railway da por defecto 0 s entre SIGTERM y SIGKILL. 120 s dan margen a un job con varias llamadas a Jev y al LLM
+    // (topes de 5 a 20 s por llamada en las políticas sembradas); uno que muera igual con SIGKILL lo retoma otro worker
+    // al vencer el lease (60 s) y gasta un intento, como cualquier caída.
+    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 120 },
     env: { ...shared, DATABASE_POOL_MAX: "3" },
   });
 

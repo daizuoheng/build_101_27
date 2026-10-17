@@ -26,7 +26,8 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
   - `pnpm typecheck` (local/CI) corre `next typegen` antes de `tsc`, porque en un clon limpio no existen
     `next-env.d.ts` ni los tipos de rutas como `RouteContext`, y verifica también `.railway/railway.ts`.
   - En los dos, el arranque usa el binario directo y no `pnpm start`: verificado en local que pnpm no reenvía SIGTERM
-    al hijo, y con el binario directo el worker termina el job en curso y escribe `worker detenido`.
+    al hijo, y con el binario directo el worker deja de tomar jobs, termina el que tenga en curso y escribe
+    `worker detenido`.
 - **Migraciones** como comando previo al despliegue (`pnpm cli migrate`) en los dos servicios; el advisory lock del
   migrador serializa si corren a la vez y el segundo encuentra `sin migraciones pendientes`. Va en los dos para que el
   código nuevo de cualquiera de ellos nunca arranque contra el esquema viejo, despliegue el que despliegue primero.
@@ -61,7 +62,9 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 - **Reinicios**: web y worker con `restartPolicyType: ALWAYS`, para que una racha de caídas durante un corte de la
   base no deje el servicio parado cuando vuelva.
 - **Drenaje del worker**: Railway da por defecto 0 s entre SIGTERM y SIGKILL al desplegar; el worker declara
-  `drainingSeconds: 60` (el lease de un job) para que el apagado limpio llegue a correr. **Sin verificar:** que el
+  `drainingSeconds: 120`. Con SIGTERM el worker deja de tomar jobs; el que está en curso no se cancela, termina y se
+  cierra si le alcanza el drenaje (margen para varias llamadas a Jev y al LLM, de 5 a 20 s cada una). Si igual muere
+  con SIGKILL, otro worker lo retoma al vencer el lease (60 s) y gasta un intento. **Sin verificar:** que el
   campo del SDK se traduzca en `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`; revisarlo en `railway config plan`.
 - **Conexiones a Supabase**: en modo sesión cada cliente ocupa un backend del pool de Supavisor. Web usa hasta 4 y
   worker hasta 3; durante un redeploy pueden coexistir el despliegue viejo y el nuevo: (4 + 3) × 2 = 14, más 1 del
