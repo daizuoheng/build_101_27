@@ -36,6 +36,12 @@ const commands: Record<string, () => Promise<Command>> = {
     console.log("seed ok", rows[0]);
   },
   "smoke-jev": async () => (await import("./smoke-jev")).smokeJev,
+  "seed-demo": async () => async (args) => {
+    const { getPool } = await import("../src/server/db/pool");
+    const { seedDemoUsers } = await import("../seeds/demo-users");
+    const created = await seedDemoUsers(getPool(), args.territory ?? "montevideo");
+    console.log(created.length ? `usuarios creados: ${created.join(", ")}` : "usuarios de demo ya existentes");
+  },
   "import-areas": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { importAreas } = await import("../src/server/geo/import-areas");

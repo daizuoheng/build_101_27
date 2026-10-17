@@ -1,26 +1,171 @@
 @import "tailwindcss";
 
+/* Tokens. Contrastes verificados AA sobre --surface y --bg. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #f4f5f2;
+  --surface: #ffffff;
+  --surface-2: #eceee9;
+  --ink: #16191d;
+  --ink-2: #4a5059;
+  --line: #c9cdc4;
+  --accent: #0b5d4b;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcefe8;
+  --focus: #1d4ed8;
+  --danger: #a3141f;
+  --danger-soft: #fde7e8;
+  --warn: #8a4b00;
+  --warn-soft: #fff1d6;
+  --info-soft: #e3ecfb;
+  --prio-high: #a3141f;
+  --prio-medium: #8a4b00;
+  --prio-low: #33573f;
+  --prio-unknown: #4a5059;
+  --radius: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #111315;
+    --surface: #1b1e21;
+    --surface-2: #24282c;
+    --ink: #eef0ec;
+    --ink-2: #b6bcc3;
+    --line: #3a4046;
+    --accent: #5fd0b1;
+    --accent-ink: #0a1f19;
+    --accent-soft: #163a31;
+    --focus: #8ab4ff;
+    --danger: #ff8a8f;
+    --danger-soft: #3a1416;
+    --warn: #ffc066;
+    --warn-soft: #3a2a10;
+    --info-soft: #18263d;
+    --prio-high: #ff8a8f;
+    --prio-medium: #ffc066;
+    --prio-low: #8fd6a4;
+    --prio-unknown: #b6bcc3;
   }
 }
 
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-info-soft: var(--info-soft);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  font-size: 16px;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Controles: mínimo 44 px de alto y ancho táctil. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.field {
+  min-height: 44px;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Marcadores de Leaflet hechos con divIcon (evita rutas de imágenes por defecto). */
+.ru-pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--accent);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.ru-pin--high { background: #c0182a; }
+.ru-pin--medium { background: #b86500; }
+.ru-pin--low { background: #2f6b46; }
+.ru-pin--unknown { background: #5b616a; }
+.leaflet-container {
+  font: inherit;
 }
