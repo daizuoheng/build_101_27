@@ -63,9 +63,15 @@ Las mismas en `epic/nucleo`, `epic/operacion`, `epic/recepcion` y `nucleo/agrupa
 | `src/server/config/templates.ts:15` | `locale = "es"` por defecto en `renderTemplate` | Baja: los llamadores no pasan el locale del territorio | Resolver el locale desde `territories.locale` |
 | `src/app/layout.tsx:16` | `<html lang="es">` | Aceptable mientras la UI sea solo en español | — |
 
-Fuera de `src/`: `scripts/cli.ts` (`seed-demo`, `refresh-demo-positions`) y `policy-upgrade` (en la épica de
-agrupación) toman `montevideo` como valor por defecto de `--territory`. Es aceptable para comandos de operación,
-pero se podría exigir el parámetro.
+Fuera de `src/`: `scripts/cli.ts` (`seed-demo`, `refresh-demo-positions`, `policy-upgrade`) y
+`scripts/policy-upgrade.ts` toman `montevideo` como valor por defecto de `--territory`. Es aceptable para comandos
+de operación, pero se podría exigir el parámetro.
 
 No hay coordenadas, barrios, umbrales ni catálogos de Montevideo en el código del servidor: todo sale de
-`territories`, `areas`, `policy_versions` y `territory_problem_types`.
+`territories`, `areas`, `policy_versions` y `territory_problem_types`. Pero los **valores** de `seeds/policies.ts`
+sí son de Montevideo, y un territorio nuevo que los reuse los hereda:
+
+- `intake.geocoder.query_suffix = "Montevideo, Uruguay"` y `country_codes = "uy"`: con eso el geocodificador no
+  encuentra nada fuera de Uruguay. `demo-b` los reemplaza (prueba en el test del geocodificador).
+- Las instrucciones de las preguntas a Jev de `evaluation` y `grouping` dicen "(Spanish, Uruguay)". `demo-b` las
+  conserva porque sus tests no llaman a Jev. Un territorio real tiene que reescribirlas en su propia política.

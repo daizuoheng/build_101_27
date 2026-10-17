@@ -5,6 +5,7 @@ import { demoB, seedTerritoryDemoB } from "../../seeds/territory-demo-b";
 import { getActiveCatalog } from "@/server/config/catalog";
 import { getActivePolicy } from "@/server/config/policies";
 import { withTx } from "@/server/db/tx";
+import { geocode } from "@/server/geo/geocoder";
 import { locatePoint } from "@/server/geo/locate";
 import { appendCitizenMessage, createDraft, setLocation } from "@/server/intake/drafts";
 import { confirmReport } from "@/server/intake/confirm";
@@ -60,12 +61,27 @@ describe("segundo territorio (Montevideo es configuración)", () => {
     expect(await getTerritoryView(pool, { slug: "demo-b" })).toMatchObject({ name: demoB.name, areaLabel: "Sector", zoom: 15 });
   });
 
+  it("el geocodificador de demo-b usa su sufijo y su cuadrado, no los de Montevideo", async () => {
+    const pool = await testDb();
+    const urls: URL[] = [];
+    const fetchImpl = (async (u: string) => {
+      urls.push(new URL(u));
+      return new Response("[]", { status: 200 });
+    }) as typeof fetch;
+    const policy = (await getActivePolicy(pool, b, "intake")).config.geocoder;
+    expect(await geocode(pool, { query: "Calle 1", territoryId: b, policy, fetchImpl })).toBeNull();
+    const p = urls[0].searchParams;
+    expect(p.get("q")).toBe("Calle 1, Territorio de prueba B");
+    expect(p.get("countrycodes")).toBe("");
+    expect(p.get("viewbox")?.split(",").map(Number)).toEqual([0, 0.01, 0.01, 0]);
+  });
+
   it("contrato para runPlan: la unidad de Montevideo sigue en su territorio aunque se mueva dentro de demo-b", async () => {
     const pool = await testDb();
     expect(await unitsOf(b)).toEqual(["cuadrilla-b"]);
-    expect(await unitsOf(mvd)).not.toContain("cuadrilla-b");
     await pool.query("update response_units set location = st_setsrid(st_makepoint($1, $2), 4326)::geography where slug = 'cuadrilla-limpieza'", [INSIDE_B.lon, INSIDE_B.lat]);
     expect(await unitsOf(b)).toEqual(["cuadrilla-b"]);
+    expect(await unitsOf(mvd)).toContain("cuadrilla-limpieza");
   });
 
   it("un reporte en demo-b recorre el pipeline y crea el incidente en demo-b con su área", async () => {
@@ -96,8 +112,14 @@ describe("segundo territorio (Montevideo es configuración)", () => {
     const pool = await testDb();
     await seedTerritoryDemoB(pool);
     const n = await pool.query(`select (select count(*) from response_units where territory_id = $1)::int as units,
-      (select count(*) from policy_versions where territory_id = $1)::int as policies, (select count(*) from areas where territory_id = $1)::int as areas`, [b]);
-    expect(n.rows[0]).toEqual({ units: 1, policies: Object.keys(demoB.policies).length, areas: 1 });
+      (select count(*) from policy_versions where territory_id = $1)::int as policies, (select count(*) from areas where territory_id = $1)::int as areas,
+      (select count(*) from territory_problem_types where territory_id = $1 and enabled)::int as types,
+      (select count(*) from unit_capabilities uc join response_units u on u.id = uc.unit_id where u.territory_id = $1)::int as caps,
+      (select count(*) from events e join response_units u on u.id = e.entity_id where u.territory_id = $1 and e.kind = 'demo_seeded')::int as seeded`, [b]);
+    expect(n.rows[0]).toEqual({
+      units: 1, policies: Object.keys(demoB.policies).length, areas: 1,
+      types: demoB.problemTypes.length, caps: demoB.unit.capabilities.length, seeded: 1,
+    });
   });
 
   it("reseedear tras cambiar la config publica una versión nueva y conserva la anterior", async () => {

@@ -19,9 +19,14 @@ export const demoB = {
   area: { externalId: "sector-unico", name: "Sector único" },
   /** Catálogo propio: solo dos tipos habilitados. */
   problemTypes: ["bache", "basura_acumulada"],
-  /** Políticas del seed con diferencias visibles, para comprobar que se leen por territorio. */
+  /**
+   * Políticas del seed con diferencias visibles, para comprobar que se leen por territorio. El geocodificador
+   * no apunta a Montevideo: el cuadrado está en el mar y no tiene país. Los textos de las preguntas a Jev siguen
+   * diciendo "(Spanish, Uruguay)": ver la nota del segundo territorio.
+   */
   policies: {
     ...policies,
+    intake: { ...policies.intake, geocoder: { ...policies.intake.geocoder, country_codes: "", query_suffix: "Territorio de prueba B" } },
     grouping: { ...policies.grouping, radius_m: 75 },
     textgen: { ...policies.textgen, enabled: false },
   },
