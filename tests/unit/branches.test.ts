@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { policies } from "../../seeds/policies";
-import { chooseBranch } from "@/server/intake/branches";
+import { chooseBranch, evidenceReasons } from "@/server/intake/branches";
 import { computePriority } from "@/server/pipeline/priority";
 import { IntakePolicy, PriorityPolicy } from "@/server/config/policies";
 import type { ReportEvaluation } from "@/shared/contracts/evaluation";
@@ -36,6 +36,20 @@ describe("chooseBranch", () => {
   it("una intención 'other' poco segura no descarta el reporte", () => {
     const e = ev({ intent: "other", answers: { intent: c("other", 0.4) } });
     expect(chooseBranch(e, { locationConfirmed: false }, intake, 0).kind).toBe("ask_location");
+  });
+
+  it("texto nuevo tras la ficha lista ⇒ interpret_correction, salvo que sea consulta de estado o falte ubicación", () => {
+    expect(chooseBranch(ev(), { locationConfirmed: true, textAfterReady: true }, intake, 0)).toEqual({ kind: "interpret_correction" });
+    expect(chooseBranch(ev({ intent: "status_query" }), { locationConfirmed: true, textAfterReady: true }, intake, 0)).toEqual({ kind: "status" });
+    expect(chooseBranch(ev(), { locationConfirmed: false, textAfterReady: true }, intake, 0)).toEqual({ kind: "ask_location" });
+  });
+});
+
+describe("evidenceReasons", () => {
+  it("deriva los motivos de la evaluación", () => {
+    expect(evidenceReasons(ev(), "description")).toEqual(["description_insufficient"]);
+    expect(evidenceReasons(ev({ photoQuality: "insufficient" }), "photo")).toEqual(["photo_insufficient"]);
+    expect(evidenceReasons(ev({ photoQuality: "useful", contradiction: "contradiction" }), "photo")).toEqual(["text_photo_contradiction"]);
   });
 });
 

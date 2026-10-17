@@ -7,12 +7,14 @@ import type { JevClient } from "../ai/jev/client";
 import { evaluateReport } from "../ai/jev/evaluate-report";
 import type { LlmClient } from "../ai/llm/client";
 import { extractAddress } from "../ai/llm/extract-address";
+import { clarify } from "../ai/llm/clarify";
+import { interpretCorrection } from "../ai/llm/interpret-correction";
 import { recordAiRun, recordLlmRun } from "../ai/runs";
 import { geocode } from "../geo/geocoder";
 import { enqueue } from "../jobs/queue";
 import type { StorageAdapter } from "../storage/adapter";
 import { appendAssistantMessage, areaName, getReport, loadEvidence } from "./drafts";
-import { chooseBranch, indicatesActiveHazard, type Branch } from "./branches";
+import { chooseBranch, evidenceReasons, indicatesActiveHazard, type Branch } from "./branches";
 import { getEvaluation, saveReportEvaluation, type StoredEvaluation } from "./evaluations";
 import { statusLabel } from "./status";
 import type { AiResult } from "@/shared/contracts/evaluation";
@@ -95,8 +97,14 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
   if (r.status !== "draft" || r.revision !== revision) return;
   const territoryId = r.territory_id!;
   const intake = await getActivePolicy(deps.pool, territoryId, "intake");
-  const branch = chooseBranch(ev, { locationConfirmed: r.location_confirmed }, intake.config, r.clarification_rounds);
+  const branch = chooseBranch(
+    ev,
+    { locationConfirmed: r.location_confirmed, textAfterReady: (await textsAfterReady(deps.pool, r.conversation_id)).length > 0 },
+    intake.config,
+    r.clarification_rounds,
+  );
   const t = (key: string, vars?: Record<string, string>) => renderTemplate(deps.pool, territoryId, key, vars);
+  const ready = async (): Promise<Reply> => ({ body: await readyText(deps.pool, r, ev, t), origin: "template", ui: { kind: "ready" } });
 
   let reply: Reply;
   switch (branch.kind) {
@@ -113,14 +121,13 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
       reply = await proposeAddress(deps, r.id, revision, territoryId, intake.config, t);
       break;
     case "ask_evidence":
-      reply = {
-        body: await t(branch.requestedField === "photo" ? "ask_better_photo" : "ask_description"),
-        origin: "template",
-        ui: { kind: "ask_evidence", requestedField: branch.requestedField },
-      };
+      reply = await askEvidence(deps, r.id, revision, ev, branch.requestedField, intake.config, t);
+      break;
+    case "interpret_correction":
+      reply = await proposeCorrection(deps, r, revision, intake.config, t, ready);
       break;
     case "ready":
-      reply = { body: await readyText(deps.pool, r, ev, t), origin: "template", ui: { kind: "ready" } };
+      reply = await ready();
       break;
   }
 
@@ -158,42 +165,127 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
   }, deps.pool);
 }
 
+type IntakeConfig = Awaited<ReturnType<typeof getActivePolicy<"intake">>>["config"];
+type Render = (key: string, vars?: Record<string, string>) => Promise<string>;
+
+/** Mensajes de texto del ciudadano (evidencia original), en orden. */
+async function citizenTexts(db: Pool, reportId: string): Promise<{ id: string; body: string }[]> {
+  const { rows } = await db.query<{ id: string; body: string }>(
+    `select m.id, m.body from messages m join conversations c on c.id = m.conversation_id
+     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' order by m.seq`,
+    [reportId],
+  );
+  return rows;
+}
+
+/**
+ * Textos del ciudadano posteriores a la última ficha lista (o al último pin propuesto después de ella):
+ * candidatos a corrección. Antes de la primera ficha lista no hay nada que corregir.
+ */
+async function textsAfterReady(db: Pool, conversationId: string): Promise<{ id: string; body: string }[]> {
+  const { rows } = await db.query<{ id: string; body: string }>(
+    `select m.id, m.body from messages m
+     where m.conversation_id = $1 and m.role = 'citizen' and m.body <> '[foto]'
+       and exists (select 1 from messages where conversation_id = $1 and role = 'assistant' and ui->>'kind' = 'ready')
+       and m.seq > (select max(seq) from messages where conversation_id = $1 and role = 'assistant' and ui->>'kind' in ('ready', 'propose_location'))
+     order by m.seq`,
+    [conversationId],
+  );
+  return rows;
+}
+
+const llmDeps = (deps: IntakeDeps) => ({ llm: deps.llm!, recordRun: (run: Parameters<typeof recordLlmRun>[1]) => recordLlmRun(deps.pool, run) });
+
+/** Geocodifica una dirección propuesta por el LLM y arma el pin para que la persona lo confirme o mueva. */
+async function geocodedProposal(
+  deps: IntakeDeps,
+  territoryId: string,
+  address: string,
+  intake: IntakeConfig,
+  t: Render,
+  llmRunId: string,
+  fallback: Reply,
+): Promise<Reply> {
+  let hit = null;
+  try {
+    hit = await geocode(deps.pool, { query: address, territoryId, policy: intake.geocoder });
+  } catch {
+    return fallback;
+  }
+  if (!hit) return { body: await t("location_not_found", { query: address }), origin: "template", ui: { kind: "ask_location" }, llmRunId };
+  return {
+    body: await t("location_proposed", { label: address }),
+    origin: "template",
+    ui: { kind: "propose_location", lon: hit.lon, lat: hit.lat, label: address },
+    llmRunId,
+  };
+}
+
 async function proposeAddress(
   deps: IntakeDeps,
   reportId: string,
   revision: number,
   territoryId: string,
-  intake: Awaited<ReturnType<typeof getActivePolicy<"intake">>>["config"],
-  t: (key: string, vars?: Record<string, string>) => Promise<string>,
+  intake: IntakeConfig,
+  t: Render,
 ): Promise<Reply> {
   const fallback: Reply = { body: await t("ask_location"), origin: "template", ui: { kind: "ask_location" } };
   if (!deps.llm) return fallback;
-  const evidence = await deps.pool.query<{ id: string; body: string }>(
-    `select m.id, m.body from messages m join conversations c on c.id = m.conversation_id
-     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' order by m.seq`,
-    [reportId],
-  );
   const terr = await deps.pool.query<{ name: string }>("select name from territories where id = $1", [territoryId]);
-  const extracted = await extractAddress(
-    { llm: deps.llm, recordRun: (run) => recordLlmRun(deps.pool, run) },
-    { reportId, revision, messages: evidence.rows, territoryName: terr.rows[0].name, config: intake.llm },
-  );
+  const extracted = await extractAddress(llmDeps(deps), {
+    reportId, revision, messages: await citizenTexts(deps.pool, reportId), territoryName: terr.rows[0].name, config: intake.llm,
+  });
   if (!extracted.ok || !extracted.value.address) return fallback;
-  let hit = null;
-  try {
-    hit = await geocode(deps.pool, { query: extracted.value.address, territoryId, policy: intake.geocoder });
-  } catch {
-    return fallback;
-  }
-  if (!hit) {
-    return { body: await t("location_not_found", { query: extracted.value.address }), origin: "template", ui: { kind: "ask_location" }, llmRunId: extracted.llmRunId };
-  }
-  return {
-    body: await t("location_proposed", { label: extracted.value.address }),
-    origin: "template",
-    ui: { kind: "propose_location", lon: hit.lon, lat: hit.lat, label: extracted.value.address },
-    llmRunId: extracted.llmRunId,
-  };
+  return geocodedProposal(deps, territoryId, extracted.value.address, intake, t, extracted.llmRunId, fallback);
+}
+
+/** Repregunta redactada por el LLM; si falla o no hay LLM, la plantilla del campo pedido. */
+async function askEvidence(
+  deps: IntakeDeps,
+  reportId: string,
+  revision: number,
+  ev: StoredEvaluation,
+  requestedField: "photo" | "description",
+  intake: IntakeConfig,
+  t: Render,
+): Promise<Reply> {
+  const ui: MessageUi = { kind: "ask_evidence", requestedField };
+  const fallback: Reply = { body: await t(requestedField === "photo" ? "ask_better_photo" : "ask_description"), origin: "template", ui };
+  if (!deps.llm) return fallback;
+  const res = await clarify(llmDeps(deps), {
+    reportId, revision, requestedField, reasons: evidenceReasons(ev, requestedField), messages: await citizenTexts(deps.pool, reportId), config: intake.llm,
+  });
+  if (!res.ok) return { ...fallback, llmRunId: res.llmRunId ?? null };
+  return { body: res.value.question, origin: "llm", ui, llmRunId: res.llmRunId };
+}
+
+/**
+ * Texto nuevo tras la ficha lista: el LLM propone qué cambia. Solo un cambio de ubicación produce una propuesta
+ * (pin geocodificado que la persona confirma); la descripción sigue siendo el relato original, ya reevaluado por Jev.
+ * Sin LLM, sin cambios o con error ⇒ ficha lista actualizada (plantilla).
+ */
+async function proposeCorrection(
+  deps: IntakeDeps,
+  r: Awaited<ReturnType<typeof getReport>>,
+  revision: number,
+  intake: IntakeConfig,
+  t: Render,
+  ready: () => Promise<Reply>,
+): Promise<Reply> {
+  const fallback = await ready();
+  if (!deps.llm) return fallback;
+  const res = await interpretCorrection(llmDeps(deps), {
+    reportId: r.id,
+    revision,
+    draft: { description: r.description, locationText: r.location_text, areaName: await areaName(deps.pool, r.area_id) },
+    newMessages: await textsAfterReady(deps.pool, r.conversation_id),
+    config: intake.llm,
+  });
+  if (!res.ok) return { ...fallback, llmRunId: res.llmRunId ?? null };
+  const proposed = res.value.proposedFields.locationText;
+  const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!proposed || norm(proposed) === norm(r.location_text)) return { ...fallback, llmRunId: res.llmRunId };
+  return geocodedProposal(deps, r.territory_id!, proposed, intake, t, res.llmRunId, { ...fallback, llmRunId: res.llmRunId });
 }
 
 async function readyText(db: Pool, r: Awaited<ReturnType<typeof getReport>>, ev: StoredEvaluation, t: (k: string, v?: Record<string, string>) => Promise<string>) {
