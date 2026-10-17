@@ -15,7 +15,7 @@ import { enqueue } from "../jobs/queue";
 import type { StorageAdapter } from "../storage/adapter";
 import { appendAssistantMessage, areaName, excludeFromDescription, getReport, loadEvidence, setLocation, type ReportRow } from "./drafts";
 import { confirmReport } from "./confirm";
-import { classifyReply, extractPublicCode, isOnlyAddress } from "./replies";
+import { classifyReply, extractPublicCode, isOnlyAddress, isOnlyStatusQuery } from "./replies";
 import { appendEvent } from "../events/append";
 import { DomainError } from "../errors";
 import { chooseBranch, evidenceReasons, indicatesActiveHazard, type Branch } from "./branches";
@@ -245,14 +245,15 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
       break;
     case "status": {
       // Jev dice que es una consulta de estado: si menciona un código, se responde por ese código (cualquier frase);
-      // si no, los últimos reportes de esta sesión. El mensaje no es relato, así que sale de la descripción.
+      // si no, los últimos reportes de esta sesión. Solo sale de la descripción si es una consulta pura: un relato
+      // con un código adentro (o una clasificación equivocada de Jev) se conserva.
       const ex = await lastExchange(deps.pool, r.conversation_id);
       const code = ex && intake.config.status_lookup ? extractPublicCode(ex.text, { requireQueryOnly: false }) : null;
       const body = code
         ? await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId, code, max: intake.config.status_lookup!.max_per_hour }, t)
         : await statusSummary(deps.pool, r.citizen_session_id, territoryId);
       reply = { body, origin: "template", ui: { kind: "status" } };
-      if (ex) strip = ex.text;
+      if (ex && isOnlyStatusQuery(ex.text)) strip = ex.text;
       break;
     }
     case "ask_location":

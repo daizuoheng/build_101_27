@@ -65,6 +65,16 @@ export function extractPublicCode(text: string, opts: { requireQueryOnly?: boole
   return null;
 }
 
+/**
+ * ¿El mensaje es solo una consulta de estado (palabras de consulta y, como mucho, un código)? Decide si se puede
+ * sacar de la descripción: «¿cómo va mi reporte AB2CD9?» sí; «hay un pozo frente al AB2CD9 desde ayer» no.
+ */
+export function isOnlyStatusQuery(text: string): boolean {
+  const words = normalizeReply(text).split(" ").filter(Boolean);
+  const code = extractPublicCode(text, { requireQueryOnly: false })?.toLowerCase();
+  return words.length > 0 && words.every((w) => w === code || STATUS_WORDS.has(w));
+}
+
 const ADDRESS_FILLER = new Set(["es", "en", "esta", "queda", "la", "el", "los", "las", "de", "del", "y", "e", "esq", "esquina", "con", "casi",
   "frente", "al", "a", "sobre", "calle", "avenida", "av", "bulevar", "bvar", "numero", "nro", "n", "puerta", "aca", "ahi", "por", "ahi", "creo", "que"]);
 

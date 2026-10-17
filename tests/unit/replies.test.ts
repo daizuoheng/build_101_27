@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { policies } from "../../seeds/policies";
 import { IntakePolicy } from "@/server/config/policies";
-import { classifyReply, extractPublicCode, isOnlyAddress, normalizeReply } from "@/server/intake/replies";
+import { classifyReply, extractPublicCode, isOnlyAddress, isOnlyStatusQuery, normalizeReply } from "@/server/intake/replies";
 import { newCode } from "@/server/intake/confirm";
 
 const lexicon = IntakePolicy.parse(policies.intake).replies!;
@@ -77,5 +77,14 @@ describe("isOnlyAddress", () => {
 describe("newCode", () => {
   it("siempre incluye al menos un dígito", () => {
     for (let i = 0; i < 500; i++) expect(newCode()).toMatch(/^(?=.*[2-9])[A-HJ-NP-Z2-9]{6}$/);
+  });
+});
+
+describe("isOnlyStatusQuery", () => {
+  it("solo consultas puras; un relato con código no", () => {
+    expect(isOnlyStatusQuery("¿cómo va mi reporte AB2CD9?")).toBe(true);
+    expect(isOnlyStatusQuery("buenas tardes, estado de AB2CD9, gracias")).toBe(true);
+    expect(isOnlyStatusQuery("hay un pozo frente al AB2CD9 desde ayer")).toBe(false);
+    expect(isOnlyStatusQuery("se rompió el caño de la esquina")).toBe(false);
   });
 });
