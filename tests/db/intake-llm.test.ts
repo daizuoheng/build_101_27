@@ -229,6 +229,7 @@ describe("recepción con LLM bajo demanda", () => {
     expect(jev.calls).toBe(calls);
     expect(await lastAssistant(pool, id)).toMatchObject({ ui: { kind: "ask_location" }, body: expect.stringMatching(/dirección correcta/) });
     expect((await getReport(pool, id)).location_confirmed).toBe(false);
+    expect((await getReport(pool, id)).description).toBe("Hay un pozo enorme en la calle"); // «No» no es relato
 
     await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000003", body: "18 de julio y ejido" }), pool);
     await runIntakeTurn(deps, id);
@@ -238,6 +239,10 @@ describe("recepción con LLM bajo demanda", () => {
     const r = await getReport(pool, id);
     expect(r).toMatchObject({ location_confirmed: true, location_source: "geocoded", location_text: "18 de julio y ejido" });
     expect((await lastAssistant(pool, id)).ui).toEqual({ kind: "ready" });
+    // Ni la dirección escrita ni el «sí» quedan en la descripción; los mensajes siguen en la conversación.
+    expect(r.description).toBe("Hay un pozo enorme en la calle");
+    const msgs = await pool.query("select count(*)::int as n from messages m join conversations c on c.id = m.conversation_id where c.report_id = $1 and m.role = 'citizen'", [id]);
+    expect(msgs.rows[0].n).toBe(4);
   });
 
   it("«enviar» con la ficha lista envía el reporte; «sí, y además…» no", async () => {
@@ -253,6 +258,7 @@ describe("recepción con LLM bajo demanda", () => {
     const r = await getReport(pool, id);
     expect(r.status).toBe("confirmed");
     expect(r.public_code).toMatch(/^[A-Z2-9]{6}$/);
+    expect(r.description).toBe("Hay un pozo enorme en la calle\nsí, y además está lleno de agua");
     expect(await lastAssistant(pool, id)).toMatchObject({ ui: { kind: "confirmed", publicCode: r.public_code } });
     expect((await pool.query("select count(*)::int as n from jobs where kind = 'process_report'")).rows[0].n).toBe(1);
   });
@@ -277,6 +283,7 @@ describe("recepción con LLM bajo demanda", () => {
     };
     expect(await ask(`¿cómo va el reporte ${code.toLowerCase()}?`)).toBe(`Reporte ${code}: recibido, pendiente de análisis.`);
     expect(await ask("estado de ZZZZ22")).toMatch(/No encontré un reporte con el código ZZZZ22/);
+    expect((await getReport(pool, d2)).description).toBeNull(); // las consultas no son relato
 
     await pool.query(
       `insert into events (entity_type, entity_id, kind, actor_type, actor_id, data)

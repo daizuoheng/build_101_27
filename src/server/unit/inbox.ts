@@ -35,12 +35,10 @@ export async function getUnitInbox(db: Db, unitId: string): Promise<UnitInboxRes
        i.id as incident_id, coalesce(i.title, pt.name, 'Incidente') as title, pt.name as problem_type, i.priority_band,
        i.priority_breakdown, i.active_hazard, i.location_text, ar.name as area_name,
        st_x(i.location::geometry) as lon, st_y(i.location::geometry) as lat, i.summary,
-       coalesce((select array_agg(m.body order by r.confirmed_at, m.seq)
-                 from report_incident_links l
-                 join reports r on r.id = l.report_id
-                 join conversations c on c.report_id = r.id
-                 join messages m on m.conversation_id = c.id
-                 where l.incident_id = i.id and l.active and m.role = 'citizen' and m.body <> '[foto]'), '{}') as citizen_texts,
+       -- Un texto por reporte: su descripción, que es el relato original (sin respuestas cortas ni direcciones sueltas).
+       coalesce((select array_agg(r.description order by r.confirmed_at, r.id)
+                 from report_incident_links l join reports r on r.id = l.report_id
+                 where l.incident_id = i.id and l.active and nullif(trim(r.description), '') is not null), '{}') as citizen_texts,
        coalesce((select array_agg(at.id order by at.created_at)
                  from report_incident_links l join attachments at on at.report_id = l.report_id
                  where l.incident_id = i.id and l.active and at.purpose = 'original'), '{}') as photo_ids
