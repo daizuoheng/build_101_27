@@ -42,7 +42,7 @@ export function ReviewCard({
         <div>
           <dt className="text-xs font-bold uppercase tracking-wide text-ink-2">Ubicación</dt>
           <dd className="mt-0.5 font-bold text-ink">
-            {location?.confirmed ? place ?? "Punto marcado en el mapa" : <span className="font-normal text-ink-2">Falta confirmar</span>}
+            {location?.confirmed ? place ?? (location.source === "gps" ? "Tu ubicación compartida" : "Punto confirmado") : <span className="font-normal text-ink-2">Falta confirmar</span>}
             {location?.confirmed && area && (
               <span className="mt-1 block">
                 <span className="badge badge-muted">{territory.areaLabel} · {area}</span>

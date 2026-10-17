@@ -236,7 +236,7 @@ function AssignmentCard({
           <IconPin className="mt-0.5 h-[18px] w-[18px] shrink-0 text-accent" />
           <div>
             <dt className="sr-only">Lugar</dt>
-            <dd className="font-semibold text-ink">{i.locationText ?? "Punto marcado en el mapa"}</dd>
+            <dd className="font-semibold text-ink">{i.locationText ?? "Ubicación compartida por el ciudadano"}</dd>
             {dist && <dd className="text-ink-2">A {dist} de tu última posición</dd>}
           </div>
         </div>

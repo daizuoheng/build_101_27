@@ -5,13 +5,19 @@ import type { z } from "zod";
 import type { DraftView, MessageUi, MessageView, MyReportItem as MyReportItemSchema } from "@/shared/contracts/intake";
 import { api, errorMessage } from "@/app/_components/http";
 import { SiteHeader } from "@/app/_components/SiteHeader";
-import { IconAlert, IconCamera, IconChat, IconCheck, IconEdit, IconLocate, IconMap, IconPin, IconSend } from "@/app/_components/icons";
-import { LocationPanel, type LocationMode, type Proposed } from "./LocationPanel";
+import dynamic from "next/dynamic";
+import { IconAlert, IconCamera, IconChat, IconCheck, IconEdit, IconLocate, IconPin, IconSend } from "@/app/_components/icons";
 import { ReviewCard } from "./DraftCardView";
 
 type MyReportItem = z.infer<typeof MyReportItemSchema>;
 type Pending = { clientMessageId: string; body: string; kind: "text" | "photo"; file?: File; preview?: string; failed?: string };
-type LocationState = { mode: LocationMode; proposed?: Proposed | null } | null;
+type Proposed = { lon: number; lat: number; label: string };
+
+// Vista previa del punto, como el mensaje de ubicación de WhatsApp: solo muestra, no se elige nada en el mapa.
+const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
+  ssr: false,
+  loading: () => <div className="h-[150px] animate-pulse rounded-xl bg-surface-2" aria-hidden />,
+});
 
 const POLL_MS = 4000;
 // Fotos: cualquier imagen; HEIC/HEIF por extensión porque algunos navegadores no informan su tipo MIME.
@@ -28,7 +34,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
   const [busy, setBusy] = useState(false);
-  const [location, setLocation] = useState<LocationState>(null);
+  const [locating, setLocating] = useState(false);
   const [modifying, setModifying] = useState(false);
   const [reviewEarly, setReviewEarly] = useState(false);
   const retryText = useRef<{ body: string; id: string } | null>(null);
@@ -51,7 +57,6 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     try {
       applyDraft(await api<DraftView>("/api/reportar/drafts", { method: "POST", json: { territorySlug } }));
       setPending([]);
-      setLocation(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -102,7 +107,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [draft?.messages.length, pending.length, location, modifying, reviewEarly]);
+  }, [draft?.messages.length, pending.length, modifying, reviewEarly]);
 
   async function sendBody(body: string) {
     if (!draft) return;
@@ -110,7 +115,6 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     const id = retryText.current?.body === body ? retryText.current.id : newId();
     retryText.current = { body, id };
     setError(null);
-    setLocation(null);
     setPending((p) => [...p, { clientMessageId: id, body, kind: "text" }]);
     try {
       applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/messages`, { method: "POST", json: { clientMessageId: id, body } }));
@@ -135,7 +139,6 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
   async function sendPhoto(file: File, clientMessageId = newId()) {
     if (!draft) return;
     setError(null);
-    setLocation(null);
     const preview = file.type.startsWith("image/") && !/hei[cf]/i.test(file.type) ? URL.createObjectURL(file) : undefined;
     setPending((p) => [...p.filter((x) => x.clientMessageId !== clientMessageId), { clientMessageId, body: file.name, kind: "photo", file, preview }]);
     const form = new FormData();
@@ -151,13 +154,42 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     }
   }
 
+  /**
+   * «Enviar mi ubicación»: equivale a compartir la ubicación en WhatsApp. La persona la manda explícitamente, así
+   * que cuenta como ubicación confirmada. Sin permiso o sin GPS, se le pide que escriba la dirección.
+   */
+  function shareLocation() {
+    setError(null);
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      setError("Este navegador no puede compartir tu ubicación. Escribí la dirección o una esquina.");
+      focusComposer("Escribí la dirección o una esquina…");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        void confirmLocation({ lon: pos.coords.longitude, lat: pos.coords.latitude, source: "gps" });
+      },
+      (err) => {
+        setLocating(false);
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? "No diste permiso para usar tu ubicación. Escribí la dirección o una esquina."
+            : "No pudimos obtener tu ubicación. Escribí la dirección o una esquina.",
+        );
+        focusComposer("Escribí la dirección o una esquina…");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+    );
+  }
+
   async function confirmLocation(loc: { lon: number; lat: number; source: "gps" | "map" | "geocoded"; text?: string }) {
     if (!draft) return;
     setBusy(true);
     setError(null);
     try {
       applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/location`, { method: "POST", json: loc }));
-      setLocation(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -174,7 +206,6 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     setError(null);
     try {
       applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/confirm`, { method: "POST", json: { idempotencyKey: confirmKey.current.key } }));
-      setLocation(null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -224,10 +255,10 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
       />
       {modifying && (
         <div className="flex flex-col gap-2">
-          <p className="text-[15px] text-ink-2">Escribime qué querés cambiar, o elegí:</p>
+          <p className="text-[15px] text-ink-2">Escribime qué querés cambiar (por ejemplo, la dirección correcta), o elegí:</p>
           <QuickReplies>
-            <button type="button" className="chip" onClick={() => setLocation({ mode: "map" })}>
-              <IconMap className="h-[18px] w-[18px]" /> Cambiar ubicación
+            <button type="button" className="chip" disabled={locating || busy} onClick={shareLocation}>
+              <IconLocate className="h-[18px] w-[18px]" /> {locating ? "Obteniendo ubicación…" : "Enviar mi ubicación"}
             </button>
             <button type="button" className="chip" onClick={() => fileInput.current?.click()}>
               <IconCamera className="h-[18px] w-[18px]" /> Agregar foto
@@ -240,18 +271,19 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
   const reviewInline = lastUi?.kind === "ready" || reviewEarly;
   // Se puede enviar aunque no haya mensaje "ready" (p. ej. Jev tarda y el worker evalúa después): la ficha
   // aparece igual, salvo que el asistente esté pidiendo algo concreto.
-  const fallbackReview = !confirmed && !location && draft.card.ready && !reviewInline && !(lastUi && actionable(lastUi, draft));
+  const fallbackReview = !confirmed && draft.card.ready && !reviewInline && !(lastUi && actionable(lastUi, draft));
 
   const controls = (m: MessageView) => {
     const ui = m.ui!;
-    if (location) return null;
     if (reviewInline) return review;
     return (
       <UiControls
         ui={ui}
         draft={draft}
         busy={busy}
-        onLocation={(mode, proposed) => setLocation({ mode, proposed })}
+        locating={locating}
+        onShareLocation={shareLocation}
+        onWriteAddress={(again) => focusComposer(again ? "Escribí la dirección correcta…" : "Escribí la dirección o una esquina…")}
         onConfirmProposed={(p) => confirmLocation({ lon: p.lon, lat: p.lat, source: "geocoded", text: p.label })}
         onPhoto={() => fileInput.current?.click()}
         onFocusText={() => focusComposer("Contá un poco más qué pasa…")}
@@ -306,20 +338,6 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
               </li>
             ))}
 
-            {location && !confirmed && (
-              <li className="sm:pl-11">
-                <LocationPanel
-                  key={`${location.mode}-${location.proposed?.lon ?? ""}`}
-                  draftId={draft.id}
-                  territory={territory}
-                  initialMode={location.mode}
-                  proposed={location.proposed}
-                  busy={busy}
-                  onConfirm={confirmLocation}
-                  onClose={() => setLocation(null)}
-                />
-              </li>
-            )}
 
             {fallbackReview && (
               <li className="flex flex-col gap-2">
@@ -559,7 +577,9 @@ function UiControls({
   ui,
   draft,
   busy,
-  onLocation,
+  locating,
+  onShareLocation,
+  onWriteAddress,
   onConfirmProposed,
   onPhoto,
   onFocusText,
@@ -568,7 +588,9 @@ function UiControls({
   ui: MessageUi;
   draft: DraftView;
   busy: boolean;
-  onLocation: (mode: LocationMode, proposed?: Proposed | null) => void;
+  locating: boolean;
+  onShareLocation: () => void;
+  onWriteAddress: (again: boolean) => void;
   onConfirmProposed: (p: Proposed) => void;
   onPhoto: () => void;
   onFocusText: () => void;
@@ -584,14 +606,11 @@ function UiControls({
     case "ask_location":
       return (
         <QuickReplies>
-          <button type="button" className="chip chip-primary" onClick={() => onLocation("address")}>
-            <IconPin className="h-[18px] w-[18px]" /> Dirección
+          <button type="button" className="chip chip-primary" disabled={locating || busy} onClick={onShareLocation}>
+            <IconLocate className="h-[18px] w-[18px]" /> {locating ? "Obteniendo ubicación…" : "Enviar mi ubicación"}
           </button>
-          <button type="button" className="chip" onClick={() => onLocation("gps")}>
-            <IconLocate className="h-[18px] w-[18px]" /> Mi ubicación
-          </button>
-          <button type="button" className="chip" onClick={() => onLocation("map")}>
-            <IconMap className="h-[18px] w-[18px]" /> En el mapa
+          <button type="button" className="chip" onClick={() => onWriteAddress(false)}>
+            <IconEdit className="h-[18px] w-[18px]" /> Escribir la dirección
           </button>
         </QuickReplies>
       );
@@ -599,18 +618,21 @@ function UiControls({
       const p = { lon: ui.lon, lat: ui.lat, label: ui.label };
       return (
         <div className="flex flex-col gap-2">
-          <p className="inline-flex items-center gap-2 rounded-xl border border-line-soft bg-surface px-3 py-2 font-semibold text-primary">
-            <IconPin className="h-[18px] w-[18px] shrink-0" /> {ui.label}
-          </p>
+          <figure className="w-full max-w-sm overflow-hidden rounded-xl border border-line-soft bg-surface">
+            <LeafletMap label={`Ubicación propuesta: ${ui.label}`} center={p} zoom={16} pin={p} height={150} />
+            <figcaption className="flex items-center gap-2 px-3 py-2 font-semibold text-primary">
+              <IconPin className="h-[18px] w-[18px] shrink-0" /> {ui.label}
+            </figcaption>
+          </figure>
           <QuickReplies>
             <button type="button" className="chip chip-primary" disabled={busy} onClick={() => onConfirmProposed(p)}>
               <IconCheck className="h-[18px] w-[18px]" /> Sí, es ahí
             </button>
-            <button type="button" className="chip" onClick={() => onLocation("proposed", p)}>
-              <IconMap className="h-[18px] w-[18px]" /> Ver en el mapa
+            <button type="button" className="chip" onClick={() => onWriteAddress(true)}>
+              <IconEdit className="h-[18px] w-[18px]" /> No, es otro lugar
             </button>
-            <button type="button" className="chip" onClick={() => onLocation("map")}>
-              <IconEdit className="h-[18px] w-[18px]" /> Elegir otro punto
+            <button type="button" className="chip" disabled={locating || busy} onClick={onShareLocation}>
+              <IconLocate className="h-[18px] w-[18px]" /> {locating ? "Obteniendo…" : "Enviar mi ubicación"}
             </button>
           </QuickReplies>
         </div>

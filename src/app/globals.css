@@ -5,6 +5,8 @@
  * las superficies (ciudadano, unidad, operación) compartan el mismo sistema. Contrastes AA sobre --surface y --bg.
  */
 :root {
+  /* Solo tema claro: evita que el navegador oscurezca la página a la fuerza (Chrome/Android "tema oscuro para sitios"). */
+  color-scheme: only light;
   --bg: #f8fafc;
   --surface: #ffffff;
   --surface-2: #f1f5f9;
