@@ -285,7 +285,7 @@ function AssignmentCard({
               <li key={p}>
                 <a href={`/api/unidad/photos/${encodeURIComponent(p)}`} target="_blank" rel="noopener noreferrer" className="block h-20 w-20 overflow-hidden rounded-lg border border-line-soft">
                   {/* eslint-disable-next-line @next/next/no-img-element -- foto privada servida por ruta autorizada */}
-                  <img src={`/api/unidad/photos/${encodeURIComponent(p)}`} alt={`Foto ${idx + 1} del reporte`} className="h-full w-full object-cover" loading="lazy" />
+                  <img src={`/api/unidad/photos/${encodeURIComponent(p)}?size=thumb`} alt={`Foto ${idx + 1} del reporte`} className="h-full w-full object-cover" loading="lazy" />
                 </a>
               </li>
             ))}

@@ -24,6 +24,18 @@ const POLL_MS = 4000;
 const PHOTO_ACCEPT = "image/*,.heic,.heif";
 
 const newId = () => crypto.randomUUID();
+
+/**
+ * ¿`next` es al menos tan nuevo como `cur`? Las respuestas pueden llegar desordenadas (un polling lanzado antes
+ * de una acción puede resolver después): se compara enviado > borrador, luego revisión y luego último mensaje.
+ */
+function notOlder(next: DraftView, cur: DraftView | null): boolean {
+  if (!cur || cur.id !== next.id) return true;
+  const key = (d: DraftView) => [d.status === "confirmed" ? 1 : 0, d.revision, d.messages.at(-1)?.seq ?? 0];
+  const [a, b] = [key(next), key(cur)];
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+}
 const time = (iso: string) => new Date(iso).toLocaleTimeString("es-UY", { hour: "2-digit", minute: "2-digit" });
 
 export function ReportApp({ territorySlug }: { territorySlug: string }) {
@@ -45,8 +57,13 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
 
   const draftUrl = (id: string) => `/api/reportar/drafts/${encodeURIComponent(id)}`;
 
+  const draftRef = useRef<DraftView | null>(null);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
   const applyDraft = useCallback((d: DraftView) => {
-    setDraft(d);
+    setDraft((cur) => (notOlder(d, cur) ? d : cur));
     setModifying(false);
     setReviewEarly(false);
   }, []);
@@ -97,7 +114,9 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     const t = setInterval(async () => {
       if (document.hidden) return;
       try {
-        setDraft(await api<DraftView>(draftUrl(id)));
+        const d = await api<DraftView>(draftUrl(id));
+        // Un polling del borrador anterior (después de «Nuevo reporte») o atrasado no pisa el estado actual.
+        setDraft((cur) => (cur?.id === d.id && notOlder(d, cur) ? d : cur));
       } catch {
         /* se reintenta en el próximo ciclo */
       }
@@ -165,10 +184,15 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
       focusComposer("Escribí la dirección o una esquina…");
       return;
     }
+    // El GPS puede tardar hasta 10 s. Si mientras tanto la persona escribió, confirmó otro punto o abrió otro
+    // reporte (cambia la revisión o el borrador), la posición que llegue tarde se descarta.
+    const asked = draftRef.current ? { id: draftRef.current.id, revision: draftRef.current.revision } : null;
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
+        const cur = draftRef.current;
+        if (!asked || !cur || cur.id !== asked.id || cur.revision !== asked.revision || cur.status !== "draft") return;
         void confirmLocation({ lon: pos.coords.longitude, lat: pos.coords.latitude, source: "gps" });
       },
       (err) => {
@@ -243,11 +267,11 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
   // Cada botón tiene su equivalente escrito (como en WhatsApp, donde no hay botones): el campo lo sugiere.
   const hint =
     lastUi?.kind === "propose_location" && actionable(lastUi, draft)
-      ? "Respondé «sí» o escribí otra dirección…"
+      ? "«sí» u otra dirección…"
       : lastUi?.kind === "ready" && draft.card.ready
-        ? "Respondé «enviar» o escribí qué cambiar…"
+        ? "«enviar» o qué cambiar…"
         : lastUi?.kind === "ask_location" && !draft.location?.confirmed
-          ? "Escribí la dirección o una esquina…"
+          ? "Dirección o esquina…"
           : "Escribí un mensaje…";
   const area = draft.location?.confirmed ? draft.location.areaName : null;
 
@@ -528,7 +552,7 @@ function Bubble({ message, draftId, emergencyText }: { message: MessageView; dra
       <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
         <span className="sr-only">Vos:</span>
         {message.attachmentId ? (
-          <PhotoCard src={`/api/reportar/drafts/${encodeURIComponent(draftId)}/photos/${encodeURIComponent(message.attachmentId)}`} state="sent" />
+          <PhotoCard src={`/api/reportar/drafts/${encodeURIComponent(draftId)}/photos/${encodeURIComponent(message.attachmentId)}?size=thumb`} state="sent" />
         ) : (
           <div className="rounded-2xl rounded-br-none bg-primary px-4 py-2.5 text-white shadow-sm">
             <p className="whitespace-pre-wrap">{message.body}</p>

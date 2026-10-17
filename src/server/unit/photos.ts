@@ -1,3 +1,4 @@
+import { isUuid } from "../ids";
 import type { Db } from "../db/pool";
 import { notFound } from "../errors";
 import type { StorageAdapter } from "../storage/adapter";
@@ -12,7 +13,7 @@ export async function getUnitPhoto(
   storage: StorageAdapter,
   { unitId, attachmentId }: { unitId: string; attachmentId: string },
 ): Promise<Buffer> {
-  if (!/^[0-9a-f-]{36}$/i.test(attachmentId)) throw notFound("Foto inexistente.");
+  if (!isUuid(attachmentId)) throw notFound("Foto inexistente.");
   const { rows } = await db.query<{ storage_key: string }>(
     `select d.storage_key
      from attachments a

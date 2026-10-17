@@ -32,9 +32,14 @@ export function SiteHeader({
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-0.5">
           <p className="flex items-center gap-2">
             <span className="h-2 w-2 shrink-0 rounded-full bg-success" aria-hidden />
-            <span>Piloto · unidades y datos de prueba</span>
+            <span>Piloto · datos de prueba</span>
           </p>
-          {emergencyText && <p className="hidden sm:block">No reemplaza a los servicios de emergencia: {emergencyText}</p>}
+          {/* Aviso de seguridad visible en todos los tamaños; en celular, en una línea más corta. */}
+          {emergencyText && (
+            <p className="text-xs sm:text-[13px]">
+              <span className="font-semibold text-danger-strong sm:font-normal sm:text-ink-2">No reemplaza a emergencias:</span> {emergencyText}
+            </p>
+          )}
         </div>
       </div>
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 md:px-8">
