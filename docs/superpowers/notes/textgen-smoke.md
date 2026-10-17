@@ -116,3 +116,20 @@ porque ninguna base tiene textos del LLM en producción.
 
 El seed nunca pisa plantillas que ya existen. Una base que ya tenía `textgen_summary` conserva la versión vieja
 (sin peligro activo, paso ni accesibilidad) hasta que alguien la actualice a mano desde `seeds/templates.ts`.
+
+## Encolado (17 oct)
+
+Regla: cada vez que un incidente abierto nace o queda en una revisión nueva, se encola `textgen` para esa revisión,
+en la misma transacción. Hay tres puntos de entrada. La creación del incidente (`process-report.ts`) encola la
+revisión 1, aunque después falle `assess_incident`. `runAssessIncident` encola siempre la revisión vigente, porque la
+revisión que subió `touchIncident` al vincular también cambia el conteo del resumen. `recomputeEffective` encola
+cuando cambió algo efectivo, lo que cubre `setOverride` y `removeOverride`. Archivar no encola. Caso aparte: la
+promoción `low → medium` por antigüedad se decide en `plan` sin revisión nueva. Ahí se borra solo el
+`explain_priority` de la revisión vigente y se reencola con el sufijo `band:<banda>`.
+
+Lector para las vistas: `latestTexts`/`latestTextsMany` en `src/server/incidents/texts.ts`. Devuelven solo textos de
+la revisión vigente; si un propósito no tiene fila, vuelve `null` y la vista muestra su plantilla.
+
+Smoke local (`pnpm dev`, `pnpm worker` y `scripts/e2e-walkthrough.mjs`, con Jev y DeepSeek reales). Primero
+`✓ process_report …@3` y enseguida `✓ textgen …@1` en 25 ms. Quedaron tres filas de la revisión 1 en
+`generated_texts`, todas de plantilla. Ejemplo: «Accesibilidad obstruida — 18 de Julio 1234, CENTRO».
