@@ -49,12 +49,32 @@ export const EvaluationPolicy = z.object({
   review: z.object({ min_applicability: z.number(), min_type: z.number(), min_contradiction: z.number() }),
 });
 
+/** Texto de pregunta por candidato: `{candidate}` se reemplaza por el índice local (c1, c2…), nunca por un id. */
+const PerCandidate = z.string().refine((s) => s.includes("{candidate}"), "debe incluir {candidate}");
+
 export const GroupingPolicy = z.object({
+  provider: z.literal("jev"),
+  model: z.string(),
+  image_header: z.boolean(),
+  timeout_ms: z.number().int().positive(),
   radius_m: z.number().positive(),
   max_candidates: z.number().int().positive(),
   same_threshold: z.number(),
   different_threshold: z.number(),
   conflict_band: z.number(),
+  evidence: z.object({
+    max_reports_per_candidate: z.number().int().positive(),
+    max_photos_per_candidate: z.number().int().nonnegative(),
+  }),
+  questions: z.object({
+    match: z.object({
+      instructions: PerCandidate,
+      criteria: z.object({ same_incident: z.string(), different_incident: z.string(), uncertain: z.string() }),
+    }),
+    object_conflict: z.object({ instructions: PerCandidate }),
+    place_conflict: z.object({ instructions: PerCandidate }),
+    time_conflict: z.object({ instructions: PerCandidate }),
+  }),
 });
 
 export const PriorityPolicy = z.object({

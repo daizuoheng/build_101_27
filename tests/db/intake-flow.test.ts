@@ -49,7 +49,7 @@ describe("recepción → confirmación → job → incidente", () => {
     const { pool, s, id } = await draftWithText();
     const jev = fakeJev();
     await runIntakeTurn(testDeps(pool, jev), id);
-    expect(jev.calls).toBe(1);
+    expect(jev.calls).toHaveLength(1);
     const view = await getDraftView(pool, id, s);
     expect(view.messages.at(-1)?.ui).toEqual({ kind: "ask_location" });
     expect(view.card.typeName).toBe("Bache");
@@ -84,7 +84,7 @@ describe("recepción → confirmación → job → incidente", () => {
     await runIntakeTurn(deps, id);
     await withTx((c) => confirmReport(c, { reportId: id, sessionId: s, idempotencyKey: "key-00000001" }), pool);
     expect(await runOnce(deps, handlers, { workerId: "test" })).toBe(true);
-    expect(jev.calls).toBe(1); // la evaluación de la recepción se reutilizó
+    expect(jev.calls).toHaveLength(1); // la evaluación de la recepción se reutilizó
 
     const inc = await pool.query(
       `select i.priority_band, i.severity, a.name as area, l.active
@@ -128,7 +128,7 @@ describe("recepción → confirmación → job → incidente", () => {
     await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "está en la esquina" }), pool);
     const jev = fakeJev();
     await runOnce(testDeps(pool, jev), handlers, { workerId: "test" });
-    expect(jev.calls).toBe(0);
+    expect(jev.calls).toHaveLength(0);
     expect((await pool.query("select count(*)::int as n from report_evaluations")).rows[0].n).toBe(0);
   });
 
