@@ -28,3 +28,13 @@ Pendientes que quedaron abiertos en `feat/llm-recepcion`. Cada uno dice de quié
 
 - [ ] `pnpm typecheck` en un clon nuevo falla con `RouteContext` hasta correr `pnpm next typegen`. Proponer al Núcleo agregarlo al script `typecheck` o a `postinstall`.
 - [ ] Variables vacías en `.env.local` (por ejemplo `TYPESAFE_API_KEY=`) tapan las de `.env`, porque `.env.local` se carga primero. Avisar en el HANDOFF o comentar esas líneas en `.env.example`. Lo mismo pasa con `DEMO_*_PASSWORD` distintas entre los dos archivos: las cuentas de demo quedan con la contraseña de la primera seed y no se actualizan.
+
+## Canal WhatsApp (roadmap)
+
+- [ ] **Identidad por teléfono**: el adaptador de WhatsApp asocia cada número a una `citizen_session` (`channel = 'whatsapp'`, `external_identity`). **Guardar el número cifrado o como hash con sal (Ley 18.331)**, nunca en texto plano, y no mostrarlo en operación.
+- [ ] **Botones y ubicación nativos de WhatsApp**: la Cloud API tiene botones de respuesta (máx. 3), pedido de ubicación y mensajes de ubicación con mapa. El backend ya acepta respuestas por texto («sí», «no», «enviar», el código del reporte), así que los botones son una mejora opcional, no un requisito.
+- [ ] **Léxico de respuestas** (`intake.replies` en la política): calibrar con mensajes reales. Hoy solo cuenta como confirmación un mensaje que sea entero una respuesta corta.
+
+## Geocodificación
+
+- [ ] **Esquinas más rápidas**: hoy una esquina no cacheada cuesta de 3 a 4 pedidos a Nominatim (2,5 a 6 s), por el límite de 1 pedido por segundo del servicio público. Ese límite se comparte entre todos los usuarios del proceso, así que con varias personas a la vez se forma cola. Opciones: (1) caché por calle, además de por consulta; (2) importar a PostGIS los ejes de calles de Montevideo (IDE Uruguay / Intendencia) y calcular cruces localmente en milisegundos, sin red; (3) Nominatim propio o un proveedor pago. Recomendado: (2) para el piloto.

@@ -109,6 +109,12 @@ export const policies = {
       timeout_ms: 8000,
       extra_body: { thinking: { type: "disabled" } },
     },
+    replies: {
+      yes: ["sí", "si", "sí es ahí", "si es ahi", "es ahí", "ahí es", "dale", "ok", "okey", "correcto", "exacto", "eso", "confirmo", "sí confirmo", "perfecto", "listo", "👍"],
+      no: ["no", "no es ahí", "no es ahi", "no es ese", "no es acá", "otro lugar", "incorrecto", "está mal", "no, otro lugar"],
+      send: ["enviar", "enviá", "envialo", "enviarlo", "mandar", "mandalo", "mandá", "enviar reporte", "sí enviar", "si enviar", "confirmar y enviar"],
+    },
+    status_lookup: { max_per_hour: 10 },
   },
   evaluation: {
     provider: "jev",

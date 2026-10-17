@@ -22,7 +22,7 @@ export const templates: { key: string; locale: string; body: string; variables: 
   {
     key: "location_proposed",
     locale: "es",
-    body: "Encontré «{{label}}». ¿Es ahí?",
+    body: "Encontré «{{label}}». ¿Es ahí? Respondé «sí» para confirmar, o escribime otra dirección.",
     variables: ["label"],
   },
   {
@@ -52,7 +52,7 @@ export const templates: { key: string; locale: string; body: string; variables: 
   {
     key: "draft_ready",
     locale: "es",
-    body: "Revisá la ficha: {{type}} en {{place}}. Si está bien, tocá «Enviar reporte». Si querés cambiar algo, escribime.",
+    body: "Revisá la ficha: {{type}} en {{place}}. Si está bien, respondé «enviar». Si querés cambiar algo, escribime qué.",
     variables: ["type", "place"],
   },
   {
@@ -78,5 +78,23 @@ export const templates: { key: string; locale: string; body: string; variables: 
     locale: "es",
     body: "Ese punto queda fuera de la zona que atiende este piloto ({{territory}}). Guardamos el reporte, pero no podemos asignarlo.",
     variables: ["territory"],
+  },
+  {
+    key: "ask_location_retry",
+    locale: "es",
+    body: "Dale. Escribime la dirección correcta (calle y número, o una esquina) o mandame tu ubicación.",
+    variables: [],
+  },
+  {
+    key: "status_not_found",
+    locale: "es",
+    body: "No encontré un reporte con el código {{code}}. Revisá que esté bien escrito.",
+    variables: ["code"],
+  },
+  {
+    key: "status_rate_limited",
+    locale: "es",
+    body: "Hiciste muchas consultas seguidas. Probá de nuevo en un rato.",
+    variables: [],
   },
 ];

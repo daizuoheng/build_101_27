@@ -34,6 +34,15 @@ async function setup(text = "Hay un pozo enorme en la calle", locationText = "Ri
   return { pool, t, s, id };
 }
 
+async function setupUnlocated(text = "Hay un pozo enorme en la calle") {
+  const pool = await testDb();
+  const t = await territoryId(pool);
+  const s = await newSession(pool);
+  const id = await withTx((c) => createDraft(c, { sessionId: s, territoryId: t }), pool);
+  await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000001", body: text }), pool);
+  return { pool, t, s, id };
+}
+
 async function lastAssistant(pool: Awaited<ReturnType<typeof testDb>>, reportId: string) {
   const { rows } = await pool.query(
     `select m.body, m.origin, m.ui, m.llm_run_id from messages m join conversations c on c.id = m.conversation_id
@@ -200,6 +209,81 @@ describe("recepción con LLM bajo demanda", () => {
     await runIntakeTurn(deps, id);
     expect(llm.calls).toBe(1);
     expect((await lastAssistant(pool, id)).ui).toEqual({ kind: "propose_location", lon: -56.1868, lat: -34.9056, label: "18 de julio y ejido" });
+  });
+
+  it("respuestas por texto (sin botones): «sí» confirma el pin, «no» pide otra dirección sin llamar a Jev", async () => {
+    const { pool, t, s, id } = await setupUnlocated();
+    const jev = fakeJev(() => fakeAnswers({ location_in_text: choice("precise") }));
+    const llm = fakeLlm((u) => {
+      const msgs = u.messages as { id: string; text: string }[];
+      return { address: "18 de julio y ejido", source_message_ids: [msgs.at(-1)!.id] };
+    });
+    const deps = { ...testDeps(pool, jev), llm };
+    await cacheGeocode(pool, t, "18 de julio y ejido", { lon: -56.1868, lat: -34.9056, label: "18 de julio y ejido" });
+    await runIntakeTurn(deps, id);
+    expect((await lastAssistant(pool, id)).ui).toMatchObject({ kind: "propose_location" });
+
+    const calls = jev.calls;
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "No" }), pool);
+    await runIntakeTurn(deps, id);
+    expect(jev.calls).toBe(calls);
+    expect(await lastAssistant(pool, id)).toMatchObject({ ui: { kind: "ask_location" }, body: expect.stringMatching(/dirección correcta/) });
+    expect((await getReport(pool, id)).location_confirmed).toBe(false);
+
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000003", body: "18 de julio y ejido" }), pool);
+    await runIntakeTurn(deps, id);
+    expect((await lastAssistant(pool, id)).ui).toMatchObject({ kind: "propose_location" });
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000004", body: "sí, es ahí" }), pool);
+    await runIntakeTurn(deps, id);
+    const r = await getReport(pool, id);
+    expect(r).toMatchObject({ location_confirmed: true, location_source: "geocoded", location_text: "18 de julio y ejido" });
+    expect((await lastAssistant(pool, id)).ui).toEqual({ kind: "ready" });
+  });
+
+  it("«enviar» con la ficha lista envía el reporte; «sí, y además…» no", async () => {
+    const { pool, s, id } = await setup();
+    const deps = { ...testDeps(pool, fakeJev()), llm: fakeLlm(() => ({ proposed_fields: {}, source_message_ids: [] })) };
+    await runIntakeTurn(deps, id);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "sí, y además está lleno de agua" }), pool);
+    await runIntakeTurn(deps, id);
+    expect((await getReport(pool, id)).status).toBe("draft");
+
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000003", body: "Enviar" }), pool);
+    await runIntakeTurn(deps, id);
+    const r = await getReport(pool, id);
+    expect(r.status).toBe("confirmed");
+    expect(r.public_code).toMatch(/^[A-Z2-9]{6}$/);
+    expect(await lastAssistant(pool, id)).toMatchObject({ ui: { kind: "confirmed", publicCode: r.public_code } });
+    expect((await pool.query("select count(*)::int as n from jobs where kind = 'process_report'")).rows[0].n).toBe(1);
+  });
+
+  it("consulta por código: estado sin datos personales, código inexistente y tope por hora", async () => {
+    const { pool, s, id } = await setup();
+    const deps = testDeps(pool, fakeJev());
+    await runIntakeTurn(deps, id);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "enviar" }), pool);
+    await runIntakeTurn(deps, id);
+    const code = (await getReport(pool, id)).public_code!;
+
+    // Otra persona, en otro navegador, consulta por el código.
+    const t = await territoryId(pool);
+    const other = await newSession(pool);
+    const d2 = await withTx((c) => createDraft(c, { sessionId: other, territoryId: t }), pool);
+    let n = 1;
+    const ask = async (body: string) => {
+      await withTx((c) => appendCitizenMessage(c, { reportId: d2, sessionId: other, clientMessageId: `msg-q000000${n++}`, body }), pool);
+      await runIntakeTurn(deps, d2);
+      return (await lastAssistant(pool, d2)).body as string;
+    };
+    expect(await ask(`¿cómo va el reporte ${code.toLowerCase()}?`)).toBe(`Reporte ${code}: recibido, pendiente de análisis.`);
+    expect(await ask("estado de ZZZZ22")).toMatch(/No encontré un reporte con el código ZZZZ22/);
+
+    await pool.query(
+      `insert into events (entity_type, entity_id, kind, actor_type, actor_id, data)
+       select 'citizen_session', $1, 'status_lookup', 'citizen', $1, '{}' from generate_series(1, 10)`,
+      [other],
+    );
+    expect(await ask(`estado de ${code}`)).toMatch(/muchas consultas/);
   });
 
   it("sin LLM configurado, texto nuevo tras la ficha ⇒ plantilla", async () => {

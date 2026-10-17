@@ -26,6 +26,13 @@ export const IntakePolicy = z.object({
     timeout_ms: z.number().int().positive(),
   }),
   llm: LlmCallConfig,
+  /**
+   * Respuestas cortas que confirman o rechazan una pregunta del asistente sin botones (canales de solo texto).
+   * Opcional: sin léxico, los botones de la web siguen funcionando y el texto va al flujo normal.
+   */
+  replies: z.object({ yes: z.array(z.string()), no: z.array(z.string()), send: z.array(z.string()) }).optional(),
+  /** Consulta de estado por código: tope de consultas por sesión y hora (evita probar códigos al azar). */
+  status_lookup: z.object({ max_per_hour: z.number().int().positive() }).optional(),
 });
 
 export const EvaluationPolicy = z.object({

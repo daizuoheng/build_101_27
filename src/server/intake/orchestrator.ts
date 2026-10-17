@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { withTx } from "../db/tx";
 import { getActiveCatalog } from "../config/catalog";
 import { getActivePolicy } from "../config/policies";
@@ -13,7 +13,11 @@ import { recordAiRun, recordLlmRun } from "../ai/runs";
 import { geocode } from "../geo/geocoder";
 import { enqueue } from "../jobs/queue";
 import type { StorageAdapter } from "../storage/adapter";
-import { appendAssistantMessage, areaName, getReport, loadEvidence } from "./drafts";
+import { appendAssistantMessage, areaName, getReport, loadEvidence, setLocation, type ReportRow } from "./drafts";
+import { confirmReport } from "./confirm";
+import { classifyReply, extractPublicCode } from "./replies";
+import { appendEvent } from "../events/append";
+import { DomainError } from "../errors";
 import { chooseBranch, evidenceReasons, indicatesActiveHazard, type Branch } from "./branches";
 import { getEvaluation, saveReportEvaluation, type StoredEvaluation } from "./evaluations";
 import { statusLabel } from "./status";
@@ -68,9 +72,14 @@ export async function evaluateRevision(
 
 /** Turno de recepción tras persistir una entrada ciudadana: Jev primero; si no llega a tiempo, queda en el worker. */
 export async function runIntakeTurn(deps: IntakeDeps, reportId: string): Promise<void> {
-  const r = await getReport(deps.pool, reportId);
+  const r0 = await getReport(deps.pool, reportId);
+  if (r0.status !== "draft") return;
+  const intake = await getActivePolicy(deps.pool, r0.territory_id!, "intake");
+  // Respuestas por texto a una pregunta concreta (canales sin botones) y consultas por código: antes de Jev.
+  const short = await handleShortReply(deps, r0, intake.config);
+  if (short === "handled") return;
+  const r = short === "continue" ? await getReport(deps.pool, reportId) : r0;
   if (r.status !== "draft") return;
-  const intake = await getActivePolicy(deps.pool, r.territory_id!, "intake");
   const res = await evaluateRevision(deps, reportId, r.revision, { timeoutMs: intake.config.jev_timeout_ms });
   if (res.ok) return respondToEvaluation(deps, reportId, r.revision, res.value);
 
@@ -90,6 +99,110 @@ export async function runIntakeTurn(deps: IntakeDeps, reportId: string): Promise
 }
 
 type Reply = { body: string; origin: "template" | "llm"; ui: MessageUi | null; llmRunId?: string | null };
+
+/** Responde ya, sin evaluación, a la revisión actual (bajo el lock del reporte). Devuelve false si llegó otra entrada. */
+async function replyNow(c: PoolClient, r: ReportRow, reply: Reply): Promise<boolean> {
+  await c.query("select pg_advisory_xact_lock(hashtext($1))", [r.id]);
+  const cur = await c.query<{ revision: number; status: string }>("select revision, status from reports where id = $1", [r.id]);
+  if (cur.rows[0].status !== "draft" || cur.rows[0].revision !== r.revision) return false;
+  await appendAssistantMessage(c, { conversationId: r.conversation_id, ...reply });
+  await c.query("update conversations set replied_revision = greatest(replied_revision, $2), updated_at = now() where id = $1", [r.conversation_id, r.revision]);
+  return true;
+}
+
+/**
+ * El mensaje que disparó el turno, si es un texto ciudadano, junto con la última pregunta del asistente con UI
+ * (ignorando avisos). Solo cuenta si el texto llegó después de esa pregunta.
+ */
+async function lastExchange(db: Pool, conversationId: string) {
+  const { rows } = await db.query<{ id: string; body: string; role: string; asked: MessageUi | null; asked_seq: number | null; seq: number }>(
+    `select m.id, m.body, m.role, m.seq,
+       (select ui from messages a where a.conversation_id = $1 and a.role = 'assistant' and a.ui is not null
+          and a.ui->>'kind' not in ('active_hazard', 'status') order by a.seq desc limit 1) as asked,
+       (select seq from messages a where a.conversation_id = $1 and a.role = 'assistant' and a.ui is not null
+          and a.ui->>'kind' not in ('active_hazard', 'status') order by a.seq desc limit 1) as asked_seq
+     from messages m where m.conversation_id = $1 order by m.seq desc limit 1`,
+    [conversationId],
+  );
+  const m = rows[0];
+  if (!m || m.role !== "citizen" || m.body === "[foto]") return null;
+  return { messageId: m.id, text: m.body, asked: m.asked_seq !== null && m.asked_seq < m.seq ? m.asked : null };
+}
+
+/**
+ * Respuestas cortas por texto, equivalentes a los botones de la web, para canales que no los tienen:
+ * - pin propuesto + «sí» ⇒ la persona confirma esa ubicación (sigue el turno normal con Jev sobre la nueva revisión);
+ * - pin propuesto + «no» ⇒ se le pide otra dirección;
+ * - ficha lista + «enviar»/«sí» ⇒ se envía el reporte (misma confirmación idempotente que el botón);
+ * - un código de reporte ⇒ estado de ese reporte, con tope de consultas por sesión.
+ * Todo lo demás sigue el flujo normal. El LLM no interviene en ninguna de estas decisiones.
+ */
+async function handleShortReply(deps: IntakeDeps, r: ReportRow, intake: IntakeConfig): Promise<"handled" | "continue" | null> {
+  const ex = await lastExchange(deps.pool, r.conversation_id);
+  if (!ex) return null;
+  const t = (key: string, vars?: Record<string, string>) => renderTemplate(deps.pool, r.territory_id, key, vars);
+
+  // Solo mensajes cortos: un código suelto dentro de un relato largo no es una consulta de estado.
+  const code = intake.status_lookup && ex.text.length <= 80 ? extractPublicCode(ex.text) : null;
+  if (code && intake.status_lookup) {
+    const body = await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId: r.territory_id!, code, max: intake.status_lookup.max_per_hour }, t);
+    await withTx((c) => replyNow(c, r, { body, origin: "template", ui: { kind: "status" } }), deps.pool);
+    return "handled";
+  }
+
+  if (!intake.replies || !ex.asked) return null;
+  const kind = classifyReply(ex.text, intake.replies);
+  if (!kind) return null;
+
+  if (ex.asked.kind === "propose_location") {
+    const p = ex.asked;
+    const alreadyThere = r.location_confirmed && r.lon !== null && Math.abs(r.lon - p.lon) < 1e-6 && Math.abs(r.lat! - p.lat) < 1e-6;
+    if (alreadyThere) return null;
+    if (kind === "no") {
+      await withTx(async (c) => replyNow(c, r, { body: await t("ask_location_retry"), origin: "template", ui: { kind: "ask_location" } }), deps.pool);
+      return "handled";
+    }
+    await withTx((c) => setLocation(c, { reportId: r.id, sessionId: r.citizen_session_id, lon: p.lon, lat: p.lat, source: "geocoded", text: p.label }), deps.pool);
+    return "continue";
+  }
+
+  if (ex.asked.kind === "ready" && (kind === "send" || kind === "yes")) {
+    try {
+      await withTx((c) => confirmReport(c, { reportId: r.id, sessionId: r.citizen_session_id, idempotencyKey: `reply:${ex.messageId}` }), deps.pool);
+    } catch (err) {
+      if (!(err instanceof DomainError)) throw err;
+      await withTx((c) => replyNow(c, r, { body: err.message, origin: "template", ui: null }), deps.pool);
+    }
+    return "handled";
+  }
+  return null;
+}
+
+/** Estado de un reporte por su código público: solo el estado, nunca datos del reporte ni de quien lo envió. */
+async function statusByCode(
+  db: Pool,
+  { sessionId, territoryId, code, max }: { sessionId: string; territoryId: string; code: string; max: number },
+  t: (key: string, vars?: Record<string, string>) => Promise<string>,
+): Promise<string> {
+  const used = await db.query<{ n: number }>(
+    `select count(*)::int as n from events where kind = 'status_lookup' and actor_type = 'citizen' and actor_id = $1
+       and created_at > now() - interval '1 hour'`,
+    [sessionId],
+  );
+  if (used.rows[0].n >= max) return t("status_rate_limited");
+  const { rows } = await db.query<{ processing: string; outcome: string | null; incident_status: string | null }>(
+    `select r.processing, r.outcome, i.status as incident_status
+     from reports r
+     left join report_incident_links l on l.report_id = r.id and l.active
+     left join incidents i on i.id = l.incident_id
+     where r.public_code = $1 and r.territory_id = $2 and r.status = 'confirmed'`,
+    [code, territoryId],
+  );
+  await appendEvent(db, { entityType: "citizen_session", entityId: sessionId, kind: "status_lookup", actorType: "citizen", actorId: sessionId, data: { found: !!rows[0] } });
+  const x = rows[0];
+  if (!x) return t("status_not_found", { code });
+  return t("status_card", { code, status: statusLabel(x.processing as never, x.outcome as never, x.incident_status as never) });
+}
 
 /** Responde a la persona según la rama. Las llamadas de red (LLM, geocodificador) se hacen fuera de la transacción. */
 export async function respondToEvaluation(deps: IntakeDeps, reportId: string, revision: number, ev: StoredEvaluation): Promise<void> {
