@@ -15,8 +15,8 @@ Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee. Son unas 40
 
 ## [0:25–0:40] Qué es
 
-> Radar Urbano es un chat. Le escribís como le escribirías a un vecino, con una foto si tenés. La inteligencia artificial entiende qué pasa, qué tan grave es y si alguien ya lo reportó.
-> Les muestro.
+> Radar Urbano convierte avisos sueltos en incidentes. El vecino cuenta lo que ve, como le sale, con una foto si tiene. La inteligencia artificial entiende qué pasa, qué tan grave es y si alguien ya lo avisó.
+> Al municipio no le llegan diez reclamos: le llega un incidente. Les muestro.
 
 ## [0:40–1:20] Demo: vecino 1
 
@@ -55,7 +55,7 @@ Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee. Son unas 40
 
 ## [2:40–3:00] Cierre
 
-> Hoy funcionan el chat, la clasificación, la agrupación y el mapa del operador. Lo que sigue es la bandeja de las cuadrillas y el despacho automático.
+> Hoy funcionan el reporte del vecino, la clasificación, la agrupación y el mapa del operador. Lo que sigue es la bandeja de las cuadrillas y el despacho automático.
 > Diez vecinos, un incidente, una cuadrilla. Eso es Radar Urbano.
 
 ---
