@@ -4,7 +4,7 @@ import { getCitizenSession } from "@/server/access/citizen-session";
 import { getDeps } from "@/server/deps";
 import { forbidden } from "@/server/errors";
 import { handle } from "@/server/http";
-import { getOwnPhoto, photoSize, renderPhoto } from "@/server/intake/photos";
+import { getOwnPhoto, photoSize } from "@/server/intake/photos";
 
 /** Foto del propio borrador (JPEG normalizado). Privada: no se cachea en intermediarios. */
 export async function GET(req: NextRequest, ctx: RouteContext<"/api/reportar/drafts/[id]/photos/[attachmentId]">) {
@@ -13,9 +13,8 @@ export async function GET(req: NextRequest, ctx: RouteContext<"/api/reportar/dra
     const deps = getDeps();
     const session = await getCitizenSession(deps.pool, await cookies());
     if (!session) throw forbidden();
-    const bytes = await getOwnPhoto(deps.pool, deps.storage, { reportId: id, sessionId: session.id, attachmentId });
-    const out = await renderPhoto(bytes, photoSize(req.nextUrl.searchParams.get("size")));
-    return new Response(new Uint8Array(out), {
+    const bytes = await getOwnPhoto(deps.pool, deps.storage, { reportId: id, sessionId: session.id, attachmentId, size: photoSize(req.nextUrl.searchParams.get("size")) });
+    return new Response(new Uint8Array(bytes), {
       headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff" },
     });
   });

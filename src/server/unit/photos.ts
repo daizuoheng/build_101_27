@@ -2,6 +2,7 @@ import { isUuid } from "../ids";
 import type { Db } from "../db/pool";
 import { notFound } from "../errors";
 import type { StorageAdapter } from "../storage/adapter";
+import { readPhoto, type PhotoSize } from "../intake/photos";
 import { ACTIVE_ASSIGNMENT_STATUSES } from "@/shared/contracts/assignment";
 
 /**
@@ -11,7 +12,7 @@ import { ACTIVE_ASSIGNMENT_STATUSES } from "@/shared/contracts/assignment";
 export async function getUnitPhoto(
   db: Db,
   storage: StorageAdapter,
-  { unitId, attachmentId }: { unitId: string; attachmentId: string },
+  { unitId, attachmentId, size = "full" }: { unitId: string; attachmentId: string; size?: PhotoSize },
 ): Promise<Buffer> {
   if (!isUuid(attachmentId)) throw notFound("Foto inexistente.");
   const { rows } = await db.query<{ storage_key: string }>(
@@ -25,5 +26,5 @@ export async function getUnitPhoto(
     [attachmentId, unitId, ACTIVE_ASSIGNMENT_STATUSES],
   );
   if (!rows[0]) throw notFound("Foto inexistente.");
-  return storage.get(rows[0].storage_key);
+  return readPhoto(storage, rows[0].storage_key, size);
 }
