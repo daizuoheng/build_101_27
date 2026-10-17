@@ -18,19 +18,20 @@ export async function performUnitAction(
 ): Promise<UnitActionResult> {
   const { assignmentId, unitId, userId, body } = input;
   if (!/^[0-9a-f-]{36}$/i.test(assignmentId)) throw notFound("Orden inexistente.");
-  // Serializa reintentos concurrentes con la misma clave.
-  await c.query("select pg_advisory_xact_lock(hashtext($1))", [`unit_action:${unitId}:${body.idempotencyKey}`]);
+  // Serializa reintentos concurrentes con la misma clave sobre la misma orden.
+  await c.query("select pg_advisory_xact_lock(hashtext($1))", [`unit_action:${assignmentId}:${body.idempotencyKey}`]);
 
   const prior = await c.query<{ entity_id: string; data: { action: string; result: { status: string; version: number } } }>(
+    // Acotado a la orden: usa events_entity_idx (entity_type, entity_id, created_at) en vez de recorrer la tabla.
     `select entity_id, data from events
-     where entity_type = 'assignment' and kind = 'unit_action' and actor_type = 'unit'
+     where entity_type = 'assignment' and entity_id = $3 and kind = 'unit_action' and actor_type = 'unit'
        and data->>'unit_id' = $1 and data->>'idempotency_key' = $2
      order by created_at limit 1`,
-    [unitId, body.idempotencyKey],
+    [unitId, body.idempotencyKey, assignmentId],
   );
   const p = prior.rows[0];
   if (p) {
-    if (p.entity_id !== assignmentId || p.data.action !== body.action) {
+    if (p.data.action !== body.action) {
       throw conflict("idempotency_key_reused", "Esa clave ya se usó para otra acción.");
     }
     return { assignmentId, status: p.data.result.status, version: p.data.result.version, replayed: true };

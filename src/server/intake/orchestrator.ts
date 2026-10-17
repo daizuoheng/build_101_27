@@ -104,7 +104,12 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
     r.clarification_rounds,
   );
   const t = (key: string, vars?: Record<string, string>) => renderTemplate(deps.pool, territoryId, key, vars);
-  const ready = async (): Promise<Reply> => ({ body: await readyText(deps.pool, r, ev, t), origin: "template", ui: { kind: "ready" } });
+  const pending = await pendingProposal(deps.pool, r.id, r.conversation_id);
+  // Con un pin de corrección sin confirmar, la ficha lista mostraría la dirección vieja: se vuelve a ofrecer el pin.
+  const ready = async (): Promise<Reply> =>
+    pending
+      ? { body: await t("location_proposed", { label: pending.label }), origin: "template", ui: pending }
+      : { body: await readyText(deps.pool, r, ev, t), origin: "template", ui: { kind: "ready" } };
 
   let reply: Reply;
   switch (branch.kind) {
@@ -196,7 +201,30 @@ async function textsAfterReady(db: Pool, conversationId: string): Promise<{ id: 
 
 const llmDeps = (deps: IntakeDeps) => ({ llm: deps.llm!, recordRun: (run: Parameters<typeof recordLlmRun>[1]) => recordLlmRun(deps.pool, run) });
 
-/** Geocodifica una dirección propuesta por el LLM y arma el pin para que la persona lo confirme o mueva. */
+type ProposedLocation = Extract<MessageUi, { kind: "propose_location" }>;
+
+/**
+ * Pin de corrección pendiente: el último `propose_location` posterior a una ficha lista, sin una confirmación de
+ * ubicación posterior (la persona no lo aceptó ni eligió otro punto). Antes de la primera ficha lista no aplica:
+ * ahí la ubicación todavía no está confirmada y manda la rama `ask_location`/`extract_address`.
+ */
+async function pendingProposal(db: Pool, reportId: string, conversationId: string): Promise<ProposedLocation | null> {
+  const { rows } = await db.query<{ ui: ProposedLocation }>(
+    `select p.ui from messages p
+     where p.conversation_id = $1 and p.role = 'assistant' and p.ui->>'kind' = 'propose_location'
+       and p.seq > (select max(seq) from messages where conversation_id = $1 and role = 'assistant' and ui->>'kind' = 'ready')
+       and not exists (select 1 from events e where e.entity_type = 'report' and e.entity_id = $2
+                       and e.kind = 'location_confirmed' and e.created_at > p.created_at)
+     order by p.seq desc limit 1`,
+    [conversationId, reportId],
+  );
+  return rows[0]?.ui ?? null;
+}
+
+/**
+ * Geocodifica una dirección propuesta por el LLM y arma el pin para que la persona lo confirme o mueva.
+ * `onMiss` decide qué responder si no se encuentra o el geocodificador falla.
+ */
 async function geocodedProposal(
   deps: IntakeDeps,
   territoryId: string,
@@ -204,15 +232,15 @@ async function geocodedProposal(
   intake: IntakeConfig,
   t: Render,
   llmRunId: string,
-  fallback: Reply,
+  onMiss: { notFound: () => Promise<Reply>; error: Reply },
 ): Promise<Reply> {
   let hit = null;
   try {
     hit = await geocode(deps.pool, { query: address, territoryId, policy: intake.geocoder });
   } catch {
-    return fallback;
+    return onMiss.error;
   }
-  if (!hit) return { body: await t("location_not_found", { query: address }), origin: "template", ui: { kind: "ask_location" }, llmRunId };
+  if (!hit) return { ...(await onMiss.notFound()), llmRunId };
   return {
     body: await t("location_proposed", { label: address }),
     origin: "template",
@@ -236,7 +264,11 @@ async function proposeAddress(
     reportId, revision, messages: await citizenTexts(deps.pool, reportId), territoryName: terr.rows[0].name, config: intake.llm,
   });
   if (!extracted.ok || !extracted.value.address) return fallback;
-  return geocodedProposal(deps, territoryId, extracted.value.address, intake, t, extracted.llmRunId, fallback);
+  const address = extracted.value.address;
+  return geocodedProposal(deps, territoryId, address, intake, t, extracted.llmRunId, {
+    notFound: async () => ({ body: await t("location_not_found", { query: address }), origin: "template", ui: { kind: "ask_location" } }),
+    error: fallback,
+  });
 }
 
 /** Repregunta redactada por el LLM; si falla o no hay LLM, la plantilla del campo pedido. */
@@ -262,7 +294,9 @@ async function askEvidence(
 /**
  * Texto nuevo tras la ficha lista: el LLM propone qué cambia. Solo un cambio de ubicación produce una propuesta
  * (pin geocodificado que la persona confirma); la descripción sigue siendo el relato original, ya reevaluado por Jev.
- * Sin LLM, sin cambios o con error ⇒ ficha lista actualizada (plantilla).
+ * Sin LLM, sin cambios o con error ⇒ ficha lista (o el pin pendiente, si hay uno).
+ * Dirección corregida que no se encuentra ⇒ aviso + ficha lista: la ubicación ya está confirmada, así que
+ * `ask_location` no tendría salida desde el chat y cada mensaje volvería a esta rama.
  */
 async function proposeCorrection(
   deps: IntakeDeps,
@@ -285,7 +319,10 @@ async function proposeCorrection(
   const proposed = res.value.proposedFields.locationText;
   const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   if (!proposed || norm(proposed) === norm(r.location_text)) return { ...fallback, llmRunId: res.llmRunId };
-  return geocodedProposal(deps, r.territory_id!, proposed, intake, t, res.llmRunId, { ...fallback, llmRunId: res.llmRunId });
+  return geocodedProposal(deps, r.territory_id!, proposed, intake, t, res.llmRunId, {
+    notFound: async () => ({ ...fallback, body: `${await t("location_not_found", { query: proposed })}\n\n${fallback.body}` }),
+    error: { ...fallback, llmRunId: res.llmRunId },
+  });
 }
 
 async function readyText(db: Pool, r: Awaited<ReturnType<typeof getReport>>, ev: StoredEvaluation, t: (k: string, v?: Record<string, string>) => Promise<string>) {

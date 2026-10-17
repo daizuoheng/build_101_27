@@ -126,6 +126,58 @@ describe("recepción con LLM bajo demanda", () => {
     expect(runs.rows.map((r) => r.status)).toEqual(["invalid", "invalid"]);
   });
 
+  it("pin de corrección sin confirmar: otro mensaje lo vuelve a ofrecer; al confirmar, vuelve la ficha lista", async () => {
+    const { pool, t, s, id } = await setup();
+    let call = 0;
+    const deps = { ...testDeps(pool, fakeJev()), llm: fakeLlm((u) => {
+      const news = u.new_messages as { id: string }[];
+      return call++ === 0
+        ? { proposed_fields: { location_text: "Rivera y Soca" }, source_message_ids: [news[0].id] }
+        : { proposed_fields: {}, source_message_ids: [] };
+    }) };
+    await runIntakeTurn(deps, id);
+    await cacheGeocode(pool, t, "Rivera y Soca", { lon: -56.15, lat: -34.9, label: "Rivera y Soca" });
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "perdón, es en Rivera y Soca" }), pool);
+    await runIntakeTurn(deps, id);
+
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000003", body: "y además está lleno de agua" }), pool);
+    await runIntakeTurn(deps, id);
+    const again = await lastAssistant(pool, id);
+    expect(again.ui).toEqual({ kind: "propose_location", lon: -56.15, lat: -34.9, label: "Rivera y Soca" });
+    expect(again.body).toMatch(/Rivera y Soca/);
+
+    await withTx((c) => setLocation(c, { reportId: id, sessionId: s, lon: -56.15, lat: -34.9, source: "geocoded", text: "Rivera y Soca" }), pool);
+    await runIntakeTurn(deps, id);
+    expect((await lastAssistant(pool, id)).ui).toEqual({ kind: "ready" });
+    expect((await getReport(pool, id)).location_text).toBe("Rivera y Soca");
+  });
+
+  it("dirección corregida que no se encuentra ⇒ aviso + ficha lista, sin quedar en loop", async () => {
+    const { pool, t, s, id } = await setup();
+    const seen: number[] = [];
+    const deps = { ...testDeps(pool, fakeJev()), llm: fakeLlm((u) => {
+      const news = u.new_messages as { id: string }[];
+      seen.push(news.length);
+      return seen.length === 1
+        ? { proposed_fields: { location_text: "Calle Inexistente 999" }, source_message_ids: [news[0].id] }
+        : { proposed_fields: {}, source_message_ids: [] };
+    }) };
+    await runIntakeTurn(deps, id);
+    const key = `${t}:${"Calle Inexistente 999, Montevideo, Uruguay".toLowerCase()}`;
+    await pool.query("insert into geocode_cache (provider, query_norm, result) values ('nominatim', $1, $2)", [key, { hit: null }]);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "es en Calle Inexistente 999" }), pool);
+    await runIntakeTurn(deps, id);
+
+    const m = await lastAssistant(pool, id);
+    expect(m.ui).toEqual({ kind: "ready" });
+    expect(m.body).toMatch(/No pude ubicar «Calle Inexistente 999»/);
+    expect(m.body).toMatch(/Revisá la ficha/);
+
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000003", body: "gracias" }), pool);
+    await runIntakeTurn(deps, id);
+    expect(seen).toEqual([1, 1]); // la ficha lista reinicia la ventana: no se reenvían mensajes viejos
+  });
+
   it("sin LLM configurado, texto nuevo tras la ficha ⇒ plantilla", async () => {
     const { pool, s, id } = await setup();
     const deps = testDeps(pool, fakeJev());
