@@ -367,7 +367,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       </div>
       <div>
         <h3>"¿Cómo es hoy?"</h3>
-        <p>Muchos canales: teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial. Mediana de resolución de 8 días y 11,8% que tarda más de 90. Dato de proceso, no crítica. No afirmar cómo se hace hoy el triage por dentro.</p>
+        <p>Muchos canales: teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial. <strong>Con los datos abiertos del SUR, calculado por nosotros: un reclamo tarda en cerrarse una mediana de 13 días, y uno de cada cinco más de 90</strong> (cerrados 2024 a sep. 2026). Dato de proceso, no crítica.</p>
+        <p>Respaldo: arbolado 168 días de mediana, viales 58, contenedores 15, limpieza 3. Límite: no hay historial de estados, un reabierto se mide desde su último cierre.</p>
       </div>
       <div>
         <h3>"¿Por qué no coinciden los números de incendios?"</h3>
@@ -412,14 +413,16 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         <thead><tr><th>Dato</th><th>Fuente</th></tr></thead>
         <tbody>
           <tr><td>~40.000 llamados a Bomberos por quema de contenedores en 2025</td><td><a href="https://www.subrayado.com.uy/contenedores-incendiados-bomberos-recibio-mas-50-mil-llamados-imm-espera-que-disminuya-el-plan-residuos-n999752" target="_blank" rel="noopener">Subrayado, 10/2/2026</a></td></tr>
-          <tr><td>727.637 reclamos de basura en 2025 (~2.000 por día)</td><td><a href="https://www.elobservador.com.uy/nacional/basura-montevideo-mas-700000-denuncias-un-ano-la-meta-que-no-logro-cumplir-la-im-y-el-plan-piloto-450-contenedores-llave-digital-n6056766" target="_blank" rel="noopener">El Observador, 9/9/2026</a></td></tr>
+          <tr><td>727.637 reclamos de basura en 2025</td><td>Intendencia ante la Junta Departamental (rendición de cuentas 2025), vía <a href="https://www.elobservador.com.uy/nacional/basura-montevideo-mas-700000-denuncias-un-ano-la-meta-que-no-logro-cumplir-la-im-y-el-plan-piloto-450-contenedores-llave-digital-n6056766" target="_blank" rel="noopener">El Observador, 9/9/2026</a>. Los ~2.000 por día son cuenta nuestra.</td></tr>
           <tr><td>33 horas por día de triage</td><td>Cuenta ilustrativa: 2.000 avisos × 1 min. No es un dato medido.</td></tr>
-          <tr><td>Mediana de resolución de 8 días; 11,8% tarda más de 90 (cerrados 2024–2026)</td><td><a href="https://github.com/EmilianoGonLas/reclamos-montevideo" target="_blank" rel="noopener">Análisis independiente de datos abiertos del SUR</a></td></tr>
+          <tr><td>Cierre de reclamos del SUR: mediana 13 días; 21,4% más de 90 (315.782 finalizados, 2024 a sep. 2026)</td><td>Calculado por nosotros con los <a href="https://catalogodatos.gub.uy/dataset/reclamos-registrados-en-el-sistema-unico-de-reclamos-de-la-intendencia-de-montevideo" target="_blank" rel="noopener">datos abiertos del SUR</a> (archivo del 11/10/2026). Script: <code>docs/pitch/datos/sur_tiempos.py</code>.</td></tr>
           <tr><td>Canales actuales de reclamo</td><td><a href="https://tramites.montevideo.gub.uy/tramite/contenedor-lleno-o-residuos-fuera-de-el" target="_blank" rel="noopener">Trámites IM</a></td></tr>
           <tr><td>Agrupación: 5/5 decisiones y 11/11 respuestas por candidato correctas, estables en dos corridas</td><td><code>docs/superpowers/notes/jev-smoke.md</code></td></tr>
         </tbody>
       </table>
     </div>
+    <p class="note"><b>Descartado:</b> la "mediana de 8 días y 11,8% más de 90" de un repositorio de GitHub sin revisión. Recalculado con la misma fuente oficial da 13 días y 21,4%.</p>
+    <p class="note"><b>Ojo con mezclar fuentes:</b> el SUR registró 113.743 reclamos en 2025, mucho menos que los 727.637 de basura. Son registros distintos; no presentar uno como parte del otro.</p>
     <p class="note"><b>No usar en el pitch:</b> "50.000 llamados en enero de 2026" y "más de 70 incendios entre el 1 de enero y mediados de febrero". Juntos dan unos 700 llamados por incendio: no cierran, y probablemente miden cosas distintas.</p>
   </section>
 

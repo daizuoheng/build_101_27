@@ -153,7 +153,9 @@ Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta
 
 **"¿Y avisos falsos o alguien que intenta manipular el sistema?"** El texto del vecino es evidencia, no instrucciones. Probamos meterle una instrucción oculta al extractor de direcciones y no la siguió. Una foto que no coincide con el texto se marca como contradicción. Y como la cantidad no sube la prioridad, inundar de reportes no adelanta nada.
 
-**"¿Cómo es hoy?"** Hay muchos canales (teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial). Del lado del proceso: mediana de resolución de 8 días y 11,8% que tarda más de 90 (análisis independiente de datos abiertos). Dato de proceso, no crítica. No afirmar cómo se hace hoy el triage por dentro.
+**"¿Cómo es hoy?"** Hay muchos canales (teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial). Del lado del proceso, con los datos abiertos del Sistema Único de Reclamos, calculado por nosotros: un reclamo tarda en cerrarse una mediana de 13 días, y uno de cada cinco tarda más de 90 (cerrados entre 2024 y septiembre de 2026). Dato de proceso, no crítica. No afirmar cómo se hace hoy el triage por dentro.
+
+*Respaldo si repreguntan:* depende mucho del tipo: arbolado, mediana de 168 días; viales (baches y similares), 58; estado de los contenedores, 15; problemas de limpieza, 3. Cómo se calculó: días entre el ingreso y la fecha en que pasó a "Finalizado", sobre 315.782 reclamos; los anulados no cuentan. Límite: el dataset no guarda el historial de estados, así que un reclamo reabierto se mide desde su último cierre. Script: `docs/pitch/datos/sur_tiempos.py`.
 
 **"¿Por qué no coinciden los números de incendios?"** Los números públicos de Bomberos y de la Intendencia no coinciden; por eso usamos el de Bomberos de 2025. Que no coincidan muestra que falta un registro único.
 
@@ -178,10 +180,14 @@ Al momento de escribir esto no existen: el despacho de órdenes y la bandeja de 
 | Dato | Fuente |
 |---|---|
 | ~40.000 llamados a Bomberos por quema de contenedores en 2025 | [Subrayado, 10/2/2026](https://www.subrayado.com.uy/contenedores-incendiados-bomberos-recibio-mas-50-mil-llamados-imm-espera-que-disminuya-el-plan-residuos-n999752) |
-| 727.637 reclamos de basura en 2025 (~2.000 por día) | [El Observador, 9/9/2026](https://www.elobservador.com.uy/nacional/basura-montevideo-mas-700000-denuncias-un-ano-la-meta-que-no-logro-cumplir-la-im-y-el-plan-piloto-450-contenedores-llave-digital-n6056766) |
+| 727.637 reclamos de basura en 2025 | Intendencia (Desarrollo Ambiental) ante la Junta Departamental, rendición de cuentas 2025, vía [El Observador, 9/9/2026](https://www.elobservador.com.uy/nacional/basura-montevideo-mas-700000-denuncias-un-ano-la-meta-que-no-logro-cumplir-la-im-y-el-plan-piloto-450-contenedores-llave-digital-n6056766). Los ~2.000 por día son cuenta nuestra (727.637 ÷ 365). |
 | 33 horas/día de triage | Cuenta ilustrativa: 2.000 avisos × 1 min. No es un dato medido. |
-| Mediana de resolución de reclamos: 8 días; 11,8% tarda más de 90 (cerrados 2024–2026) | [Análisis independiente de datos abiertos del SUR](https://github.com/EmilianoGonLas/reclamos-montevideo) |
+| Cierre de reclamos del SUR: mediana 13 días; 21,4% tarda más de 90 (315.782 finalizados entre 2024 y sep. 2026) | Calculado por nosotros con los [datos abiertos del SUR](https://catalogodatos.gub.uy/dataset/reclamos-registrados-en-el-sistema-unico-de-reclamos-de-la-intendencia-de-montevideo) (archivo del 11/10/2026). Script: `docs/pitch/datos/sur_tiempos.py`. |
 | Canales actuales: teléfono 1950, WhatsApp, formulario web del SUR, chatbot, Buzón Ciudadano, presencial | [Trámites IM](https://tramites.montevideo.gub.uy/tramite/contenedor-lleno-o-residuos-fuera-de-el) |
 | Agrupación: 5/5 decisiones y 11/11 respuestas por candidato correctas, estables en dos corridas | `docs/superpowers/notes/jev-smoke.md` (rama `nucleo/agrupacion`) |
+
+**Descartado:** la "mediana de 8 días y 11,8% más de 90" de un repositorio de GitHub sin revisión ([EmilianoGonLas/reclamos-montevideo](https://github.com/EmilianoGonLas/reclamos-montevideo)). Usa la misma fuente oficial, pero recalculado sobre los cerrados 2024–2026 da 13 días y 21,4%. Su 8 se parece a la mediana por año de ingreso 2025 (8 días), que subestima porque 19.650 reclamos de ese año siguen abiertos.
+
+**Ojo con mezclar fuentes:** el SUR registró 113.743 reclamos en 2025 (unos 310 por día), mucho menos que los 727.637 de basura. Son registros distintos: los de basura entran por otros canales. No presentar uno como parte del otro.
 
 **No usar en el pitch:** "50.000 llamados en enero de 2026" y "más de 70 incendios entre el 1 de enero y mediados de febrero" (misma nota de Subrayado). Juntos dan unos 700 llamados por incendio: no cierran, y probablemente miden cosas distintas. Si sale en las preguntas: los números públicos de Bomberos y de la Intendencia no coinciden, por eso usamos el de 2025, y que no coincidan también muestra que falta un registro único.
