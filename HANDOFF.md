@@ -89,6 +89,25 @@ Dueño de `migrations`, `seeds`, `scripts/cli.ts`, `src/server/{db,config,jobs,a
 4. `pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`.
 5. `node --env-file=.env.local scripts/e2e-walkthrough.mjs` para verificar el recorrido.
 
+### Varios agentes en paralelo por persona
+
+Un worktree por agente, nunca dos agentes en la misma carpeta:
+
+```bash
+git checkout feat/mvp && git pull
+git branch feat/operacion feat/mvp && git push -u origin feat/operacion   # rama del módulo (una vez)
+scripts/agent-worktree.sh plan     feat/operacion 3201   # ../radar-plan     → rama feat/plan
+scripts/agent-worktree.sh revision feat/operacion 3202   # ../radar-revision → rama feat/revision
+```
+
+El script crea la carpeta hermana `../radar-<nombre>` con su rama (sin upstream, para que un `git push` no caiga en la base) y sus bases `radar_urbano_<nombre>` y `_test`. También comparte `.env` por symlink, instala, migra y seedea. **Las bases separadas son obligatorias**: los tests vacían la base de test, y dos agentes con la misma base se rompen entre sí.
+
+- **Cantidad:** 2–3 agentes por persona como máximo. Más agentes es más tiempo integrando que construyendo.
+- **Separación por archivos:** cada agente es dueño de archivos distintos dentro del módulo. Ejemplo para Operación: agente 1 con `src/server/planning` (buildPlan puro y tests); agente 2 con la cola de revisión (`src/server/review`, `src/app/operacion/revision`); el despacho cuando `buildPlan` esté mergeado.
+- **Brief de cada agente:** leer `HANDOFF.md`, el plan (su Tarea N con su bloque **Interfaces**) y el diseño §5–7; qué archivos puede tocar; prohibido tocar `migrations/` y `seeds/`; terminar con `pnpm test && pnpm typecheck && pnpm lint` en verde y un commit en su rama.
+- **Integración (la hace la persona, no el agente):** mergear la rama del agente en la del módulo, correr tests y `scripts/e2e-walkthrough.mjs`, y abrir PR a `feat/mvp`. Rebasear los agentes sobre `feat/mvp` cada vez que entre algo.
+- **Limpieza:** `git worktree remove ../radar-<nombre> && dropdb radar_urbano_<nombre> && dropdb radar_urbano_<nombre>_test`.
+
 Hitos (quedan unas 9 h): **20:00** recorrido desplegado y probado desde celular; **22:00** agrupación, reevaluación y plan; **00:00** despacho, bandeja de unidad y cola de revisión; **01:00** congelar y ensayar la demo.
 
 Pendientes del equipo: provisionar Supabase (con PostGIS) y Railway; fotos y mensajes de ejemplo para calibrar (los reúne quien tome la Tarea 2).
