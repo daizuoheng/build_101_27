@@ -1,0 +1,7 @@
+.DS_Store
+codedb.snapshot
+.codedb/
+.codegraph/
+.env
+.env.*
+!.env.example
