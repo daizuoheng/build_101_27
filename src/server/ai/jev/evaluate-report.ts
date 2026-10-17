@@ -28,7 +28,7 @@ export type EvaluateReportDeps = { jev: JevClient; recordRun: (run: AiRunRecord)
 
 const SPECIAL_TYPES = ["other", "unknown"] as const;
 
-function describeType(t: CatalogType): string {
+export function describeType(t: CatalogType): string {
   const c = (t.criteria ?? {}) as { is?: string; is_not?: string; examples?: string[] };
   return [t.name + ".", c.is, c.is_not ? `Not: ${c.is_not}` : null, c.examples?.length ? `Examples: ${c.examples.join("; ")}` : null]
     .filter(Boolean)

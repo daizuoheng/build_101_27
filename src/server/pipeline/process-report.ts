@@ -148,6 +148,15 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
   );
   const incidentId = inc.rows[0].id;
   await insertLink(c, { reportId: r.id, incidentId, origin: "auto", decisionId: grouped.decisionId });
+  // Base de la IA (evaluación del reporte que lo creó): lo que vuelve a mandar al quitar una corrección humana.
+  const assessed = { problemTypeId: ev.problemTypeId, severity: ev.severity, activeHazard, passage: ev.passage, accessibility: ev.accessibility };
+  await c.query(
+    `insert into incident_assessments (incident_id, incident_revision, ai_run_id, reports_considered, problem_type_id, severity, active_hazard,
+       evidence_summary, changes, source_counts)
+     values ($1, 1, $2, $3, $4, $5, $6, $7, '[]', $8)`,
+    [incidentId, ev.aiRunId, [r.id], ev.problemTypeId, ev.severity, activeHazard,
+      JSON.stringify({ source: "report_evaluation", evaluation_id: ev.id, assessed }), JSON.stringify({ reports: 1, sources: 1 })],
+  );
   await appendEvent(c, { entityType: "incident", entityId: incidentId, kind: "created", actorType: "system", data: { report_id: r.id, evaluation_id: ev.id, priority: priority.band, grouping_decision_id: grouped.decisionId } });
   await openEvaluationReviews("incident", incidentId);
   return finish("applicable", { incident_id: incidentId, grouping: "created", grouping_decision_id: grouped.decisionId });
