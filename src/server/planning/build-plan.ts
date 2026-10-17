@@ -35,6 +35,24 @@ type Candidate = { unit: PlanUnit; distanceM: number | null; key: number[] };
 
 type Feasibility = { strategy: DispatchStrategy; candidates: Candidate[]; reasons: PendingReason[] };
 
+/**
+ * Parte estática de la factibilidad de un incidente, calculada UNA vez: no depende de la capacidad restante.
+ * `pool` son las unidades que pasan todos los filtros estáticos (capacidad, posición/radio o responsabilidad de zona),
+ * en el mismo orden de recorrido que el loop original; `distanceM`/`precedence` ya resueltos. Solo falta aplicar el
+ * filtro mutable de capacidad (`remaining > 0`) para obtener las candidatas reales.
+ */
+type StaticCandidate = { unit: PlanUnit; distanceM: number | null; precedence: number | null };
+type StaticFeasibility = {
+  strategy: DispatchStrategy;
+  /** Motivos terminales (no_capable_unit, manual_strategy): nunca habrá candidatas, independientemente de capacidad. */
+  terminalReasons: PendingReason[] | null;
+  pool: StaticCandidate[];
+  /** Fallas estáticas acumuladas en orden de recorrido (móvil: stale_position/out_of_radius). */
+  staticFailures: PendingReason[];
+  /** Estrategia de zona sin responsable para área/tipo: emite no_zone_owner cuando no hay candidatas ni otras fallas. */
+  zoneNoOwner: boolean;
+};
+
 export function scoreIncident(i: Pick<PlanIncident, "createdAt" | "sourcesInWindow">, policy: PlanPolicy, now: Date): ScoreBreakdown {
   const waitHours = Math.max(0, (now.getTime() - i.createdAt.getTime()) / HOUR_MS);
   const sources = Math.max(0, i.sourcesInWindow);
@@ -68,59 +86,78 @@ function sortedReasons(set: Set<PendingReason>): PendingReason[] {
 
 const hasAll = (unit: PlanUnit, required: string[]) => required.every((c) => unit.capabilities.includes(c));
 
-/** Unidades factibles para el incidente con la capacidad restante actual, o los motivos por los que no hay. */
-function feasibility(
-  i: PlanIncident,
-  snapshot: PlanSnapshot,
-  remaining: Map<string, number>,
-  policy: PlanPolicy,
-  now: Date,
-): Feasibility {
+/**
+ * Parte estática de la factibilidad: estrategia, unidades capaces, posición/radio o responsabilidad de zona y claves
+ * de orden que NO dependen de la capacidad restante. Se calcula una vez por incidente antes del loop voraz.
+ */
+function staticFeasibility(i: PlanIncident, snapshot: PlanSnapshot, policy: PlanPolicy, now: Date): StaticFeasibility {
   const strategy = (i.problemTypeId && snapshot.strategies[i.problemTypeId]) || snapshot.defaultStrategy;
   const capable = snapshot.units.filter((u) => hasAll(u, i.requiredCapabilities));
-  if (capable.length === 0) return { strategy, candidates: [], reasons: ["no_capable_unit"] };
-  if (strategy === "manual") return { strategy, candidates: [], reasons: ["manual_strategy"] };
+  if (capable.length === 0) return { strategy, terminalReasons: ["no_capable_unit"], pool: [], staticFailures: [], zoneNoOwner: false };
+  if (strategy === "manual") return { strategy, terminalReasons: ["manual_strategy"], pool: [], staticFailures: [], zoneNoOwner: false };
 
-  const failures = new Set<PendingReason>();
-  const candidates: Candidate[] = [];
+  const staticFailures: PendingReason[] = [];
+  const pool: StaticCandidate[] = [];
 
   if (strategy === "nearest_mobile") {
     // Familia móvil: unidades capaces con posición. Sin posición vigente no se compara distancia.
     const maxAgeMs = policy.position_max_age_min * MINUTE_MS;
     for (const u of capable) {
       if (!u.location || !u.locationUpdatedAt || now.getTime() - u.locationUpdatedAt.getTime() > maxAgeMs) {
-        failures.add("stale_position");
+        staticFailures.push("stale_position");
         continue;
       }
       const distanceM = distanceMeters(u.location, i.location);
       const radius = Math.min(policy.max_distance_m, u.serviceRadiusM ?? Number.POSITIVE_INFINITY);
       if (distanceM > radius) {
-        failures.add("out_of_radius");
+        staticFailures.push("out_of_radius");
         continue;
       }
-      if ((remaining.get(u.id) ?? 0) <= 0) {
-        failures.add("no_capacity");
-        continue;
-      }
-      candidates.push({ unit: u, distanceM, key: [distanceM] });
+      pool.push({ unit: u, distanceM, precedence: null });
     }
-  } else {
-    // Familia de zona: responsables del área y del tipo. Mayor precedencia primero, luego menor carga relativa.
-    for (const u of capable) {
-      const resp = u.zoneResponsibilities.filter((z) => z.areaId === i.areaId && z.problemTypeId === i.problemTypeId);
-      if (!i.areaId || !i.problemTypeId || resp.length === 0) continue;
-      if ((remaining.get(u.id) ?? 0) <= 0) {
-        failures.add("no_capacity");
-        continue;
-      }
-      const precedence = Math.max(...resp.map((z) => z.precedence));
-      const load = (u.capacity - (remaining.get(u.id) ?? 0)) / u.capacity;
-      candidates.push({ unit: u, distanceM: null, key: [-precedence, load] });
-    }
-    if (candidates.length === 0 && failures.size === 0) failures.add("no_zone_owner");
+    return { strategy, terminalReasons: null, pool, staticFailures, zoneNoOwner: false };
   }
 
-  return { strategy, candidates, reasons: candidates.length ? [] : sortedReasons(failures) };
+  // Familia de zona: responsables del área y del tipo. Mayor precedencia primero, luego menor carga relativa.
+  for (const u of capable) {
+    const resp = u.zoneResponsibilities.filter((z) => z.areaId === i.areaId && z.problemTypeId === i.problemTypeId);
+    if (!i.areaId || !i.problemTypeId || resp.length === 0) continue;
+    const precedence = Math.max(...resp.map((z) => z.precedence));
+    pool.push({ unit: u, distanceM: null, precedence });
+  }
+  // Sin ninguna unidad responsable (el pool estático está vacío) la única falla posible es no_zone_owner.
+  return { strategy, terminalReasons: null, pool, staticFailures, zoneNoOwner: pool.length === 0 };
+}
+
+/**
+ * Deriva las candidatas reales aplicando SOLO el filtro mutable de capacidad (`remaining > 0`) sobre el pool estático.
+ * Reproduce exactamente la semántica del `feasibility` original: motivos de pendiente, `load` de zona (que depende de
+ * la capacidad restante) y el orden de recorrido.
+ */
+function applyCapacity(sf: StaticFeasibility, remaining: Map<string, number>): Feasibility {
+  if (sf.terminalReasons) return { strategy: sf.strategy, candidates: [], reasons: sf.terminalReasons };
+
+  const failures = new Set<PendingReason>(sf.staticFailures);
+  const candidates: Candidate[] = [];
+
+  for (const sc of sf.pool) {
+    if ((remaining.get(sc.unit.id) ?? 0) <= 0) {
+      failures.add("no_capacity");
+      continue;
+    }
+    if (sf.strategy === "nearest_mobile") {
+      candidates.push({ unit: sc.unit, distanceM: sc.distanceM, key: [sc.distanceM as number] });
+    } else {
+      const load = (sc.unit.capacity - (remaining.get(sc.unit.id) ?? 0)) / sc.unit.capacity;
+      candidates.push({ unit: sc.unit, distanceM: null, key: [-(sc.precedence as number), load] });
+    }
+  }
+
+  if (sf.strategy !== "nearest_mobile" && candidates.length === 0 && failures.size === 0 && sf.zoneNoOwner) {
+    failures.add("no_zone_owner");
+  }
+
+  return { strategy: sf.strategy, candidates, reasons: candidates.length ? [] : sortedReasons(failures) };
 }
 
 /**
@@ -148,6 +185,10 @@ export const buildPlan: BuildPlan = (snapshot, policy, now) => {
   const assigned = new Set(snapshot.activeAssignments.map((a) => a.incidentId));
   const eligible = (i: PlanIncident) => !assigned.has(i.id) && !i.dispatchBlocked;
 
+  // Parte estática de la factibilidad calculada UNA vez por incidente elegible (no depende de `remaining`).
+  // Dentro del loop solo se aplica el filtro mutable de capacidad, evitando el O(n²·u) de recomputar distancias.
+  const staticByIndex = scored.map(({ incident }) => (eligible(incident) ? staticFeasibility(incident, snapshot, policy, now) : null));
+
   const queue: PlanQueueItem[] = [];
   const proposals: PlanProposal[] = [];
   const pending: BuildPlanResult["pending"] = [];
@@ -170,18 +211,20 @@ export const buildPlan: BuildPlan = (snapshot, policy, now) => {
       return;
     }
 
-    const own = feasibility(incident, snapshot, remaining, policy, now);
+    const own = applyCapacity(staticByIndex[idx]!, remaining);
     if (own.candidates.length === 0) {
       item.pendingReasons = own.reasons;
       pending.push({ incidentId: incident.id, reasons: own.reasons });
       return;
     }
 
-    // Incidentes restantes cuya única unidad factible (con la capacidad actual) es cada unidad.
+    // Incidentes restantes cuya única unidad factible (con la capacidad actual) es cada unidad. Se recorre por índice
+    // sobre `scored` (sin asignar un array nuevo) y solo se evalúa el filtro mutable de capacidad sobre el pool estático.
     const onlyOption = new Map<string, number>();
-    for (const later of scored.slice(idx + 1)) {
-      if (!eligible(later.incident)) continue;
-      const f = feasibility(later.incident, snapshot, remaining, policy, now);
+    for (let j = idx + 1; j < scored.length; j++) {
+      const laterStatic = staticByIndex[j];
+      if (!laterStatic) continue; // no elegible
+      const f = applyCapacity(laterStatic, remaining);
       if (f.candidates.length === 1) {
         const id = f.candidates[0].unit.id;
         onlyOption.set(id, (onlyOption.get(id) ?? 0) + 1);

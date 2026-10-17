@@ -94,7 +94,6 @@ export async function requestReplan(pool: Pool, input: { territoryId: string; ac
       entityRevision: 0,
       territoryId: input.territoryId,
       payload: { trigger: "manual" },
-      dedupeSuffix: `manual:${Date.now()}`,
     });
     await appendEvent(c, {
       entityType: "territory",
