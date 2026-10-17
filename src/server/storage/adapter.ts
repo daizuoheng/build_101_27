@@ -24,22 +24,31 @@ class LocalStorage implements StorageAdapter {
   }
 }
 
-class SupabaseStorage implements StorageAdapter {
+/**
+ * Supabase Storage por REST con la clave de servicio, sobre un bucket privado.
+ * Las claves nuevas (`sb_secret_…`) no son JWT y van solo en `apikey`; la `service_role` heredada (JWT)
+ * va además como `Authorization: Bearer`.
+ */
+export class SupabaseStorage implements StorageAdapter {
   constructor(private url: string, private serviceKey: string, private bucket: string) {}
   private endpoint(key: string) {
     return `${this.url.replace(/\/$/, "")}/storage/v1/object/${this.bucket}/${key.split("/").map(encodeURIComponent).join("/")}`;
   }
+  private auth(): Record<string, string> {
+    const jwt = this.serviceKey.split(".").length === 3;
+    return jwt ? { apikey: this.serviceKey, Authorization: `Bearer ${this.serviceKey}` } : { apikey: this.serviceKey };
+  }
   async put(key: string, bytes: Buffer, contentType: string) {
     const res = await fetch(this.endpoint(key), {
       method: "POST",
-      headers: { Authorization: `Bearer ${this.serviceKey}`, "Content-Type": contentType, "x-upsert": "true" },
+      headers: { ...this.auth(), "Content-Type": contentType, "x-upsert": "true" },
       body: new Uint8Array(bytes),
     });
     if (!res.ok) throw new Error(`Supabase Storage put ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
   async get(key: string) {
-    const res = await fetch(this.endpoint(key), { headers: { Authorization: `Bearer ${this.serviceKey}` } });
-    if (!res.ok) throw new Error(`Supabase Storage get ${res.status}`);
+    const res = await fetch(this.endpoint(key), { headers: this.auth() });
+    if (!res.ok) throw new Error(`Supabase Storage get ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return Buffer.from(await res.arrayBuffer());
   }
 }
@@ -54,7 +63,10 @@ export function getStorage(): StorageAdapter {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !SUPABASE_BUCKET) throw new Error("faltan variables SUPABASE_* para STORAGE_DRIVER=supabase");
     storage = new SupabaseStorage(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_BUCKET);
   } else {
-    storage = new LocalStorage(path.resolve(process.env.STORAGE_LOCAL_DIR ?? "storage"));
+    // En Railway web y worker son contenedores distintos con disco efímero: el disco local perdería fotos.
+    if (process.env.RAILWAY_ENVIRONMENT) throw new Error("STORAGE_DRIVER=local no sirve en Railway: usá supabase");
+    // Directorio de datos en tiempo de ejecución, no código: fuera del rastreo de archivos del build.
+    storage = new LocalStorage(path.resolve(/*turbopackIgnore: true*/ process.env.STORAGE_LOCAL_DIR ?? "storage"));
   }
   return storage;
 }
