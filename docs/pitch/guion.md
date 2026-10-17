@@ -4,79 +4,98 @@
 
 **Tesis:** el triage de avisos ciudadanos no escala con personas (miles por día) y no se resuelve con reglas fijas (texto libre, fotos, el mismo problema contado de diez maneras). La IA interpreta; las reglas, explícitas y auditables, ordenan y asignan.
 
-Formato build 101: **3 min de presentación y demo + 3 min de preguntas**. Habla una persona; otra maneja la demo.
+Formato build 101: **3:00 en total para pitch y demo** + 3 min de preguntas. Habla una persona; otra maneja la demo.
 Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee.
+
+## Presupuesto de tiempo
+
+Ritmo de referencia: 150 palabras por minuto (2,5 por segundo). Las esperas son momentos sin hablar: respuesta de Jev, toques en el celular, cambio de pantalla.
+
+| Bloque | Hablado | Esperas | Acumulado |
+|---|---|---|---|
+| 1. El problema | ~30 s | — | 0:30 |
+| 2. Qué es | ~15 s | — | 0:45 |
+| 3. Entender | ~10 s | ~10 s | 1:05 |
+| 4. Agrupar | ~14 s | ~10 s | 1:29 |
+| 5. Priorizar y asignar | ~15 s | ~5 s | 1:49 |
+| 6. Por qué IA | ~24 s | — | 2:13 |
+| 7. Cierre | ~10 s | — | **~2:25** |
+
+Quedan ~35 s de colchón. **Regla de corte en vivo:** si a las 2:30 no empezaste el bloque 6, decís solo la última frase del bloque 6 ("Lo medimos…") y vas al cierre.
 
 ---
 
-## [0:00–0:30] El problema, como proceso
+## 1. El problema, como proceso · ~30 s
 
-> Martes, once de la noche. Un contenedor se prende fuego en una esquina. Lo ven diez vecinos, y llegan diez avisos, cada uno contado distinto.
-> Solo por contenedores quemados, Bomberos recibió unos cuarenta mil llamados en 2025. Y en Montevideo hubo más de dos mil reclamos de basura por día.
-> Cada aviso hay que leerlo, entender qué es, ver si ya existe y decidir qué va primero. Si eso lleva un minuto por aviso, son treinta y tres horas de trabajo por día solo para ordenar, antes de que salga nadie a la calle.
+> Once de la noche. Un contenedor se prende fuego en una esquina. Lo ven diez vecinos, y llegan diez avisos, cada uno contado distinto.
+> Solo por contenedores quemados, Bomberos recibió unos cuarenta mil llamados en 2025. Y en Montevideo hay dos mil reclamos de basura por día.
+> Cada uno hay que leerlo, entender qué es, ver si ya existe y decidir qué va primero. A un minuto por aviso, son treinta y tres horas por día solo para ordenar.
 
-*Las 33 horas son una cuenta ilustrativa (2.000 × 1 min), no un dato medido: decirla con el "si".*
+*Las 33 horas son una cuenta ilustrativa (2.000 × 1 min), no un dato medido.*
 
-## [0:30–0:45] Qué es
+## 2. Qué es · ~15 s
 
-> Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale una lista de incidentes únicos, ordenados por riesgo, con la cuadrilla que corresponde.
-> Les muestro el triage en vivo.
+> Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale una lista de incidentes únicos, ordenados por riesgo.
+> Lo vemos en vivo.
 
-## [0:45–1:20] Paso 1 — Entender
+## 3. Entender · ~10 s + ~10 s de espera
 
-*[Celular 1 proyectado. El compañero manda una foto del contenedor en llamas y escribe: "se está prendiendo fuego el contenedor de la esquina"]*
+*[Celular 1 proyectado. El compañero manda la foto del contenedor en llamas y pega: "se está prendiendo fuego el contenedor de la esquina"]*
 
-> Llega un aviso: una foto y una frase. Sin categoría, sin formulario.
+> Llega un aviso: una foto y una frase, sin formulario.
 
-*[Aparece la respuesta]*
+*[Espera la respuesta]*
 
-> El sistema ya entendió: contenedor con fuego, fuego activo, severidad alta. Falta el lugar, así que lo pide.
+> Ya entendió: contenedor con fuego, fuego activo, severidad alta. Falta el lugar, y lo pide.
 
-*[Toca "usar mi ubicación" y confirma]*
+*[Toca "usar mi ubicación" y confirma — sin narrar]*
 
-## [1:20–1:45] Paso 2 — Agrupar
+## 4. Agrupar · ~14 s + ~10 s de espera
 
-*[Celular 2. Escribe: "hay mucho humo en la esquina, huele a plástico quemado" y confirma. Después, pantalla del operador; tocar "Actualizar"]*
+*[Celular 2. Pega: "hay mucho humo en la esquina, huele a plástico quemado"]*
 
-> Llega otro aviso, de otro vecino. No dice "contenedor", dice "humo".
-> Y el operador no ve dos reclamos: ve un incidente con dos reportes. La IA comparó los dos relatos y decidió que es el mismo contenedor.
+> Otro vecino. No dice "contenedor", dice "humo".
 
-## [1:45–2:15] Pasos 3 y 4 — Priorizar y asignar
+*[Confirma. Cambio a la pantalla del operador; toca "Actualizar"]*
 
-*[Lista del operador: el fuego queda arriba del contenedor desbordado que se cargó antes con tres reportes]*
+> El operador no ve dos reclamos: ve un incidente con dos reportes. La IA comparó los relatos y decidió que es el mismo.
 
-> Y va primero. Arriba del contenedor desbordado que cargamos antes con tres vecinos, porque acá hay fuego activo. El sistema ordena por riesgo, no por cuántos se quejan.
+## 5. Priorizar y asignar · ~15 s + ~5 s de espera
+
+*[Lista del operador: el fuego arriba del contenedor desbordado que se cargó antes con tres reportes]*
+
+> Y va primero, arriba del contenedor desbordado que cargamos antes con tres vecinos. Ordena por riesgo, no por cantidad de quejas.
 
 *[SOLO SI `operacion/t11` está mergeado y probado: vista `/operacion/plan`]*
 
-> Y ya propone quién va: la cuadrilla más cercana que puede atender fuego, no la de limpieza. Con el motivo de cada decisión.
+> Y propone quién va: la cuadrilla más cercana que puede atender fuego, no la de limpieza.
 
-## [2:15–2:45] Por qué IA, y cómo sabemos que funciona
+## 6. Por qué IA, y cómo sabemos que funciona · ~24 s
 
-> Esto no se puede hacer con personas: no escala a miles de avisos por día. Y no se puede hacer solo con reglas: la gente escribe como quiere, manda fotos y cuenta lo mismo de diez maneras.
-> Por eso la IA hace lo que una regla no puede: entender texto y foto, y decidir si dos relatos son el mismo problema. Y las reglas hacen lo que tiene que ser auditable: el orden y la asignación.
-> Lo medimos: en nuestro set de prueba de agrupación acertó las 11 comparaciones. Y cuando duda, no adivina: lo manda a revisión humana.
+> Con personas, esto no escala. Con reglas fijas, no se entiende: la gente escribe como quiere y cuenta lo mismo de diez maneras.
+> Por eso la IA interpreta, y reglas auditables ordenan y asignan.
+> Lo medimos: acertó las once comparaciones de nuestro set de agrupación. Y cuando duda, no adivina: lo manda a revisión humana.
 
-## [2:45–3:00] Cierre
+## 7. Cierre · ~10 s
 
-> Hoy funciona el triage completo: entender, agrupar, priorizar *[y proponer la cuadrilla]*. Lo que sigue es despachar la orden al celular de la cuadrilla.
+> Hoy funciona el triage completo. Lo que sigue es despachar la orden al celular de la cuadrilla.
 > Diez avisos, un incidente, lo urgente primero. Eso es Radar Urbano.
 
-*Si el planificador no llegó: sacar "con la cuadrilla que corresponde" del bloque "Qué es", el bloque del plan y el corchete del cierre; y el cierre dice "Lo que sigue es asignar y despachar cuadrillas".*
-
-**Si hay que cortar tiempo, en este orden:** (1) "Y en Montevideo hubo más de dos mil reclamos de basura por día" — ojo: si se corta, las 33 horas pierden su base, así que se cortan las dos frases juntas; (2) "Y las reglas hacen lo que tiene que ser auditable…" (pasa a las preguntas); (3) "Con el motivo de cada decisión".
+*Si el planificador no llegó: se saltea el pedazo de "propone quién va" (−6 s), en el bloque 6 queda "reglas auditables ordenan", y el cierre dice "Lo que sigue es asignar y despachar cuadrillas".*
 
 ---
 
 ## Notas para quien maneja la demo
 
-- **Antes de subir:** `reset-demo`; la foto ya en la galería del celular 1; los textos copiados para pegarlos, no tipearlos.
-- **Contexto para el triage:** antes del pitch, cargar con el flujo real (no por base de datos) un contenedor desbordado con tres reportes de sesiones distintas, en otro punto de la ciudad. Así el fuego entra arriba en la lista. En el pitch se dice que se cargó antes.
+- **El reloj lo marca la demo:** tener todo a un toque. Foto ya en la galería del celular 1, textos copiados para pegar, celular 2 con la sesión abierta, pantalla del operador ya logueada en otra pestaña o pantalla.
+- **Antes de subir:** `reset-demo`, y después cargar el contexto (abajo).
+- **Contexto para el triage:** cargar con el flujo real (no por base de datos) un contenedor desbordado con tres reportes de sesiones distintas, en otro punto de la ciudad. Así el fuego entra arriba en la lista. En el pitch se dice que se cargó antes.
 - **Refresco:** la lista del operador se actualiza sola cada 10 s; para no esperar, tocar "Actualizar".
 - **Ubicación con GPS:** los dos celulares van a estar juntos en el LATU, así que quedan dentro del radio de 30 m y se agrupan solos. Probarlo en el lugar antes del pitch.
-- **Riesgo con el vecino 2:** la frase "humo, huele a plástico" sin foto puede salir como evidencia insuficiente. Si en el ensayo pasa eso, que el texto diga "el contenedor está largando mucho humo".
+- **Riesgo con el vecino 2:** la frase "humo, huele a plástico" sin foto puede salir como evidencia insuficiente. Si en el ensayo pasa eso, que el texto diga "el contenedor está largando mucho humo" (y en el bloque 4 se dice "lo cuenta distinto" en lugar de "no dice contenedor").
 - **Proyección:** tener resuelto cómo se espejan los celulares en la pantalla, y un video de respaldo grabado por si falla internet.
 - **Aviso de emergencia:** con fuego activo el chat muestra el texto de `emergency_channel` del seed de Montevideo (`seeds/territory-montevideo.ts`). Hoy dice "consultá el canal de emergencias local de tu zona"; para la demo conviene que diga algo concreto, como "llamá a Bomberos al 104".
+- **Ensayo:** al menos dos pasadas completas con cronómetro, con los dos roles. Anotar el tiempo de cada bloque contra la tabla de arriba.
 
 ## Para las preguntas
 
