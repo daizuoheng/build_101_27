@@ -7,6 +7,7 @@ import { getActivePolicy } from "@/server/config/policies";
 import { withTx } from "@/server/db/tx";
 import { unlinkReport } from "@/server/incidents/links";
 import { setOverride } from "@/server/incidents/overrides";
+import { latestTexts, latestTextsMany } from "@/server/incidents/texts";
 import { claimNext } from "@/server/jobs/queue";
 import { enqueueTextgen, runTextgen, textInputs } from "@/server/pipeline/textgen";
 import { fakeLlm, newSession, territoryId } from "./fakes";
@@ -369,5 +370,20 @@ describe("textos generados (textgen)", () => {
     await withTx((c) => unlinkReport(c, { reportId, reason: "test", actor: { type: "operator", id: null } }), pool);
     expect((await pool.query("select status from incidents where id = $1", [incidentId])).rows[0].status).toBe("archived");
     expect((await textgenJobs(pool, incidentId)).rows).toHaveLength(0);
+  });
+
+  it("latestTexts devuelve solo los textos de la revisión vigente; sin texto, null", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool); // revisión 1
+    await pool.query(
+      `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body) values
+         ('title', 'incident', $1, 1, 'Bache en Av. Italia'), ('summary', 'incident', $1, 1, 'Un pozo')`,
+      [incidentId],
+    );
+    expect(await latestTexts(pool, incidentId)).toEqual({ revision: 1, title: "Bache en Av. Italia", summary: "Un pozo", explain_priority: null });
+    await pool.query("update incidents set revision = 2 where id = $1", [incidentId]);
+    expect(await latestTexts(pool, incidentId)).toEqual({ revision: 2, title: null, summary: null, explain_priority: null });
+    const many = await latestTextsMany(pool, [incidentId]);
+    expect(many.get(incidentId)?.revision).toBe(2);
   });
 });
