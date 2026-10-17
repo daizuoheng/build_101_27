@@ -14,7 +14,8 @@ export type ImportAreasInput = {
 
 /**
  * Importa subdivisiones desde GeoJSON. El mapeo de propiedades es configuración de la fuente, no del sistema.
- * Reimportar el mismo archivo no cambia nada; un archivo corregido (otro checksum) actualiza geometría y nombre.
+ * Reimportar el mismo archivo con la misma fuente no cambia nada; un archivo corregido (otro checksum) actualiza
+ * geometría y nombre, y una fuente corregida (--source-url / fecha) actualiza la procedencia.
  * Los incidentes ya localizados conservan su área hasta que se reevalúen.
  */
 export async function importAreas(pool: Pool, input: ImportAreasInput): Promise<{ inserted: number; updated: number; total: number }> {
@@ -35,7 +36,8 @@ export async function importAreas(pool: Pool, input: ImportAreasInput): Promise<
          values ($1, $2, $3, st_setsrid(st_multi(st_geomfromgeojson($4)), 4326), $5, $6, $7)
          on conflict (territory_id, external_id) do update set name = excluded.name, geom = excluded.geom,
            source_url = excluded.source_url, source_date = excluded.source_date, checksum = excluded.checksum
-           where areas.checksum is distinct from excluded.checksum
+           where (areas.checksum, areas.source_url, areas.source_date)
+             is distinct from (excluded.checksum, excluded.source_url, excluded.source_date)
          returning (xmax = 0) as inserted`,
         [territoryId, externalId, name, JSON.stringify(geometry), input.sourceUrl ?? null, input.sourceDate ?? null, checksum],
       );
