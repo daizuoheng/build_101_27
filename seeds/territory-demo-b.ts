@@ -129,7 +129,10 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       await appendEvent(c, { entityType: "response_unit", entityId: unitId, kind: "demo_seeded", actorType: "system" });
     }
 
-    // Capacidades: exactamente las de la lista.
+    // Capacidades: exactamente las de la lista. Se valida antes de escribir, como el catálogo.
+    const known = await c.query<{ n: number }>("select count(*)::int as n from capabilities where slug = any($1)", [u.capabilities]);
+    const missingCaps = new Set(u.capabilities).size - known.rows[0].n;
+    if (missingCaps) throw new Error(`capacidades de demo-b incompletas: ${missingCaps} inexistente(s) (¿falta seedAll?)`);
     await c.query(
       "delete from unit_capabilities where unit_id = $1 and capability_id not in (select id from capabilities where slug = any($2))",
       [unitId, u.capabilities],
@@ -138,8 +141,6 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       "insert into unit_capabilities (unit_id, capability_id) select $1, id from capabilities where slug = any($2) on conflict do nothing",
       [unitId, u.capabilities],
     );
-    const linked = await c.query<{ n: number }>("select count(*)::int as n from unit_capabilities where unit_id = $1", [unitId]);
-    if (linked.rows[0].n !== new Set(u.capabilities).size) throw new Error("capacidades de demo-b incompletas (¿falta seedAll?)");
     return { territoryId, unitId };
   }, pool);
 }

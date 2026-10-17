@@ -76,14 +76,19 @@ describe("segundo territorio (Montevideo es configuración)", () => {
     expect(await geocode(pool, { query: "Calle 1", territoryId: b, policy, fetchImpl })).toBeNull();
     const p = urls[0].searchParams;
     expect(p.get("q")).toBe("Calle 1, Territorio de prueba B");
-    expect(p.get("countrycodes")).toBe("");
+    expect(p.get("countrycodes") ?? "").toBe("");
     expect(p.get("viewbox")?.split(",").map(Number)).toEqual([0, 0.01, 0.01, 0]);
   });
 
   it("contrato para runPlan: la unidad de Montevideo sigue en su territorio aunque se mueva dentro de demo-b", async () => {
     const pool = await testDb();
     expect(await unitsOf(b)).toEqual(["cuadrilla-b"]);
-    await pool.query("update response_units set location = st_setsrid(st_makepoint($1, $2), 4326)::geography where slug = 'cuadrilla-limpieza'", [INSIDE_B.lon, INSIDE_B.lat]);
+    const moved = await pool.query(
+      "update response_units set location = st_setsrid(st_makepoint($1, $2), 4326)::geography where territory_id = $3 and slug = 'cuadrilla-limpieza'",
+      [INSIDE_B.lon, INSIDE_B.lat, mvd],
+    );
+    expect(moved.rowCount).toBe(1);
+    expect(await locatePoint(pool, INSIDE_B.lon, INSIDE_B.lat)).toMatchObject({ territoryId: b });
     expect(await unitsOf(b)).toEqual(["cuadrilla-b"]);
     expect(await unitsOf(mvd)).toContain("cuadrilla-limpieza");
   });
@@ -103,6 +108,15 @@ describe("segundo territorio (Montevideo es configuración)", () => {
       [id],
     );
     expect(inc.rows).toEqual([{ territory_id: b, area: demoB.area.name }]);
+    // El worker leyó las políticas de demo-b: evaluación y agrupación citan versiones de demo-b.
+    const used = await pool.query<{ step: string; territory_id: string }>(
+      `select 'evaluation' as step, pv.territory_id from report_evaluations e join policy_versions pv on pv.id = e.policy_version_id where e.report_id = $1
+       union all
+       select 'grouping', pv.territory_id from grouping_decisions g join policy_versions pv on pv.id = g.policy_version_id where g.report_id = $1
+       order by step`,
+      [id],
+    );
+    expect(used.rows).toEqual([{ step: "evaluation", territory_id: b }, { step: "grouping", territory_id: b }]);
   });
 
   it("seedAll de producción no crea demo-b", async () => {
