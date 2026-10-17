@@ -24,6 +24,28 @@ Todas las llamadas son reales, con las credenciales del equipo. Las respuestas c
 
 Observación: las probabilidades salen muy polarizadas (0,99–1,00) en casos claros. La contradicción, en cambio, salió en 0,77, así que `review.min_contradiction = 0,6` la captura.
 
+## Agrupación: `compareCandidates` (17 oct, ~16:40)
+
+`pnpm cli smoke-jev --only compare`. Una llamada por reporte nuevo con todos sus candidatos; por candidato una Choice `match_cN` (`same_incident` / `different_incident` / `uncertain`) y tres Noul de conflicto (objeto, lugar, tiempo). En el estado y en las preguntas solo van índices locales (`c1`, `c2`); los ids viven en `ai_runs.input_refs`. Evidencia original de ambos lados: textos y fotos derivadas. Política `grouping` del seed (umbrales `same 0,90`, `different 0,80`, banda de conflicto `0,15`). Respuestas crudas en `tests/fixtures/jev/responses/compare-*.json`.
+
+| Par | Decisión | Respuesta de Jev (corrida 2) |
+| --- | --- | --- |
+| Mismo bache, dos textos distintos y dos recortes de la misma foto | `link` ✓ | same 0,99 · conflictos objeto 0,02, lugar 0,18, tiempo 0,06 |
+| Bache vs basura a 12 m, cada uno con su foto | `create` ✓ | different 1,00 · conflicto de objeto 0,99 |
+| Ambiguo: “acá en la esquina hay un problema en la calle” vs bache con foto | `review` ✓ | uncertain 0,80 |
+| Dos candidatos (basura a 8 m, bache a 11 m): elige el más lejano | `link` a `c2` ✓ | c1 different 1,00 (objeto 0,99) · c2 same 0,98 |
+| Fuego activo ahora vs contenedor quemado hace 48 h | `review` ✓ | different 0,46 / same 0,38 · conflicto de tiempo 0,86 |
+
+**5/5 decisiones y 11/11 respuestas por candidato**, iguales en dos corridas seguidas (las probabilidades varían ±0,04). Latencia 0,5–1,4 s por llamada (más con fotos).
+
+Observaciones:
+
+- En casos claros las probabilidades vuelven a ser polarizadas (0,98–1,00), con margen sobre los umbrales.
+- La cercanía no arrastra la decisión: el candidato más cercano (basura) quedó `different` con conflicto de objeto 0,99, y se asoció el bache más lejano.
+- Fuego nuevo vs quemado ayer: Jev no se jugó (`different` 0,46), pero el Noul de tiempo marcó 0,86. Va a revisión por `weak_different`, que es lo correcto. Si se quisiera resolver solo, la regla tendría que usar el conflicto de tiempo como evidencia de `different`; por ahora no.
+- El Noul de lugar da 0,17–0,18 aun para el mismo bache (textos con “frente al 2450” y “casi Comercio”); queda debajo del umbral efectivo de conflicto (0,5 + 0,15).
+- Limitación: el “mismo bache” usa recortes de una sola foto de Commons. Falta probar con dos fotos reales distintas del mismo problema.
+
 ## LLM: DeepSeek por API compatible con OpenAI
 
 - `LLM_API_KEY` es de DeepSeek: OpenAI responde 401 y DeepSeek 200. Modelos disponibles: `deepseek-flash` y `deepseek-v4-pro`.

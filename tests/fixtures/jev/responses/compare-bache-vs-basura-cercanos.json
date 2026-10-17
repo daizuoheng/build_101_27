@@ -1,0 +1,78 @@
+{
+  "pair": {
+    "name": "bache-vs-basura-cercanos",
+    "report": {
+      "texts": [
+        "Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda"
+      ],
+      "photo": "bache.jpg"
+    },
+    "candidates": [
+      {
+        "category": "Basura acumulada",
+        "distanceM": 12,
+        "hoursAgo": 6,
+        "texts": [
+          "Bolsas de basura tiradas al lado del contenedor en Av. Italia, hace días que no levantan"
+        ],
+        "photo": "basura.jpg"
+      }
+    ],
+    "expect": {
+      "verdict": "create",
+      "match": [
+        "different_incident"
+      ]
+    }
+  },
+  "run": {
+    "purpose": "compare",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-bache-vs-basura-cercanos",
+      "report_revision": 1,
+      "candidates": {
+        "c1": "incident-1"
+      },
+      "truncated": false,
+      "photos": {
+        "c1_r1_p1": "cand-1-photo",
+        "new_p1": "new-photo"
+      },
+      "policy_version_id": "46c22e61-3307-4a90-a8a4-147b5c695526"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b5546fc729aa0e173c856458866",
+    "response": {
+      "match_c1": {
+        "type": "choice",
+        "choice": "different_incident",
+        "confidence": 1,
+        "probabilities": {
+          "same_incident": 0,
+          "different_incident": 1,
+          "uncertain": 0
+        }
+      },
+      "object_conflict_c1": {
+        "type": "noul",
+        "noul": 0.99
+      },
+      "place_conflict_c1": {
+        "type": "noul",
+        "noul": 0.76
+      },
+      "time_conflict_c1": {
+        "type": "noul",
+        "noul": 0.74
+      }
+    },
+    "usage": {
+      "input_tokens": 7399,
+      "output_tokens": 109
+    },
+    "latencyMs": 661,
+    "status": "ok"
+  }
+}
