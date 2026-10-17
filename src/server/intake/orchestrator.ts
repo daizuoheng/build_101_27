@@ -99,7 +99,11 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
   const intake = await getActivePolicy(deps.pool, territoryId, "intake");
   const branch = chooseBranch(
     ev,
-    { locationConfirmed: r.location_confirmed, textAfterReady: (await textsAfterReady(deps.pool, r.conversation_id)).length > 0 },
+    {
+      locationConfirmed: r.location_confirmed,
+      textAfterReady: (await textsAfterReady(deps.pool, r.conversation_id)).length > 0,
+      answeringLocation: await answeringLocation(deps.pool, r.conversation_id),
+    },
     intake.config,
     r.clarification_rounds,
   );
@@ -197,6 +201,24 @@ async function textsAfterReady(db: Pool, conversationId: string): Promise<{ id: 
     [conversationId],
   );
   return rows;
+}
+
+/**
+ * La persona respondió con texto a un pedido (o propuesta) de ubicación: el último mensaje del asistente con UI es
+ * `ask_location`/`propose_location` y hay un texto ciudadano posterior. Señal estructural, no del LLM.
+ */
+async function answeringLocation(db: Pool, conversationId: string): Promise<boolean> {
+  const { rows } = await db.query(
+    `with last_ui as (
+       select seq, ui->>'kind' as kind from messages
+       where conversation_id = $1 and role = 'assistant' and ui is not null and ui->>'kind' not in ('active_hazard', 'status')
+       order by seq desc limit 1)
+     select 1 from last_ui l
+     where l.kind in ('ask_location', 'propose_location')
+       and exists (select 1 from messages m where m.conversation_id = $1 and m.role = 'citizen' and m.body <> '[foto]' and m.seq > l.seq)`,
+    [conversationId],
+  );
+  return rows.length > 0;
 }
 
 const llmDeps = (deps: IntakeDeps) => ({ llm: deps.llm!, recordRun: (run: Parameters<typeof recordLlmRun>[1]) => recordLlmRun(deps.pool, run) });

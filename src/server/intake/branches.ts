@@ -20,10 +20,12 @@ const p = (ev: ReportEvaluation, key: string) => chosenProbability(ev.answers[ke
  *
  * `textAfterReady`: la persona escribió texto nuevo después de que se le mostró la ficha lista. Es una señal
  * estructural de la conversación (no del LLM) de que puede estar corrigiendo el borrador.
+ * `answeringLocation`: la persona escribió después de que se le pidió (o propuso) la ubicación. Su texto se trata
+ * como dirección aunque Jev la considere vaga: el LLM la extrae (o devuelve null) y el geocodificador decide.
  */
 export function chooseBranch(
   ev: ReportEvaluation,
-  draft: { locationConfirmed: boolean; textAfterReady?: boolean },
+  draft: { locationConfirmed: boolean; textAfterReady?: boolean; answeringLocation?: boolean },
   policy: Pick<IntakePolicy, "thresholds" | "max_clarification_rounds">,
   rounds: number,
 ): Branch {
@@ -38,7 +40,7 @@ export function chooseBranch(
 
   if (!draft.locationConfirmed) {
     const precise = ev.locationInText === "precise" && p(ev, "location_in_text") >= (t.location_in_text ?? 0);
-    return precise ? { kind: "extract_address" } : { kind: "ask_location" };
+    return precise || draft.answeringLocation ? { kind: "extract_address" } : { kind: "ask_location" };
   }
 
   if (draft.textAfterReady) return { kind: "interpret_correction" };
