@@ -118,8 +118,9 @@ export const TextgenPolicy = LlmCallConfig.extend({
   enabled: z.boolean(),
   max_chars: z.object({ title: z.number().int().positive(), summary: z.number().int().positive(), explain_priority: z.number().int().positive() }),
   max_references: z.number().int().positive(),
+  max_reference_chars: z.number().int().positive(),
   forbidden_patterns: z.array(Regex),
-  instructions: TextPurposes.extend({ common: z.string(), output: z.string().refine((s) => /json/i.test(s), "debe mencionar json") }),
+  instructions: TextPurposes.extend({ common: z.string(), untrusted: z.string(), output: z.string().refine((s) => /json/i.test(s), "debe mencionar json") }),
   labels: z.object({
     unknown_type: z.string(),
     unknown_place: z.string(),

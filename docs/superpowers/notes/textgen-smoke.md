@@ -47,14 +47,23 @@ incidente del recorrido y se corrió `pnpm worker`. Resultado: `✓ textgen …@
 - summary: «Se reporta accesibilidad obstruida en 18 de Julio 1234, CENTRO: el paso está bloqueado y la accesibilidad afectada. Un reporte lo respalda.»
 - explain_priority: «El incidente tiene prioridad alta porque presenta severidad alta, el paso bloqueado y la accesibilidad afectada.»
 
+## Después de la revisión de Tenki (PR #7)
+
+Se repitió `pnpm cli smoke-llm` con los cambios de la revisión: las referencias van delimitadas entre
+`<referencias>` y se recortan a `max_reference_chars`, hay una instrucción `untrusted` y los patrones prohibidos
+ahora usan límites de palabra Unicode. De nuevo 9/9 textos vinieron del LLM y validaron, entre 0,9 y 1,7 s por
+llamada. Diferencias menores de redacción; por ejemplo, un resumen dice «la peligrosidad es alta» por la severidad.
+
 ## Para las bases existentes
 
-La política `textgen` tiene campos nuevos: `max_chars`, `max_references`, `forbidden_patterns`, `instructions` y
-`labels`. Las bases que ya tienen la v1 vieja la rechazan al validar, y el job `textgen` falla con
-`PolicyMissing/Invalid`. Pasos:
+La política `textgen` tiene campos nuevos: `max_chars`, `max_references`, `max_reference_chars`,
+`forbidden_patterns`, `instructions` (con `untrusted`) y `labels`. Una base con la v1 vieja la rechaza al validar
+(`PolicyInvalidError`) y el job `textgen` falla. No se le ponen valores por defecto en el código, porque la política
+no se hardcodea. Para actualizarla:
 
-1. `pnpm cli seed`, para insertar las plantillas `textgen_*` que falten.
-2. `pnpm cli policy-upgrade --kind textgen`, cuando entre el comando de la épica de agrupación; mientras tanto,
-   insertar la versión nueva a mano.
+```bash
+pnpm cli seed                              # inserta las plantillas textgen_* que falten
+pnpm cli policy-upgrade --kind textgen     # publica la política del seed como versión nueva activa
+```
 
 Una base nueva (Supabase) toma todo del seed.

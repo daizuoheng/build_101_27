@@ -29,7 +29,7 @@ async function incidentWithReport(pool: Pool): Promise<{ incidentId: string; rep
 
 /** Respuesta válida que cita la primera referencia del input. */
 const citeFirst = ({ user }: { user: string }) => {
-  const refs = (JSON.parse(user) as { references: { id: string }[] }).references;
+  const refs = JSON.parse(user.split("<referencias>\n")[1].split("\n</referencias>")[0]) as { id: string }[];
   return JSON.stringify({ body: "Bache en Av. Italia 2450", references: refs.slice(0, 1).map((r) => r.id) });
 };
 
@@ -136,6 +136,14 @@ describe("textos generados (textgen)", () => {
     const rows = (await texts(pool)).rows;
     expect(rows).toHaveLength(1);
     expect(rows[0].llm_run_id).not.toBeNull();
+  });
+
+  it("una plantilla de respaldo que viola la política falla en vez de mostrarse y cachearse", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    await pool.query("update message_templates set body = 'Una cuadrilla ya está en camino a {{place}}' where key = 'textgen_title'");
+    await expect(generateText({ pool, llm: fakeLlm(() => "") }, await titleInput(pool, incidentId))).rejects.toThrow(/plantilla 'textgen_title' inválida/);
+    expect((await texts(pool)).rows).toEqual([]);
   });
 
   it("con textgen.enabled = false usa la plantilla sin llamar al LLM", async () => {

@@ -31,24 +31,44 @@ const RUN_PURPOSE: Record<TextPurpose, LlmRunRecord["purpose"]> = { title: "titl
 
 const Output = z.object({ body: z.string().trim().min(1), references: z.array(z.string()) });
 
-/** Plantilla de respaldo `textgen_<propósito>` con los hechos como variables. */
+/** Largo máximo y frases prohibidas (despacho, tiempos): valen igual para el LLM y para la plantilla. */
+function bodyViolation(policy: TextgenPolicy, purpose: TextPurpose, body: string): string | null {
+  const max = policy.max_chars[purpose];
+  if (body.length > max) return `texto de ${body.length} caracteres (máximo ${max})`;
+  const hit = policy.forbidden_patterns.find((p) => new RegExp(p, "iu").test(body));
+  return hit ? `texto con contenido prohibido por política (${hit})` : null;
+}
+
+/**
+ * Plantilla de respaldo `textgen_<propósito>` con los hechos como variables. Una plantilla que viola la política
+ * es un error de configuración: falla en lugar de mostrarse y cachearse.
+ */
 async function fromTemplate(db: Db, policy: TextgenPolicy, input: TextInput, error: string): Promise<DraftedText> {
   const sep = policy.labels.list_separator;
   const vars = Object.fromEntries(Object.entries(input.facts).map(([k, v]) => [k, Array.isArray(v) ? v.join(sep) : v]));
-  const body = await renderTemplate(db, input.territoryId, `textgen_${input.purpose}`, vars);
+  const key = `textgen_${input.purpose}`;
+  const body = await renderTemplate(db, input.territoryId, key, vars);
+  const bad = bodyViolation(policy, input.purpose, body);
+  if (bad) throw new Error(`plantilla '${key}' inválida: ${bad}`);
   return { body, references: [], llmRunId: null, source: "template", error };
 }
 
-/** Rechazos semánticos: largo, referencias ajenas al input y promesas de despacho o tiempos. */
+/** Rechazos semánticos del LLM: los de la plantilla más referencias ajenas al input. */
 export function checkText(policy: TextgenPolicy, input: TextInput, out: { body: string; references: string[] }): string | null {
-  const max = policy.max_chars[input.purpose];
-  if (out.body.length > max) return `texto de ${out.body.length} caracteres (máximo ${max})`;
   const allowed = new Set(input.references.map((r) => r.id));
   const foreign = out.references.filter((id) => !allowed.has(id));
   if (foreign.length) return `referencias fuera del input: ${foreign.join(", ")}`;
-  const hit = policy.forbidden_patterns.find((p) => new RegExp(p, "iu").test(out.body));
-  if (hit) return `texto con contenido prohibido por política (${hit})`;
-  return null;
+  return bodyViolation(policy, input.purpose, out.body);
+}
+
+/**
+ * Mensaje al LLM: hechos del backend como json y, aparte y delimitadas, las referencias. Su texto lo escribió un
+ * ciudadano: se recorta por política y se escapa `<` para que no pueda cerrar el delimitador.
+ */
+export function userMessage(policy: TextgenPolicy, input: TextInput): string {
+  const refs = input.references.map((r) => ({ id: r.id, text: r.text.slice(0, policy.max_reference_chars) }));
+  const quoted = JSON.stringify(refs).replace(/</g, "\\u003c");
+  return `${JSON.stringify({ purpose: input.purpose, facts: input.facts })}\n<referencias>\n${quoted}\n</referencias>`;
 }
 
 /**
@@ -59,8 +79,8 @@ export async function draftText(deps: { db: Db; llm: LlmClient | null }, policy:
   if (!policy.enabled) return fromTemplate(deps.db, policy, input, "textgen deshabilitado por política");
   if (!deps.llm) return fromTemplate(deps.db, policy, input, "sin cliente LLM configurado");
   const fill = (s: string) => s.replace(/\{\{max_chars\}\}/g, String(policy.max_chars[input.purpose]));
-  const system = [policy.instructions.common, fill(policy.instructions[input.purpose]), policy.instructions.output].join("\n");
-  const user = JSON.stringify({ purpose: input.purpose, facts: input.facts, references: input.references });
+  const system = [policy.instructions.common, policy.instructions.untrusted, fill(policy.instructions[input.purpose]), policy.instructions.output].join("\n");
+  const user = userMessage(policy, input);
   const res = await callJson(
     { llm: deps.llm, recordRun: (r) => recordLlmRun(deps.db, r) },
     {
