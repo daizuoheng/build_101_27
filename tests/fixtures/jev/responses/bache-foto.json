@@ -1,0 +1,160 @@
+{
+  "case": {
+    "name": "bache-foto",
+    "texts": [
+      "Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda"
+    ],
+    "photo": "bache.jpg",
+    "expect": {
+      "problem_type": "bache",
+      "location_in_text": "precise",
+      "photo_quality": "useful"
+    }
+  },
+  "run": {
+    "purpose": "evaluate",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-bache-foto",
+      "report_revision": 1,
+      "message_ids": [
+        "m1"
+      ],
+      "attachment_ids": [
+        "photo-bache-foto"
+      ],
+      "catalog_hash": "ae042fdb95651dfa",
+      "policy_version_id": "418f39e4-efa0-4be9-9f50-0daad7be1077"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b225e06740aa6b27d7ccc170ce5",
+    "response": {
+      "intent": {
+        "type": "choice",
+        "choice": "report",
+        "confidence": 1,
+        "probabilities": {
+          "report": 1,
+          "status_query": 0,
+          "other": 0
+        }
+      },
+      "applicability": {
+        "type": "choice",
+        "choice": "applicable",
+        "confidence": 1,
+        "probabilities": {
+          "applicable": 1,
+          "unrelated": 0,
+          "insufficient": 0
+        }
+      },
+      "severity": {
+        "type": "choice",
+        "choice": "high",
+        "confidence": 0.6,
+        "probabilities": {
+          "low": 0.03,
+          "medium": 0.27,
+          "high": 0.7,
+          "undetermined": 0
+        }
+      },
+      "active_fire": {
+        "type": "choice",
+        "choice": "no",
+        "confidence": 1,
+        "probabilities": {
+          "yes": 0,
+          "no": 1,
+          "undeterminable": 0
+        }
+      },
+      "passage": {
+        "type": "choice",
+        "choice": "partial",
+        "confidence": 0.53,
+        "probabilities": {
+          "total": 0,
+          "partial": 0.65,
+          "none": 0.21,
+          "undetermined": 0.14
+        }
+      },
+      "accessibility": {
+        "type": "choice",
+        "choice": "not_affected",
+        "confidence": 0.34,
+        "probabilities": {
+          "affected": 0.01,
+          "not_affected": 0.5599999999999999,
+          "undetermined": 0.43
+        }
+      },
+      "location_in_text": {
+        "type": "choice",
+        "choice": "precise",
+        "confidence": 0.98,
+        "probabilities": {
+          "precise": 0.99,
+          "vague": 0.01,
+          "absent": 0
+        }
+      },
+      "photo_quality": {
+        "type": "choice",
+        "choice": "useful",
+        "confidence": 0.98,
+        "probabilities": {
+          "useful": 0.99,
+          "insufficient": 0.01,
+          "no_photo": 0
+        }
+      },
+      "text_photo_consistency": {
+        "type": "choice",
+        "choice": "consistent",
+        "confidence": 0.97,
+        "probabilities": {
+          "consistent": 0.98,
+          "contradiction": 0.02,
+          "not_evaluable": 0
+        }
+      },
+      "problem_type": {
+        "type": "choice",
+        "choice": "bache",
+        "confidence": 1,
+        "probabilities": {
+          "bache": 1,
+          "basura_acumulada": 0,
+          "accesibilidad_obstruida": 0,
+          "contenedor_danado": 0,
+          "contenedor_fuego": 0,
+          "vereda_rota": 0,
+          "carteleria": 0,
+          "alumbrado": 0,
+          "arbol_caido": 0,
+          "desague_obstruido": 0,
+          "other": 0,
+          "unknown": 0
+        }
+      },
+      "fact_photo_shows_fire": {
+        "type": "noul",
+        "noul": 0.01
+      },
+      "fact_recurring_problem_claimed": {
+        "type": "noul",
+        "noul": 0.03
+      }
+    },
+    "usage": {
+      "input_tokens": 5417,
+      "output_tokens": 562
+    },
+    "latencyMs": 857,
+    "status": "ok"
+  }
+}
