@@ -26,6 +26,19 @@ describe("seeds de demo", () => {
     expect(rows.find((r) => r.slug === "cuadrilla-limpieza").capacity).toBe(3);
   });
 
+  it("es atómico: sin contraseña de unidad no deja unidades ni usuarios a medias", async () => {
+    const pool = await testDb();
+    const saved = process.env.DEMO_UNIT_PASSWORD;
+    delete process.env.DEMO_UNIT_PASSWORD;
+    try {
+      await expect(seedDemo(pool, "montevideo")).rejects.toThrow("DEMO_UNIT_PASSWORD");
+    } finally {
+      process.env.DEMO_UNIT_PASSWORD = saved;
+    }
+    const left = await pool.query("select (select count(*) from response_units)::int as units, (select count(*) from internal_users)::int as users");
+    expect(left.rows[0]).toEqual({ units: 0, users: 0 });
+  });
+
   it("capacidades, responsabilidad por zona y posiciones dentro de la cobertura", async () => {
     const pool = await testDb();
     await seedDemo(pool, "montevideo");

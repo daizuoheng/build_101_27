@@ -2,16 +2,18 @@ import type { Pool } from "pg";
 import { withTx } from "../src/server/db/tx";
 import { appendEvent } from "../src/server/events/append";
 import { demoUnits } from "./demo-units";
-import { seedDemoUsers } from "./demo-users";
+import { demoPasswords, seedDemoUsers } from "./demo-users";
 
 /**
- * Unidades y usuarios de demo. Idempotente por (territorio, slug): nunca cambia capacidad, estado ni posición
- * de una unidad existente (eso es operación). Sin fecha de posición: ver `refreshDemoPositions`.
+ * Unidades y usuarios de demo, atómico: todo o nada en una transacción, y las contraseñas se validan antes.
+ * Idempotente por (territorio, slug): nunca cambia capacidad, estado ni posición de una unidad existente
+ * (eso es operación). Sin fecha de posición: ver `refreshDemoPositions`.
  */
 export async function seedDemo(pool: Pool, territorySlug: string): Promise<{ unitsCreated: string[]; usersCreated: string[] }> {
   const units = demoUnits[territorySlug];
   if (!units) throw new Error(`no hay unidades de demo para '${territorySlug}'`);
-  const unitsCreated = await withTx(async (c) => {
+  const passwords = demoPasswords();
+  return withTx(async (c) => {
     const t = await c.query<{ id: string }>("select id from territories where slug = $1", [territorySlug]);
     if (!t.rows[0]) throw new Error(`territorio inexistente: ${territorySlug} (correr seed primero)`);
     const territoryId = t.rows[0].id;
@@ -49,10 +51,9 @@ export async function seedDemo(pool: Pool, territorySlug: string): Promise<{ uni
       }
       await appendEvent(c, { entityType: "response_unit", entityId: unitId, kind: "demo_seeded", actorType: "system" });
     }
-    return created;
+    const usersCreated = await seedDemoUsers(c, territorySlug, passwords);
+    return { unitsCreated: created, usersCreated };
   }, pool);
-  const usersCreated = await seedDemoUsers(pool, territorySlug);
-  return { unitsCreated, usersCreated };
 }
 
 /** Acción explícita y auditada: marca vigentes las posiciones SIMULADAS de las unidades de demo. */

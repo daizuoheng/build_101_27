@@ -14,7 +14,6 @@ export const PENDING_REASONS = [
   "active_assignment", // ya tiene una orden activa (consume capacidad, no se reenvía)
   "dispatch_blocked", // revisión abierta sobre el incidente
   "manual_strategy", // la política del tipo exige asignación manual
-  "no_location", // incidente sin ubicación utilizable
   "no_capable_unit", // ninguna unidad del territorio tiene las capacidades requeridas
   "no_capacity", // hay unidades capaces pero sin capacidad libre
   "stale_position", // unidades móviles capaces con posición vencida
@@ -40,7 +39,8 @@ export type PlanIncident = {
   problemTypeId: string | null;
   /** Capacidades requeridas efectivas (incluye las de condición `active_hazard` si corresponde). */
   requiredCapabilities: string[];
-  location: { lon: number; lat: number } | null;
+  /** Siempre presente: `incidents.location` es NOT NULL (un incidente nace de un reporte con ubicación confirmada). */
+  location: { lon: number; lat: number };
   areaId: string | null;
 };
 
