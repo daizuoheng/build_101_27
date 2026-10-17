@@ -32,6 +32,38 @@ export const IncidentListQuery = z.object({
   sort: z.enum(["priority", "recent", "reports"]).default("priority"),
 });
 
+// --- Correcciones del operador (overrides por campo). Dominio en Núcleo (src/server/incidents/overrides.ts). ---
+
+export const OVERRIDE_FIELDS = ["problem_type_id", "severity", "priority_band", "location", "status"] as const;
+export type OverrideField = (typeof OVERRIDE_FIELDS)[number];
+
+/** Valor por campo: tipo por id del catálogo; ubicación como punto; estado solo para resolver/archivar a mano. */
+export const OverrideValue = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("problem_type_id"), value: z.string().uuid() }),
+  z.object({ field: z.literal("severity"), value: z.enum(["low", "medium", "high"]) }),
+  z.object({ field: z.literal("priority_band"), value: z.enum(["high", "medium", "low"]) }),
+  z.object({ field: z.literal("location"), value: z.object({ lon: z.number(), lat: z.number(), text: z.string().max(300).optional() }) }),
+  z.object({ field: z.literal("status"), value: z.enum(["resolved", "archived"]) }),
+]);
+export type OverrideValue = z.infer<typeof OverrideValue>;
+
+// POST /api/operacion/incidents/[id]/overrides  ·  DELETE /api/operacion/incidents/[id]/overrides/[field]
+export const SetOverrideBody = z.object({
+  override: OverrideValue,
+  reason: z.string().trim().min(3).max(500),
+  /** `incidents.revision` que vio el operador; si cambió ⇒ 409. */
+  expectedRevision: z.number().int().positive(),
+  idempotencyKey: z.string().min(8).max(64),
+});
+export type SetOverrideBody = z.infer<typeof SetOverrideBody>;
+
+// POST /api/operacion/incidents/[id]/links  (asociar/desasociar reportes; dominio en Núcleo, src/server/incidents/links.ts)
+export const LinkBody = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("link"), reportId: z.string().uuid(), idempotencyKey: z.string().min(8).max(64) }),
+  z.object({ action: z.literal("unlink"), reportId: z.string().uuid(), reason: z.string().trim().min(3).max(500), idempotencyKey: z.string().min(8).max(64) }),
+]);
+export type LinkBody = z.infer<typeof LinkBody>;
+
 export const IncidentListResponse = z.object({
   territory: z.object({ slug: z.string(), name: z.string(), areaLabel: z.string(), center: z.object({ lon: z.number(), lat: z.number() }), zoom: z.number() }),
   filters: z.object({

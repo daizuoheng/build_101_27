@@ -38,25 +38,44 @@ const commands: Record<string, () => Promise<Command>> = {
   "smoke-jev": async () => (await import("./smoke-jev")).smokeJev,
   "seed-demo": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
-    const { seedDemoUsers } = await import("../seeds/demo-users");
-    const created = await seedDemoUsers(getPool(), args.territory ?? "montevideo");
-    console.log(created.length ? `usuarios creados: ${created.join(", ")}` : "usuarios de demo ya existentes");
+    const { seedDemo } = await import("../seeds/demo");
+    const r = await seedDemo(getPool(), args.territory ?? "montevideo");
+    console.log(`unidades creadas: ${r.unitsCreated.join(", ") || "ninguna (ya existían)"}`);
+    console.log(`usuarios creados: ${r.usersCreated.join(", ") || "ninguno (ya existían)"}`);
+    console.log("posiciones de demo sin fecha: correr `pnpm cli refresh-demo-positions` antes de la demo");
+  },
+  "refresh-demo-positions": async () => async (args) => {
+    const { getPool } = await import("../src/server/db/pool");
+    const { refreshDemoPositions } = await import("../seeds/demo");
+    const n = await refreshDemoPositions(getPool(), args.territory ?? "montevideo");
+    console.log(`posiciones simuladas marcadas vigentes: ${n} unidad(es)`);
+  },
+  "reset-demo": async () => async (args) => {
+    if (args.yes !== "true") {
+      console.error("reset-demo borra reportes, incidentes, órdenes, planes, revisión, jobs y eventos. Confirmá con --yes");
+      return 2;
+    }
+    const { getPool } = await import("../src/server/db/pool");
+    const { resetDemo } = await import("../seeds/demo");
+    await resetDemo(getPool());
+    console.log("datos operativos borrados; configuración, unidades y usuarios conservados");
   },
   "import-areas": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { importAreas } = await import("../src/server/geo/import-areas");
-    if (!args.territory || !args.file) {
-      console.error("uso: import-areas --territory <slug> --file <geojson> [--name-property barrio] [--id-property ogc_fid] [--source-url url]");
+    // El mapeo de propiedades depende de la fuente: sin valores por defecto que puedan no coincidir.
+    if (!args.territory || !args.file || !args["name-property"] || !args["id-property"]) {
+      console.error("uso: import-areas --territory <slug> --file <geojson> --name-property <prop> --id-property <prop> [--source-url url]");
       return 2;
     }
     const r = await importAreas(getPool(), {
       territorySlug: args.territory,
       file: args.file,
-      nameProperty: args["name-property"] ?? "name",
-      idProperty: args["id-property"] ?? "id",
+      nameProperty: args["name-property"],
+      idProperty: args["id-property"],
       sourceUrl: args["source-url"],
     });
-    console.log(`áreas insertadas: ${r.inserted}, total: ${r.total}`);
+    console.log(`áreas insertadas: ${r.inserted}, actualizadas: ${r.updated}, total: ${r.total}`);
   },
 };
 

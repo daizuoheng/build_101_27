@@ -1,16 +1,7 @@
 import type { Db } from "../db/pool";
+import type { ReviewKind } from "@/shared/contracts/review";
 
-export type ReviewKind =
-  | "insufficient_evidence"
-  | "uncertain_duplicate"
-  | "contradiction"
-  | "low_confidence"
-  | "unknown_type"
-  | "no_compatible_unit"
-  | "rejected_assignment"
-  | "incompatible_assignment"
-  | "provider_failure"
-  | "out_of_coverage";
+export type { ReviewKind };
 
 /**
  * Abre un ítem de revisión, idempotente por (kind, entidad) mientras esté abierto.
