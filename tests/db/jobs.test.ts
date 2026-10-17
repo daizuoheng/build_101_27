@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
-import { importAreas } from "@/server/geo/import-areas";
+import { importAreas, parseFeatures } from "@/server/geo/import-areas";
 import { withTx } from "@/server/db/tx";
 import { appendCitizenMessage, createDraft, getReport, setLocation } from "@/server/intake/drafts";
 import { confirmReport } from "@/server/intake/confirm";
@@ -72,5 +72,22 @@ describe("cola de jobs (correcciones de revisión del PR #1)", () => {
     const fixed = await importAreas(pool, { territorySlug: "montevideo", file: "barrios-montevideo.geojson", nameProperty: "barrio", idProperty: "ogc_fid" });
     expect(fixed.updated).toBe(1);
     expect((await pool.query("select name from areas where external_id = '51'")).rows[0].name).toBe("CENTRO");
+  });
+
+  it("un mapeo de propiedades equivocado falla antes de escribir y no colapsa las áreas", async () => {
+    const pool = await testDb();
+    const before = (await pool.query("select count(*)::int as n, count(distinct st_astext(geom))::int as g from areas")).rows[0];
+    await expect(
+      importAreas(pool, { territorySlug: "montevideo", file: "barrios-montevideo.geojson", nameProperty: "barrio", idProperty: "id" }),
+    ).rejects.toThrow("feature 0: falta la propiedad de id 'id'");
+    await expect(
+      importAreas(pool, { territorySlug: "montevideo", file: "barrios-montevideo.geojson", nameProperty: "name", idProperty: "ogc_fid" }),
+    ).rejects.toThrow("propiedad de nombre 'name'");
+    expect((await pool.query("select count(*)::int as n, count(distinct st_astext(geom))::int as g from areas")).rows[0]).toEqual(before);
+
+    const geom = { type: "MultiPolygon", coordinates: [] };
+    expect(() => parseFeatures({ features: [{ properties: { k: 1, n: "A" }, geometry: geom }, { properties: { k: 1, n: "B" }, geometry: geom }] }, { idProperty: "k", nameProperty: "n" }))
+      .toThrow("comparten el id '1'");
+    expect(() => parseFeatures({ features: [{ properties: { k: 1, n: "  " }, geometry: geom }] }, { idProperty: "k", nameProperty: "n" })).toThrow("vacía");
   });
 });
