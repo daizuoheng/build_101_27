@@ -8,6 +8,24 @@ type Policy = IntakePolicy["geocoder"];
 type Bounds = Awaited<ReturnType<typeof territoryBounds>> | null;
 
 let lastCall = 0;
+let slot: Promise<void> = Promise.resolve();
+
+/** Máximo de formas de partir una esquina que se prueban por consulta (cada una cuesta 2–3 pedidos al proveedor). */
+const MAX_INTERSECTION_CANDIDATES = 2;
+
+/**
+ * Turno para el próximo pedido al proveedor respetando `min_interval_ms`. Los pedidos concurrentes se encolan en
+ * una cadena de promesas, así nunca salen dos juntos (en un proceso; entre instancias ver el backlog).
+ */
+function nextSlot(minIntervalMs: number): Promise<void> {
+  const turn = slot.then(async () => {
+    const wait = lastCall + minIntervalMs - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastCall = Date.now();
+  });
+  slot = turn.catch(() => {});
+  return turn;
+}
 
 const normalize = (q: string) => q.trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -33,9 +51,7 @@ async function nominatim(fetchImpl: Fetch, policy: Policy, bounds: Bounds, param
     p.set("viewbox", `${bounds.minlon},${bounds.maxlat},${bounds.maxlon},${bounds.minlat}`);
     p.set("bounded", "1");
   }
-  const wait = lastCall + policy.min_interval_ms - Date.now();
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastCall = Date.now();
+  await nextSlot(policy.min_interval_ms);
   const res = await fetchImpl(`${policy.base_url}/search?${p}`, {
     headers: { "User-Agent": process.env.NOMINATIM_USER_AGENT ?? "RadarUrbano", "Accept-Language": "es" },
     signal: AbortSignal.timeout(policy.timeout_ms),
@@ -129,7 +145,7 @@ export async function geocode(
   let hit: GeocodeHit | null = direct[0] ? { lon: Number(direct[0].lon), lat: Number(direct[0].lat), label: direct[0].display_name } : null;
 
   if (!hit) {
-    for (const [a, b] of intersectionCandidates(query)) {
+    for (const [a, b] of intersectionCandidates(query).slice(0, MAX_INTERSECTION_CANDIDATES)) {
       const point = await findIntersection(db, fetchImpl, policy, bounds, a, b);
       if (point) {
         hit = { ...point, label: `${a} y ${b}` };

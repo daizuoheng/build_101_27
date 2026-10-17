@@ -15,6 +15,9 @@ describe("classifyReply", () => {
     expect(classifyReply("no es ahí", lexicon)).toBe("no");
     expect(classifyReply("ENVIAR", lexicon)).toBe("send");
     expect(classifyReply("mandalo", lexicon)).toBe("send");
+    expect(classifyReply("👍", lexicon)).toBe("yes");
+    expect(classifyReply("👍🏽", lexicon)).toBe("yes");
+    expect(classifyReply("✅", lexicon)).toBe("yes");
   });
 
   it("un mensaje con más contenido no es una confirmación", () => {
@@ -39,6 +42,8 @@ describe("extractPublicCode", () => {
     expect(extractPublicCode("hay basura en las calles")).toBeNull();
     expect(extractPublicCode("frente al 1234 de 18 de julio")).toBeNull();
     expect(extractPublicCode("ABCDE0")).toBeNull(); // 0 no existe en el alfabeto
+    expect(extractPublicCode("HAY BASURA EN TODAS LAS CALLES")).toBeNull();
+    expect(extractPublicCode("MKGWXM")).toBe("MKGWXM"); // solo el código, aunque no tenga dígitos
   });
 });
 

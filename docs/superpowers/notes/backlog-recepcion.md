@@ -39,4 +39,7 @@ Pendientes que quedaron abiertos en `feat/llm-recepcion`. Cada uno dice de quié
 
 ## Geocodificación
 
+- [ ] **Límite de ritmo compartido entre instancias**: `nextSlot()` serializa los pedidos a Nominatim dentro de un proceso. Con varias instancias web (o web y worker geocodificando) se puede superar 1 pedido por segundo y el servicio público bloquea por abuso. Opción: geocodificar en un job del worker con un turno compartido en la base, y que el chat responda «estoy buscando la dirección…».
+- [ ] **Caché más tolerante**: hoy la coincidencia es exacta («A y B» ≠ «B y A», «esq.» ≠ «y»). Normalizar el orden y los sinónimos, guardar la geometría por calle y hacer que los «no encontrado» venzan.
+
 - [ ] **Esquinas más rápidas**: hoy una esquina no cacheada cuesta de 3 a 4 pedidos a Nominatim (2,5 a 6 s), por el límite de 1 pedido por segundo del servicio público. Ese límite se comparte entre todos los usuarios del proceso, así que con varias personas a la vez se forma cola. Opciones: (1) caché por calle, además de por consulta; (2) importar a PostGIS los ejes de calles de Montevideo (IDE Uruguay / Intendencia) y calcular cruces localmente en milisegundos, sin red; (3) Nominatim propio o un proveedor pago. Recomendado: (2) para el piloto.
