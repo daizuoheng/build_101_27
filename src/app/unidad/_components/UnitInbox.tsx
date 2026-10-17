@@ -30,15 +30,21 @@ export function UnitInbox() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const keys = useRef(new Map<string, string>());
+  // Cada carga y cada acción toman un número; solo se aplica la respuesta del último pedido lanzado. Así un polling
+  // que salió antes de «Aceptar» no vuelve a mostrar la orden como nueva cuando llega después.
+  const generation = useRef(0);
   const router = useRouter();
 
   const load = useCallback(async () => {
+    const gen = ++generation.current;
     try {
       const data = await api<UnitInboxResponse>("/api/unidad/assignments");
+      if (gen !== generation.current) return;
       setInbox(data);
       setLoadError(null);
       setNow(Date.now());
     } catch (err) {
+      if (gen !== generation.current) return;
       if (err instanceof HttpError && err.status === 401) {
         router.replace("/login?next=%2Funidad");
         return;
@@ -74,12 +80,14 @@ export function UnitInbox() {
     if (!keys.current.has(k)) keys.current.set(k, crypto.randomUUID());
     setBusyId(card.id);
     setNotice(null);
+    // La acción invalida cualquier carga en curso: su respuesta trae la bandeja posterior a la acción.
+    const gen = ++generation.current;
     try {
       const res = await api<{ inbox: UnitInboxResponse }>(`/api/unidad/assignments/${encodeURIComponent(card.id)}`, {
         method: "POST",
         json: { action, expectedVersion: card.version, idempotencyKey: keys.current.get(k), reason: reason || undefined },
       });
-      setInbox(res.inbox);
+      if (gen === generation.current) setInbox(res.inbox);
       setNow(Date.now());
       setNotice({ tone: "ok", text: ACTION[action].done });
     } catch (err) {

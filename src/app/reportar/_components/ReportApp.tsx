@@ -62,18 +62,46 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     draftRef.current = draft;
   }, [draft]);
 
-  const applyDraft = useCallback((d: DraftView) => {
-    setDraft((cur) => (notOlder(d, cur) ? d : cur));
-    setModifying(false);
-    setReviewEarly(false);
+  /**
+   * Aplica la respuesta de una acción. Solo si es del borrador activo (o `asNew`, al crear uno) y no es más vieja que
+   * lo que ya se muestra: la respuesta tardía de un borrador anterior no lo vuelve a poner. Los paneles de «Modificar
+   * datos» / «Enviar así» se cierran solo si el borrador cambió de verdad.
+   */
+  const applyDraft = useCallback((d: DraftView, opts: { asNew?: boolean } = {}) => {
+    const cur = draftRef.current;
+    const accept = opts.asNew || (cur !== null && cur.id === d.id && notOlder(d, cur));
+    if (!accept) return;
+    const changed = !cur || cur.id !== d.id || cur.revision !== d.revision || cur.status !== d.status || (cur.messages.at(-1)?.seq ?? 0) !== (d.messages.at(-1)?.seq ?? 0);
+    draftRef.current = d;
+    setDraft(d);
+    if (changed) {
+      setModifying(false);
+      setReviewEarly(false);
+    }
+  }, []);
+
+  // Vistas previas locales de fotos (object URLs): se liberan al descartar, al reintentar, al abrir otro reporte y al salir.
+  const previews = useRef(new Set<string>());
+  const releasePreview = (url?: string) => {
+    if (url && previews.current.delete(url)) URL.revokeObjectURL(url);
+  };
+  useEffect(() => {
+    const set = previews.current;
+    return () => {
+      for (const u of set) URL.revokeObjectURL(u);
+      set.clear();
+    };
   }, []);
 
   const createDraft = useCallback(async () => {
     setError(null);
     setBusy(true);
     try {
-      applyDraft(await api<DraftView>("/api/reportar/drafts", { method: "POST", json: { territorySlug } }));
-      setPending([]);
+      applyDraft(await api<DraftView>("/api/reportar/drafts", { method: "POST", json: { territorySlug } }), { asNew: true });
+      setPending((p) => {
+        for (const x of p) releasePreview(x.preview);
+        return [];
+      });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -90,7 +118,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
         if (cancelled) return;
         if (list[0]) {
           const d = await api<DraftView>(draftUrl(list[0].id));
-          if (!cancelled) setDraft(d);
+          if (!cancelled) applyDraft(d, { asNew: true });
         } else {
           await createDraft();
         }
@@ -103,7 +131,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [territorySlug, createDraft]);
+  }, [territorySlug, createDraft, applyDraft]);
 
   // Polling mientras hay análisis pendiente o procesamiento posterior al envío.
   const shouldPoll =
@@ -114,9 +142,8 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     const t = setInterval(async () => {
       if (document.hidden) return;
       try {
-        const d = await api<DraftView>(draftUrl(id));
         // Un polling del borrador anterior (después de «Nuevo reporte») o atrasado no pisa el estado actual.
-        setDraft((cur) => (cur?.id === d.id && notOlder(d, cur) ? d : cur));
+        applyDraft(await api<DraftView>(draftUrl(id)));
       } catch {
         /* se reintenta en el próximo ciclo */
       }
@@ -130,16 +157,17 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
 
   async function sendBody(body: string) {
     if (!draft) return;
-    // Reintentar el mismo texto reutiliza su clientMessageId: el servidor no lo duplica.
+    // Reintentar después de un error el mismo texto reutiliza su clientMessageId (el servidor no lo duplica).
+    // Dos envíos seguidos del mismo texto («sí», «sí») son mensajes distintos: cada uno lleva su id.
     const id = retryText.current?.body === body ? retryText.current.id : newId();
-    retryText.current = { body, id };
+    retryText.current = null;
     setError(null);
     setPending((p) => [...p, { clientMessageId: id, body, kind: "text" }]);
     try {
       applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/messages`, { method: "POST", json: { clientMessageId: id, body } }));
-      retryText.current = null;
       setPending((p) => p.filter((x) => x.clientMessageId !== id));
     } catch (err) {
+      retryText.current = { body, id };
       setPending((p) => p.filter((x) => x.clientMessageId !== id));
       setText((t) => t || body);
       setError(errorMessage(err));
@@ -158,7 +186,13 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
   async function sendPhoto(file: File, clientMessageId = newId()) {
     if (!draft) return;
     setError(null);
-    const preview = file.type.startsWith("image/") && !/hei[cf]/i.test(file.type) ? URL.createObjectURL(file) : undefined;
+    // En un reintento se reutiliza la vista previa existente en vez de crear otra.
+    const prev = pending.find((x) => x.clientMessageId === clientMessageId)?.preview;
+    let preview = prev;
+    if (!preview && file.type.startsWith("image/") && !/hei[cf]/i.test(file.type)) {
+      preview = URL.createObjectURL(file);
+      previews.current.add(preview);
+    }
     setPending((p) => [...p.filter((x) => x.clientMessageId !== clientMessageId), { clientMessageId, body: file.name, kind: "photo", file, preview }]);
     const form = new FormData();
     form.append("file", file);
@@ -166,7 +200,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     try {
       applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/attachments`, { method: "POST", body: form }));
       setPending((p) => p.filter((x) => x.clientMessageId !== clientMessageId));
-      if (preview) URL.revokeObjectURL(preview);
+      releasePreview(preview);
     } catch (err) {
       const msg = errorMessage(err);
       setPending((p) => p.map((x) => (x.clientMessageId === clientMessageId ? { ...x, failed: msg } : x)));
@@ -361,7 +395,14 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                     {p.file && (
                       <button type="button" className="btn" onClick={() => sendPhoto(p.file!, p.clientMessageId)}>Reintentar</button>
                     )}
-                    <button type="button" className="btn" onClick={() => setPending((x) => x.filter((y) => y.clientMessageId !== p.clientMessageId))}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        releasePreview(p.preview);
+                        setPending((x) => x.filter((y) => y.clientMessageId !== p.clientMessageId));
+                      }}
+                    >
                       Descartar
                     </button>
                   </div>

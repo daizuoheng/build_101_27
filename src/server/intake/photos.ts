@@ -35,10 +35,20 @@ export async function renderPhoto(bytes: Buffer, size: PhotoSize): Promise<Buffe
   return sharp(bytes).resize(240, 240, { fit: "cover" }).jpeg({ quality: 72, mozjpeg: true }).toBuffer();
 }
 
+/** El storage no tiene esa clave: local (ENOENT) o Supabase (400/404 por objeto inexistente). */
+export function isMissingObject(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { code?: string; message?: string };
+  return e.code === "ENOENT" || /ENOENT|\b(404|400)\b|not found/i.test(e.message ?? "");
+}
+
+// Miniaturas en generación (por clave): pedidos simultáneos de la misma foto esperan la misma promesa.
+const inFlight = new Map<string, Promise<Buffer>>();
+
 /**
  * Lee el derivado; para `thumb` usa la miniatura guardada junto al derivado (`<clave>.thumb.jpg`) y, si todavía no
- * existe, la genera una vez y la guarda. Así cada miniatura se recodifica una sola vez, también para fotos viejas.
- * Si guardarla falla, igual se sirve (queda para el próximo pedido).
+ * existe, la genera una sola vez (también para fotos viejas) y la guarda. Una falla real del storage no se
+ * disfraza de «falta la miniatura»: se propaga, sin recodificar.
  */
 export async function readPhoto(storage: StorageAdapter, derivedKey: string, size: PhotoSize): Promise<Buffer> {
   if (size === "full") return storage.get(derivedKey);
@@ -46,10 +56,20 @@ export async function readPhoto(storage: StorageAdapter, derivedKey: string, siz
   try {
     const cached = await storage.get(thumbKey);
     if (cached?.length) return cached;
-    throw new Error("sin miniatura");
-  } catch {
-    const thumb = await renderPhoto(await storage.get(derivedKey), "thumb");
-    await storage.put(thumbKey, thumb, "image/jpeg").catch(() => {});
-    return thumb;
+  } catch (err) {
+    if (!isMissingObject(err)) throw err;
   }
+  let job = inFlight.get(thumbKey);
+  if (!job) {
+    job = (async () => {
+      const thumb = await renderPhoto(await storage.get(derivedKey), "thumb");
+      await storage.put(thumbKey, thumb, "image/jpeg").catch((err) => {
+        // Se sirve igual; queda registrado para diagnosticar (sin guardar, el próximo pedido la vuelve a generar).
+        console.warn(`no se pudo guardar la miniatura ${thumbKey}:`, err instanceof Error ? err.message : err);
+      });
+      return thumb;
+    })().finally(() => inFlight.delete(thumbKey));
+    inFlight.set(thumbKey, job);
+  }
+  return job;
 }
