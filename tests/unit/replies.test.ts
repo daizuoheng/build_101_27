@@ -60,6 +60,8 @@ describe("extractPublicCode", () => {
     expect(extractPublicCode("che, ¿en qué anda lo que mandé ayer, el AB2CD9?")).toBeNull();
     expect(extractPublicCode("che, ¿en qué anda lo que mandé ayer, el AB2CD9?", { requireQueryOnly: false })).toBe("AB2CD9");
     expect(extractPublicCode("hay basura en las CALLES", { requireQueryOnly: false })).toBeNull();
+    expect(extractPublicCode("buenas tardes, estado de AB2CD9, gracias", { requireQueryOnly: false })).toBe("AB2CD9");
+    expect(extractPublicCode("cual es el estado de la basura", { requireQueryOnly: false })).toBeNull();
   });
 });
 

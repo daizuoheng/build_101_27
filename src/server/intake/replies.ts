@@ -55,10 +55,18 @@ export function extractPublicCode(text: string, opts: { requireQueryOnly?: boole
   const requireQueryOnly = opts.requireQueryOnly ?? true;
   const words = normalizeReply(text).split(" ").filter(Boolean);
   const mentionsCode = CODE_WORDS.test(text);
-  for (const m of text.matchAll(TOKEN)) {
-    const token = m[2];
-    if (!(/\d/.test(token) || mentionsCode)) continue;
-    if (!requireQueryOnly) return token.toUpperCase();
+  // Candidatos: tokens con forma de código que no son palabras de consulta («buenas», «tardes»); primero los que
+  // tienen dígito (todos los códigos nuevos tienen uno).
+  const tokens = [...text.matchAll(TOKEN)].map((m) => m[2]).filter((t) => !STATUS_WORDS.has(normalizeReply(t)));
+  const ordered = [...tokens.filter((t) => /\d/.test(t)), ...tokens.filter((t) => !/\d/.test(t))];
+  for (const token of ordered) {
+    const hasDigit = /\d/.test(token);
+    // En frase libre (Jev ya dijo que es consulta) solo un token con dígito: «estado de la basura» no busca BASURA.
+    if (!requireQueryOnly) {
+      if (hasDigit) return token.toUpperCase();
+      continue;
+    }
+    if (!(hasDigit || mentionsCode)) continue;
     const rest = words.filter((w) => w !== token.toLowerCase());
     if (rest.every((w) => STATUS_WORDS.has(w))) return token.toUpperCase();
   }
