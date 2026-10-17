@@ -12,6 +12,7 @@ import { loadEvidence } from "../intake/drafts";
 import type { IntakeDeps } from "../intake/orchestrator";
 import type { Job } from "../jobs/queue";
 import { openReviewItem } from "../review/items";
+import { enqueueTextgen } from "./textgen";
 
 const OPEN_STATUSES = ["open", "assigned", "in_progress"];
 
@@ -133,6 +134,9 @@ export async function runAssessIncident(deps: IntakeDeps, job: Job): Promise<voi
         JSON.stringify(r.changes), JSON.stringify(freshCounts),
       ],
     );
+    // Textos del operador: una revisión nueva, un job. Siempre, no solo si cambió algo efectivo: la revisión que subió
+    // touchIncident al vincular también cambia los conteos que cuenta el resumen. Si recomputeEffective ya lo encoló, no-op.
+    await enqueueTextgen(c, { incidentId: inc.id, revision: r.revision, territoryId });
     if (ai.consistency.choice === "contradiction" && chosenProbability(ai.consistency) >= policy.config.assessment.min_contradiction) {
       await openReviewItem(c, {
         territoryId, kind: "contradiction", entityType: "incident", entityId: inc.id,
