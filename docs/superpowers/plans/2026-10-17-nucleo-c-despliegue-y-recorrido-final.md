@@ -1,10 +1,10 @@
-# Núcleo C — Cierre del PR #15, despliegue, recorrido final y handoff — Plan de implementación
+# Núcleo C — Despliegue, recorrido final y handoff — Plan de implementación
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (modo nativo: son tareas operativas con verificación manual, no de código). Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Llevar Núcleo a `main`, desplegar en Railway + Supabase, probar el recorrido completo desde celulares reales y dejar `HANDOFF.md` con el estado verdadero.
+**Goal:** Desplegar `main` en Railway + Supabase, probar el recorrido completo desde celulares reales y dejar `HANDOFF.md` con el estado verdadero.
 
-**Architecture:** No hay código nuevo salvo correcciones que surjan del despliegue. Todo lo técnico del despliegue ya está decidido y documentado en `docs/superpowers/notes/despliegue.md` ("Pasos cuando lleguen las cuentas" y "Bloqueado hasta tener cuentas"); este plan **ejecuta** esa nota, registra lo que estaba marcado "sin verificar" y agrega el guion de demo. El orden importa: primero `main` tiene que tener Núcleo (#15 y el corte del plan B), después se despliega `main`, después se ensaya.
+**Architecture:** No hay código nuevo salvo correcciones que surjan del despliegue. Todo lo técnico del despliegue ya está decidido y documentado en `docs/superpowers/notes/despliegue.md` ("Pasos cuando lleguen las cuentas" y "Bloqueado hasta tener cuentas"); este plan **ejecuta** esa nota, registra lo que estaba marcado "sin verificar" y agrega el guion de demo. `main` ya tiene todo Núcleo (PR #15, `18e645a`); se despliega `main` y, cuando entren los planes A y B, se redespliega solo.
 
 **Tech Stack:** Railway (Railpack, `.railway/railway.ts`), Supabase (Postgres + PostGIS, Storage privado), `pnpm cli`.
 
@@ -21,27 +21,15 @@
 
 ## Review Focus
 
-1. Un redeploy del `worker` en Railway con un job en curso: debe verse `worker detenido` en los logs y el job terminar o volver a `pending` por lease vencido (drenaje de 120 s). Verificación en Task 2 paso 6.
-2. Supabase corta conexiones ociosas del pooler: el worker debe seguir vivo (`pg: conexión perdida` en el log, no caída del proceso). Dejar el worker 20 min sin tráfico y confirmar en Task 2.
-3. Fotos HEIC de iPhone y fotos verticales con EXIF: el derivado para Jev tiene que verse rotado bien en el detalle del incidente. Parte del guion de Task 3.
-4. Dos reportes del mismo lugar desde dos celulares distintos (dos `citizen_session_id`): deben agruparse y el incidente mostrar 2 fuentes; si Jev duda, aparece en la cola de revisión y los candidatos quedan bloqueados para despacho. Guion de Task 3.
-5. Demo sin red o con Jev lento: el chat responde con `pending_analysis` y el reporte igual se confirma; el worker lo reevalúa después. Ensayar una vez con el celular en modo avión a mitad del chat (Task 3).
+1. Un redeploy del `worker` en Railway con un job en curso: debe verse `worker detenido` en los logs y el job terminar o volver a `pending` por lease vencido (drenaje de 120 s). Verificación en Task 1 paso 6.
+2. Supabase corta conexiones ociosas del pooler: el worker debe seguir vivo (`pg: conexión perdida` en el log, no caída del proceso). Dejar el worker 20 min sin tráfico y confirmar en Task 1.
+3. Fotos HEIC de iPhone y fotos verticales con EXIF: el derivado para Jev tiene que verse rotado bien en el detalle del incidente. Parte del guion de Task 2.
+4. Dos reportes del mismo lugar desde dos celulares distintos (dos `citizen_session_id`): deben agruparse y el incidente mostrar 2 fuentes; si Jev duda, aparece en la cola de revisión y los candidatos quedan bloqueados para despacho. Guion de Task 2.
+5. Demo sin red o con Jev lento: el chat responde con `pending_analysis` y el reporte igual se confirma; el worker lo reevalúa después. Ensayar una vez con el celular en modo avión a mitad del chat (Task 2).
 
 ---
 
-### Task 1: Cerrar el PR #15 (`epic/nucleo → main`)
-
-**Files:** ninguno nuevo; correcciones en los archivos que Tenki señale.
-
-- [ ] **Step 1:** Leer la revisión de `tenki-reviewer` en el PR #15 (`gh pr view 15 --comments`). Clasificar cada hallazgo: (a) nuevo y correcto ⇒ corregir; (b) ya discutido en el PR original (#4, #5, #7, #8, #12, #14) ⇒ responder en el hilo con el enlace; (c) incorrecto ⇒ responder con la justificación técnica.
-- [ ] **Step 2:** Por cada (a): rama `fix/pr15-<tema>` desde `epic/nucleo`, test que reproduce, corrección, `pnpm test && pnpm typecheck && pnpm lint`, loop de `code-review`, merge a `epic/nucleo` (PR chico o commit directo si es trivial y el equipo lo acepta).
-- [ ] **Step 3:** Push de `epic/nucleo`; esperar la nueva pasada de Tenki sobre el último commit. Repetir hasta sin hallazgos.
-- [ ] **Step 4:** Mergear #15. Avisar al equipo: "correr `pnpm cli seed` después de migrar" (las políticas cambiaron; sin eso `assess_incident` falla con `PolicyInvalidError`) y que traigan `main` a sus épicas.
-- [ ] **Step 5:** Traer `main` a `epic/nucleo` (`/usr/bin/git merge origin/main`) para arrancar el plan B sobre una base al día.
-
----
-
-### Task 2: Desplegar `main` en Railway y Supabase
+### Task 1: Desplegar `main` en Railway y Supabase
 
 **Precondición:** cuentas de Railway y Supabase creadas por el equipo; CLI de Railway ≥ 5.42.1 instalada en una Mac del equipo.
 
@@ -66,7 +54,7 @@
 
 ---
 
-### Task 3: Guion de demo y recorrido final
+### Task 2: Guion de demo y recorrido final
 
 **Precondición:** plan A y plan B mergeados a `main` y desplegados; bandeja `/unidad` (Recepción, PR #13) y vistas de Operación (plan, revisión, detalle) en `main`.
 
@@ -95,7 +83,7 @@
 
 ---
 
-### Task 4: `HANDOFF.md` y `PROMPT-CONTINUAR.md` al día
+### Task 3: `HANDOFF.md` y `PROMPT-CONTINUAR.md` al día
 
 **Files:**
 - Modify: `HANDOFF.md` (reescribir "Estado real"; quitar "Falta: …" obsoleto; dejar hitos cumplidos y lo que quedó fuera)

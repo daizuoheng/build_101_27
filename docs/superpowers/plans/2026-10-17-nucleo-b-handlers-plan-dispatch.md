@@ -10,15 +10,17 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-17-radar-urbano-design.md` §5.3 etapas 6 y 7, §6.5, §6.7 (un incidente tiene a lo sumo una orden activa; capacidad bajo lock). Plan madre: Tareas 11 y 12 de `docs/superpowers/plans/2026-10-17-radar-urbano-mvp.md`.
 
-**Rama y PR:** rama `feat/handlers-atencion` desde `epic/nucleo`, PR contra `epic/nucleo`. Mismo flujo de `AGENTS.md` (tests, typecheck, lint, loop de `code-review`, Tenki, merge).
+**Rama y PR:** rama `nucleo/handlers-atencion` desde `epic/nucleo`, PR contra `epic/nucleo`. Antes de empezar: `/usr/bin/git fetch origin && /usr/bin/git merge origin/main` (el #15 ya está en `main`, `18e645a`) y `pnpm cli seed`. Mismo flujo de `AGENTS.md`: tests, typecheck, lint, loop de `code-review`, push, esperar el **check "Tenki Code Review"** (no los reviews), corregir o justificar en el hilo, merge. Base de test aparte: `createdb radar_urbano_test_atencion && psql -d radar_urbano_test_atencion -c "create extension postgis"` y `DATABASE_URL_TEST=postgres://localhost/radar_urbano_test_atencion pnpm vitest run …`.
 
 ## Dependencias externas (gating)
 
 | Task | Necesita en `main` (y traído a `epic/nucleo` con `/usr/bin/git merge origin/main`) |
 | --- | --- |
 | 1 (periódico) | nada: se puede hacer ya |
-| 2 (`plan`) | `src/server/planning/build-plan.ts` exportando `buildPlan: BuildPlan` — PR #11 de Operación (`operacion/t11 → epic/operacion → main`) |
-| 3 (`dispatch`) | `src/server/dispatch/apply-plan.ts` exportando `applyPlan: ApplyPlan` — Tarea 12 de Operación, **todavía no existe en ninguna rama** |
+| 2 (`plan`) | `src/server/planning/build-plan.ts` exportando `buildPlan: BuildPlan` — PR #11 de Operación (`operacion/t11 → epic/operacion`, todavía no en `main`) |
+| 3 (`dispatch`) | `src/server/dispatch/apply-plan.ts` exportando `applyPlan: ApplyPlan` — Tarea 12 de Operación, **sin PR ni rama** |
+
+Hasta que entren, los jobs `plan` siguen fallando sin efecto (comportamiento conocido, documentado en el cuerpo del #15).
 
 Contingencia acordable con el equipo: si a la hora de congelar (01:00) la T12 no llegó, Núcleo implementa `applyPlan` mínimo según el contrato de `src/server/contracts.ts` (por propuesta: transacción, `FOR UPDATE` de incidente y unidad, revalidar `incidents.revision` contra `plan_runs.snapshot_refs.incident_revisions`, capacidad libre y sin orden activa, insertar `assignments(status 'offered')` + `events`, `plan_items.status = 'executed'`, `incidents.status = 'assigned'`; si una revisión cambió ⇒ `stoppedForReplan: true` y `enqueue('plan')`). Avisar antes: ese archivo es de Operación.
 
@@ -244,7 +246,7 @@ Expected: todo en verde, incluido `assess.test.ts` con los helpers importados.
 
 - [ ] **Step 1:** `pnpm cli reset-demo --yes && pnpm cli refresh-demo-positions`; `pnpm dev` + `pnpm worker`; `node --env-file=.env.local scripts/e2e-walkthrough.mjs`. En los logs del worker, en orden: `✓ process_report`, `✓ assess_incident`, `✓ plan`, `✓ dispatch`, `✓ textgen`. En base: una fila en `assignments` con `status = 'offered'`. Al minuto, una línea `replanificación periódica: 1 territorio(s)` y después un `✓ plan` cada `replan_interval_min` (5 min en el seed).
 - [ ] **Step 2:** Nota `docs/superpowers/notes/atencion-smoke.md`: qué se vio, latencias de `plan` y `dispatch`, y la regla "sin `onFailed` para plan/dispatch y por qué".
-- [ ] **Step 3:** Loop de `code-review` → corregir → `pnpm test && pnpm typecheck && pnpm lint` → push `feat/handlers-atencion` → PR contra `epic/nucleo` (`Núcleo: handlers plan y dispatch, replanificación periódica`) → Tenki → merge. Después, PR `epic/nucleo → main` (segundo corte; el #15 fue el primero) con la nota del cuerpo de #15 actualizada: "los jobs `plan` ya tienen handler".
+- [ ] **Step 3:** Loop de `code-review` → corregir → `pnpm test && pnpm typecheck && pnpm lint` → push `nucleo/handlers-atencion` → PR contra `epic/nucleo` (`Núcleo: handlers plan y dispatch, replanificación periódica`) → check "Tenki Code Review" → merge. Después, PR `epic/nucleo → main` (segundo corte; el #15 fue el primero) diciendo que los jobs `plan` ya tienen handler y que hay que correr `pnpm cli seed` si cambió alguna política.
 
 ```bash
 /usr/bin/git add docs/superpowers/notes/atencion-smoke.md

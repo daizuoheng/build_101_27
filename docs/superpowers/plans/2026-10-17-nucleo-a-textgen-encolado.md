@@ -4,13 +4,17 @@
 
 **Goal:** Que el job `textgen` corra de verdad (hoy el handler existe y nadie lo encola) y que los módulos de UI tengan un lector de los textos vigentes de un incidente.
 
-**Architecture:** Regla única: **cada vez que un incidente abierto nace o sube de `revision`, se encola `textgen` para esa revisión**. Tres puntos de entrada en el pipeline: creación del incidente (`process-report.ts`), `touchIncident` al vincular/desvincular (`links.ts`) y `recomputeEffective` cuando cambió algo efectivo (`effective.ts`; cubre `assess_incident`, `setOverride`, `removeOverride`). Caso aparte: la promoción de banda por antigüedad en `plan.ts` no sube la revisión; ahí se invalida solo el texto `explain_priority` de la revisión vigente y se reencola con sufijo de banda. Un lector `latestTexts` en `src/server/incidents/texts.ts` devuelve los textos de la revisión actual (o `null` por propósito, y la UI muestra plantilla).
+**Architecture:** Regla única: **cada vez que un incidente abierto nace o queda en una revisión nueva, se encola `textgen` para esa revisión**. Tres puntos de entrada en el pipeline: creación del incidente (`process-report.ts`), `runAssessIncident` dentro de su transacción y después del insert en `incident_assessments` (`assess.ts`; cubre la revisión que subió `touchIncident` al vincular, cambie o no algo efectivo), y `recomputeEffective` cuando cambió algo efectivo (`effective.ts`; cubre `setOverride` y `removeOverride`; desde `assess` es un no-op por deduplicación). Caso aparte: la promoción de banda por antigüedad en `plan.ts` no sube la revisión; ahí se invalida solo el texto `explain_priority` de la revisión vigente y se reencola con sufijo de banda. Un lector `latestTexts` en `src/server/incidents/texts.ts` devuelve los textos de la revisión actual (o `null` por propósito, y la UI muestra plantilla).
 
 **Tech Stack:** TypeScript, pg, vitest (tests de base en `tests/db`, base `radar_urbano_test`).
 
 **Spec:** `docs/superpowers/specs/2026-10-17-radar-urbano-design.md` §5.3 etapa 8 (`generate_text`: cacheado por revisión, fallback a plantillas, nunca bloquea otra etapa) y §6.3. Plan madre: `docs/superpowers/plans/2026-10-17-radar-urbano-mvp.md` Tarea 15.
 
-**Rama y PR:** rama `feat/textgen-encolado` desde `epic/nucleo`, PR contra `epic/nucleo`. Flujo de `AGENTS.md`: `pnpm test && pnpm typecheck && pnpm lint`, loop interno de `code-review` hasta sin hallazgos graves, push, esperar a Tenki, mergear si queda limpio.
+**Rama y PR:** rama `nucleo/textgen-encolado` desde `epic/nucleo`, PR contra `epic/nucleo`. Antes de empezar: `/usr/bin/git fetch origin && /usr/bin/git merge origin/main` (el PR #15 ya está en `main`, `18e645a`, con los commits `ae281be` y `db12634` de los hallazgos de Tenki) y `pnpm cli seed` (la política `planning` exige `busy_retry_sec`; sin republicar, `assess_incident` falla con `PolicyInvalidError`). Flujo de `AGENTS.md`: `pnpm test && pnpm typecheck && pnpm lint`, loop interno de `code-review` hasta sin hallazgos graves, push, esperar el **check "Tenki Code Review"** (no los reviews), corregir o justificar en el hilo, mergear si queda limpio.
+
+**Hilo de Tenki a cerrar:** PR #15, hilo `4304842842` («Nadie encola el job `textgen` en producción»). Este PR lo resuelve; citarlo en el cuerpo para que Tenki lo cierre.
+
+**Base de test aparte** (para no chocar con otra sesión): `createdb radar_urbano_test_textgen && psql -d radar_urbano_test_textgen -c "create extension postgis"` y `DATABASE_URL_TEST=postgres://localhost/radar_urbano_test_textgen pnpm vitest run …`. Hoy pasan 173 tests.
 
 ## Global Constraints
 
@@ -24,27 +28,27 @@
 ## Review Focus
 
 1. Un incidente creado con Jev caído en `assess_incident` (job `failed`): debe tener igual sus textos de la revisión 1 (los encola la creación, no la reevaluación). Test en Task 1.
-2. Vincular un reporte y que `assess_incident` no cambie nada efectivo: la revisión subió en `touchIncident` y el resumen debe reflejar el nuevo `report_count`. Test en Task 1 (vínculo encola para la revisión nueva).
+2. Vincular un reporte y que `assess_incident` no cambie nada efectivo: la revisión subió en `touchIncident` y el resumen debe reflejar el nuevo `report_count`. Por eso `assess` encola siempre, no solo cuando `recomputeEffective` cambió algo. Test en Task 1.
 3. Un incidente que se archiva en `detach` sube de revisión pero **no** debe encolar textos (el handler ya descarta archivados; no gastar un job). Test en Task 1.
 4. La promoción `low → medium` por antigüedad se decide en `plan`, sin revisión nueva: la explicación de prioridad cacheada diría "baja". Task 2 la invalida y reencola.
 5. `latestTexts` para un incidente cuya revisión actual todavía no tiene textos (job pendiente) debe devolver `null` por propósito, nunca el texto de la revisión anterior (podría describir otra banda u otro conteo). Test en Task 3.
 
 ---
 
-### Task 1: Encolar `textgen` donde nace o sube de revisión un incidente
+### Task 1: Encolar `textgen` donde nace o queda en revisión nueva un incidente
 
 **Files:**
 - Modify: `src/server/pipeline/process-report.ts:149-160` (tras `insertLink` del incidente nuevo)
-- Modify: `src/server/incidents/links.ts:21-27` (`touchIncident`)
+- Modify: `src/server/pipeline/assess.ts:126-141` (en la transacción de `runAssessIncident`, después del `insert into incident_assessments`)
 - Modify: `src/server/incidents/effective.ts:95-101` (bloque `if (changed)`)
-- Modify: `src/server/pipeline/textgen.ts:10-12` (`enqueueTextgen` acepta `dedupeSuffix`)
-- Test: `tests/db/textgen.test.ts`
+- Modify: `src/server/pipeline/textgen.ts:9-12` (`enqueueTextgen` acepta `dedupeSuffix`; **corregir el comentario**, que hoy afirma que `assess_incident` y `plan` ya lo llaman)
+- Test: `tests/db/textgen.test.ts`, `tests/db/assess.test.ts`, `tests/db/group.test.ts`
 
 **Interfaces:**
-- Consumes: `enqueue(db, EnqueueInput)` de `src/server/jobs/queue.ts`; `linkReport`, `unlinkReport` de `src/server/incidents/links.ts`; `setOverride` de `src/server/incidents/overrides.ts`; helpers `incidentWithReport`, `newSession`, `territoryId` ya presentes en `tests/db/textgen.test.ts` y `tests/db/fakes.ts`.
-- Produces: `enqueueTextgen(c: Db, input: { incidentId: string; revision: number; territoryId: string; dedupeSuffix?: string }): Promise<void>` (firma ampliada, compatible con la actual).
+- Consumes: `enqueue(db, EnqueueInput)` de `src/server/jobs/queue.ts`; `unlinkReport` de `src/server/incidents/links.ts`; `setOverride` de `src/server/incidents/overrides.ts`; helpers `incidentWithReport`, `newSession`, `territoryId` de `tests/db/textgen.test.ts` y `tests/db/fakes.ts`; `incidentWithTwoReports`, `drain`, `revisionOf` de `tests/db/assess.test.ts`.
+- Produces: `enqueueTextgen(c: Db, input: { incidentId: string; revision: number; territoryId: string; dedupeSuffix?: string }): Promise<void>` (firma ampliada, compatible con la actual). Comentario nuevo: "Idempotente por revisión. Lo llaman la creación del incidente, `runAssessIncident` y `recomputeEffective`; `plan` solo renueva `explain_priority` (ver `planInTx`)".
 
-- [ ] **Step 1: Escribir los tests que fallan** en `tests/db/textgen.test.ts`, dentro del `describe` existente:
+- [ ] **Step 1: Escribir los tests que fallan.** En `tests/db/textgen.test.ts`, dentro del `describe` existente:
 
 ```ts
 const textgenJobs = (pool: Pool, incidentId: string) =>
@@ -53,20 +57,11 @@ const textgenJobs = (pool: Pool, incidentId: string) =>
     [incidentId],
   );
 
-it("vincular un reporte encola textgen para la revisión nueva; una corrección también", async () => {
+it("una corrección del operador encola textgen para la revisión nueva", async () => {
   const pool = await testDb();
-  const { incidentId, territory } = await incidentWithReport(pool); // revisión 1, sin jobs
-  const session = await newSession(pool);
-  const other = (await pool.query<{ id: string }>(
-    `insert into reports (citizen_session_id, territory_id, status, public_code, confirmed_revision, description, location, confirmed_at)
-     values ($1, $2, 'confirmed', 'TXTGEN2', 1, 'Otro pozo', st_setsrid(st_makepoint(-56.15, -34.89), 4326)::geography, now()) returning id`,
-    [session, territory],
-  )).rows[0].id;
-  await withTx((c) => linkReport(c, { reportId: other, incidentId, origin: "manual", actor: { type: "operator", id: null } }), pool);
+  const { incidentId } = await incidentWithReport(pool); // revisión 1, sin jobs
+  await withTx((c) => setOverride(c, { incidentId, override: { field: "severity", value: "low" }, reason: "test", actor: { type: "operator", id: null }, expectedRevision: 1 }), pool);
   expect((await textgenJobs(pool, incidentId)).rows.map((r) => r.entity_revision)).toEqual([2]);
-
-  await withTx((c) => setOverride(c, { incidentId, override: { field: "severity", value: "low" }, reason: "test", actor: { type: "operator", id: null }, expectedRevision: 2 }), pool);
-  expect((await textgenJobs(pool, incidentId)).rows.map((r) => r.entity_revision)).toEqual([2, 3]);
 });
 
 it("archivar el incidente (último reporte desvinculado) no encola textgen", async () => {
@@ -78,7 +73,16 @@ it("archivar el incidente (último reporte desvinculado) no encola textgen", asy
 });
 ```
 
-Imports a agregar: `withTx` de `@/server/db/tx`, `linkReport`/`unlinkReport` de `@/server/incidents/links`, `setOverride` de `@/server/incidents/overrides`. Verificar en `src/shared/contracts/incident.ts` la forma exacta de `OverrideValue` para `severity` antes de fijar el literal.
+Imports a agregar: `withTx` de `@/server/db/tx`, `unlinkReport` de `@/server/incidents/links`, `setOverride` de `@/server/incidents/overrides`. Verificar en `src/shared/contracts/incident.ts` la forma exacta de `OverrideValue` para `severity` antes de fijar el literal.
+
+Para la reevaluación: en `tests/db/assess.test.ts`, en el primer test que usa `incidentWithTwoReports` (vincula un segundo reporte y drena `assess_incident` con Jev simulado), agregar al final:
+
+```ts
+const rev = await revisionOf(pool, incidentId);
+expect((await pool.query("select entity_revision from jobs where kind = 'textgen' and entity_id = $1 order by entity_revision", [incidentId])).rows.map((r) => r.entity_revision)).toContain(rev);
+```
+
+(`toContain` y no `toEqual`: si la reevaluación cambió algo efectivo, `recomputeEffective` subió la revisión y el job es para la nueva; si no, es para la que subió `touchIncident`. En los dos casos la revisión vigente tiene su job.)
 
 Para la creación: en `tests/db/group.test.ts`, test `"sin candidatos ⇒ no llama a la comparación, crea el incidente y guarda la decisión no_candidates"` (línea ~135), agregar al final:
 
@@ -89,14 +93,14 @@ expect((await pool.query("select entity_revision from jobs where kind = 'textgen
 
 - [ ] **Step 2: Correr y ver que fallan**
 
-Run: `pnpm vitest run tests/db/textgen.test.ts tests/db/group.test.ts`
+Run: `pnpm vitest run tests/db/textgen.test.ts tests/db/assess.test.ts tests/db/group.test.ts`
 Expected: FAIL — los `select … from jobs where kind = 'textgen'` devuelven vacío.
 
 - [ ] **Step 3: Implementar**
 
-- `textgen.ts`: `enqueueTextgen` pasa `dedupeSuffix` a `enqueue` si viene.
+- `textgen.ts`: `enqueueTextgen` pasa `dedupeSuffix` a `enqueue` si viene; comentario corregido (bloque Interfaces).
 - `process-report.ts`: después de `insertLink(...)` (línea 150), `await enqueueTextgen(c, { incidentId, revision: 1, territoryId: r.territory_id })`.
-- `links.ts` `touchIncident`: tras el `update … returning revision`, `await enqueueTextgen(db, { incidentId, revision: rows[0].revision, territoryId })`. **No** tocar la rama de archivado en `detach`.
+- `assess.ts`: en la transacción de `runAssessIncident`, después del `insert into incident_assessments` y antes del `appendEvent`, `await enqueueTextgen(c, { incidentId: inc.id, revision: r.revision, territoryId })` (`r` es el retorno de `recomputeEffective`: trae la revisión vigente, haya cambiado o no). **No** tocar `touchIncident` ni la rama de archivado en `links.ts`.
 - `effective.ts`: dentro de `if (changed)`, tras el `enqueue` de `plan`: `await enqueueTextgen(db, { incidentId, revision: upd.rows[0].revision, territoryId: cur.territory_id })`.
 
 Comentario de una línea en cada sitio con la regla ("textos del operador: una revisión nueva, un job"). Verificar que no haya ciclo de imports (`effective.ts → pipeline/textgen → ai/llm/generate-text → config/*, db/*`; ninguno vuelve a `incidents/`).
@@ -109,7 +113,7 @@ Expected: PASS. Si algún test de `assess.test.ts` cuenta jobs con `select count
 - [ ] **Step 5: Commit**
 
 ```bash
-/usr/bin/git add src/server/pipeline/process-report.ts src/server/incidents/links.ts src/server/incidents/effective.ts src/server/pipeline/textgen.ts tests/db/textgen.test.ts tests/db/group.test.ts
+/usr/bin/git add src/server/pipeline/process-report.ts src/server/pipeline/assess.ts src/server/incidents/effective.ts src/server/pipeline/textgen.ts tests/db/textgen.test.ts tests/db/assess.test.ts tests/db/group.test.ts
 /usr/bin/git commit -m "feat(textgen): el pipeline encola los textos en cada revisión nueva del incidente"
 ```
 
@@ -238,7 +242,7 @@ Expected: todo en verde (170+ tests).
 
 - [ ] **Step 1: Smoke local.** Con `pnpm dev` y `pnpm worker` corriendo, `node --env-file=.env.local scripts/e2e-walkthrough.mjs`. En los logs del worker debe verse `✓ textgen <id>@1` después de `✓ process_report`. En base: `select purpose, entity_revision, llm_run_id is null as plantilla from generated_texts` ⇒ tres filas de la revisión 1 (plantilla, porque `llm_purposes` del seed está vacío).
 - [ ] **Step 2: Nota.** Agregar a `docs/superpowers/notes/textgen-smoke.md` una sección "Encolado (fecha)" con la regla de los tres puntos de entrada, el caso de la banda por antigüedad y lo observado en el smoke (3 líneas).
-- [ ] **Step 3: Loop de review y PR** según `AGENTS.md`: `code-review` sobre el diff → corregir → repetir hasta sin hallazgos graves; `pnpm test && pnpm typecheck && pnpm lint`; push de `feat/textgen-encolado`; PR contra `epic/nucleo` con título `Núcleo: encolado de textgen y lector de textos`; en el cuerpo, avisar a Operación y Recepción de `latestTexts`/`latestTextsMany`. Esperar a Tenki; mergear si queda limpio.
+- [ ] **Step 3: Loop de review y PR** según `AGENTS.md`: `code-review` sobre el diff → corregir → repetir hasta sin hallazgos graves; `pnpm test && pnpm typecheck && pnpm lint`; push de `nucleo/textgen-encolado`; PR contra `epic/nucleo` con título `Núcleo: encolado de textgen y lector de textos`; en el cuerpo, citar el hilo `4304842842` del PR #15 como resuelto y avisar a Operación y Recepción de `latestTexts`/`latestTextsMany`. Esperar el check "Tenki Code Review"; mergear si queda limpio.
 
 ```bash
 /usr/bin/git commit -am "docs(textgen): nota del encolado y del smoke"
