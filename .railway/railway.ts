@@ -32,7 +32,13 @@ const migrate = "pnpm cli migrate";
 export default defineRailway(() => {
   const web = service("web", {
     source: github(REPO, { branch: BRANCH }),
-    build: { builder: "RAILPACK", buildCommand: "pnpm build" },
+    build: {
+      builder: "RAILPACK",
+      buildCommand: "pnpm build",
+      // `next build` verifica tipos de todo el include de tsconfig (src, tests, seeds, scripts): solo se excluye lo que
+      // no entra ni al build ni al runtime. `.railway/` se aplica con `railway config apply`, no con un deploy.
+      watchPatterns: ["**", "!docs/**", "!/*.md", "!.railway/**"],
+    },
     // Binario directo, no `pnpm start`: pnpm como PID 1 no reenvía SIGTERM y el redeploy mataría a la fuerza.
     start: "node_modules/.bin/next start",
     preDeploy: migrate,

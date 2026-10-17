@@ -16,7 +16,8 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
   punto).
 - **Dos servicios del mismo repo**, rama `main`:
   - `web`: build `pnpm build`; arranca con `node_modules/.bin/next start` (toma `$PORT`); healthcheck `/api/health`
-    (responde 200 si llega a la base).
+    (responde 200 si llega a la base). Se redespliega con cualquier cambio salvo `docs/`, los `.md` de la raíz y
+    `.railway/` (`next build` verifica tipos de todo el `include` de tsconfig, así que tests, seeds y scripts cuentan).
   - `worker`: build `tsc --noEmit -p .railway/tsconfig.worker.json` (no necesita `next build`): verifica los tipos
     solo de lo que importa `src/worker/index.ts` (`src/server`, `src/shared`), así un error que esté solo en `src/app`
     no frena su despliegue. Arranca con `node_modules/.bin/tsx src/worker/index.ts`. Solo se redespliega si cambia lo
@@ -35,16 +36,23 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
   lock del migrador y el `FOR UPDATE SKIP LOCKED` con lease de los jobs necesitan sesión. `createPool` **rechaza el
   puerto 6543** (pooler transaccional) con un error explícito. La conexión directa (`db.<ref>.supabase.co`) es solo
   IPv6 sin el add-on pago, así que desde Railway se usa el pooler de sesión.
-- **TLS** siempre fuera de localhost (`localhost`, `127.0.0.1`, `[::1]` o socket Unix). Con `DATABASE_CA_CERT`
-  (certificado raíz de Supabase en PEM) se verifica servidor y nombre; sin él se cifra sin verificar (lo que libpq
-  llama `sslmode=require`). `sslmode` de la URL se descarta a propósito: `pg-connection-string` 2.14 (el de `pg` 8.23)
-  trata `sslmode=require` como `verify-full` y fallaría sin CA. Excepciones: `sslmode=disable` apaga TLS (Postgres de CI
-  o de red privada sin TLS); `sslmode=verify-ca`/`verify-full` sin `DATABASE_CA_CERT` dan error en vez de conectarse
-  sin verificar; `sslcert`/`sslkey`/`sslrootcert` en la URL dan error en vez de ignorarse. El host efectivo para
-  decidir si es local respeta `?host=` (como `pg`).
-- **Pool**: `DATABASE_POOL_MAX` vacío usa 10; un valor que no sea entero ≥ 1 falla al arrancar. El pool no tiene
-  timeout de conexión (con el pool lleno las requests esperan turno, como antes); `/api/health` tiene su propio tope
-  de 5 s y con la base caída responde 503 en vez de quedar colgado.
+- **TLS**: sin `sslmode` en la URL, sin TLS en local (`localhost`, `127.0.0.1`, `[::1]` o socket Unix, respetando
+  `?host=` como `pg`) y con TLS en cualquier otro host. Con `DATABASE_CA_CERT` (certificado raíz de Supabase en PEM)
+  se verifica servidor y nombre; sin él se cifra sin verificar (lo que libpq llama `sslmode=require`). `sslmode` no
+  llega a `pg` a propósito: `pg-connection-string` 2.14 (el de `pg` 8.23) trata `sslmode=require` como `verify-full`
+  y fallaría sin CA. Un `sslmode` explícito (sin distinguir mayúsculas) manda también en local:
+  - `disable`: sin TLS (Postgres de CI o de red privada sin TLS);
+  - `require`: TLS, verificado solo si hay CA;
+  - `verify-ca`/`verify-full`: exigen `DATABASE_CA_CERT` (si falta, error en vez de conectarse sin verificar) y
+    verifican servidor y nombre;
+  - `prefer`/`allow` u otro valor: error (`pg` no sabe caer a texto plano como libpq).
+  `sslcert`/`sslkey`/`sslrootcert` en la URL dan error en vez de ignorarse. El rechazo del puerto 6543 mira también
+  `?port=`.
+- **Pool**: `DATABASE_POOL_MAX` vacío usa 10; un valor que no sea entero ≥ 1 falla al arrancar. Si el servidor corta
+  una conexión ociosa (reinicio de Supavisor, mantenimiento), el pool la descarta y lo loguea en vez de tirar el
+  proceso. El pool no tiene timeout de conexión (con el pool lleno las requests esperan turno, como antes);
+  `/api/health` tiene su propio tope de 5 s y con la base caída responde 503 en vez de quedar colgado; mientras su
+  consulta siga pendiente, los healthchecks siguientes la reusan en vez de encolar otra.
 - **Conexiones a Supabase**: en modo sesión cada cliente ocupa un backend del pool de Supavisor. Web usa hasta 4 y
   worker hasta 3; durante un redeploy pueden coexistir el despliegue viejo y el nuevo: (4 + 3) × 2 = 14, más 1 del
   migrador del pre-deploy. `pg` abre conexiones a demanda y cierra las ociosas a los 10 s, así que es el peor caso.

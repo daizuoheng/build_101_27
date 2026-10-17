@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { poolConfig } from "@/server/db/pool";
+import { describe, expect, it, vi } from "vitest";
+import { createPool, poolConfig } from "@/server/db/pool";
 
 const SESSION = "postgresql://postgres.abcd:pw@aws-0-sa-east-1.pooler.supabase.com:5432/postgres";
 
@@ -55,6 +55,23 @@ describe("poolConfig", () => {
 
   it("rechaza el pooler transaccional (6543): el migrador y los jobs necesitan sesión", () => {
     expect(() => poolConfig(SESSION.replace(":5432", ":6543"), {})).toThrow(/modo sesión/);
+    expect(() => poolConfig(`${SESSION.replace(":5432", "")}?port=6543`, {})).toThrow(/modo sesión/);
+  });
+
+  it("sslmode explícito manda también en local (túnel hacia la base remota)", () => {
+    expect(poolConfig("postgres://localhost:6432/postgres?sslmode=require", {}).ssl).toEqual({ rejectUnauthorized: false });
+    expect(poolConfig("postgres://localhost:6432/postgres?sslmode=verify-full", { DATABASE_CA_CERT: "PEM" }).ssl).toEqual({
+      ca: "PEM",
+      rejectUnauthorized: true,
+    });
+  });
+
+  it("sslmode sin distinguir mayúsculas; prefer/allow y desconocidos dan error", () => {
+    expect(poolConfig("postgres://u:p@db:5432/app?sslmode=DISABLE", {}).ssl).toBe(false);
+    expect(() => poolConfig(`${SESSION}?sslmode=VERIFY-FULL`, {})).toThrow(/DATABASE_CA_CERT/);
+    for (const mode of ["prefer", "allow", "requiere"]) {
+      expect(() => poolConfig(`${SESSION}?sslmode=${mode}`, {}), mode).toThrow(/no se admite/);
+    }
   });
 
   it("tamaño del pool por entorno; vacío usa el default y un valor inválido falla", () => {
@@ -62,5 +79,14 @@ describe("poolConfig", () => {
     expect(poolConfig(SESSION, { DATABASE_POOL_MAX: "" }).max).toBe(10);
     expect(() => poolConfig(SESSION, { DATABASE_POOL_MAX: "0" })).toThrow(/DATABASE_POOL_MAX/);
     expect(() => poolConfig(SESSION, { DATABASE_POOL_MAX: "cinco" })).toThrow(/DATABASE_POOL_MAX/);
+  });
+
+  it("una conexión ociosa cortada por el servidor no tira el proceso", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const pool = createPool("postgres://localhost/radar_urbano");
+    expect(() => pool.emit("error", new Error("terminating connection due to administrator command"))).not.toThrow();
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    await pool.end();
   });
 });
