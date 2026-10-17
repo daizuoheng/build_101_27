@@ -33,9 +33,12 @@ export function UnitInbox() {
   // Cada carga y cada acción toman un número; solo se aplica la respuesta del último pedido lanzado. Así un polling
   // que salió antes de «Aceptar» no vuelve a mostrar la orden como nueva cuando llega después.
   const generation = useRef(0);
+  // Mientras hay una acción en curso no se lanzan cargas: su respuesta ya trae la bandeja posterior a la acción.
+  const acting = useRef(false);
   const router = useRouter();
 
   const load = useCallback(async () => {
+    if (acting.current) return;
     const gen = ++generation.current;
     try {
       const data = await api<UnitInboxResponse>("/api/unidad/assignments");
@@ -80,17 +83,20 @@ export function UnitInbox() {
     if (!keys.current.has(k)) keys.current.set(k, crypto.randomUUID());
     setBusyId(card.id);
     setNotice(null);
-    // La acción invalida cualquier carga en curso: su respuesta trae la bandeja posterior a la acción.
-    const gen = ++generation.current;
+    // La acción invalida las cargas que ya estaban en vuelo y frena las nuevas hasta terminar.
+    ++generation.current;
+    acting.current = true;
     try {
       const res = await api<{ inbox: UnitInboxResponse }>(`/api/unidad/assignments/${encodeURIComponent(card.id)}`, {
         method: "POST",
         json: { action, expectedVersion: card.version, idempotencyKey: keys.current.get(k), reason: reason || undefined },
       });
-      if (gen === generation.current) setInbox(res.inbox);
+      acting.current = false;
+      setInbox(res.inbox);
       setNow(Date.now());
       setNotice({ tone: "ok", text: ACTION[action].done });
     } catch (err) {
+      acting.current = false; // antes de recargar ante un 409
       if (err instanceof HttpError && err.status === 409) {
         setNotice({ tone: "warn", text: "La orden cambió mientras tanto. Actualizamos la bandeja; revisala de nuevo." });
         await load();
@@ -102,6 +108,7 @@ export function UnitInbox() {
         setNotice({ tone: "error", text: errorMessage(err) });
       }
     } finally {
+      acting.current = false;
       setBusyId(null);
     }
   }
