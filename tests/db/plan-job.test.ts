@@ -108,6 +108,16 @@ describe("job plan", () => {
     expect((await one(pool, "select snapshot_refs from plan_runs where id = $1", [second.planRunId])).snapshot_refs.policy_versions).toEqual(expect.objectContaining({ planning: expect.any(String), dispatch: expect.any(String), priority: expect.any(String) }));
   });
 
+  it("si la corrida falla, los pedidos juntados vuelven a quedar pendientes", async () => {
+    await incident(pool, t, { slug: "bache" });
+    for (const s of ["a", "b"]) await enqueue(pool, { kind: "plan", entityType: "territory", entityId: t, entityRevision: 0, territoryId: t, dedupeSuffix: s });
+    const last = (await pool.query("select * from jobs where kind = 'plan' order by created_at desc limit 1")).rows[0];
+    const broken = () => { throw new Error("planificador roto"); };
+    await expect(planHandler(broken as never).run({ pool }, { ...last, territory_id: t, payload: {} })).rejects.toThrow("planificador roto");
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and status = 'pending'")).n).toBe(2);
+    expect((await one(pool, "select count(*)::int as n from plan_runs")).n).toBe(0);
+  });
+
   it("la replanificación periódica encola un job por territorio por intervalo", async () => {
     const now = new Date("2026-10-17T22:00:00Z");
     expect(await enqueuePeriodicPlans(pool, now)).toBe(1);

@@ -98,9 +98,23 @@ export async function buildSnapshot(db: Db, territoryId: string, now: Date): Pro
  * Job `plan` (`RunPlan` de src/server/contracts.ts): snapshot → `buildPlan` (puro, de Operación) → plan_runs/plan_items.
  * Los ítems del plan anterior que no se ejecutaron quedan `obsolete`. Encola `dispatch` si hay propuestas.
  */
-export async function runPlan(pool: Pool, input: { territoryId: string; trigger: string }, deps: { buildPlan: BuildPlan; now?: () => Date }): Promise<{ planRunId: string }> {
+export async function runPlan(
+  pool: Pool,
+  input: { territoryId: string; trigger: string; jobId?: string },
+  deps: { buildPlan: BuildPlan; now?: () => Date },
+): Promise<{ planRunId: string; coalesced: number }> {
   return withTx(async (c) => {
     await c.query("select pg_advisory_xact_lock(hashtext($1))", [input.territoryId]); // mismo lock que los escritores de incidentes
+    // Pedidos pendientes y vencidos del territorio: esta corrida los cubre. En la misma transacción: si falla, vuelven a pendientes.
+    const coalesced = input.jobId
+      ? (await c.query(
+          `update jobs set status = 'done', last_error = 'coalesced:' || $2, updated_at = now()
+           where kind = 'plan' and entity_id = $1 and status = 'pending' and id <> $2 and run_after <= now()
+             and created_at <= (select created_at from jobs where id = $2)`,
+          [input.territoryId, input.jobId],
+        )).rowCount ?? 0
+      : 0;
+    const trigger = coalesced ? `${input.trigger}+${coalesced}` : input.trigger;
     // Un único instante, del reloj de la base (no del worker): ordena bien los planes aunque haya varios workers.
     const now = deps.now?.() ?? (await c.query<{ now: Date }>("select now() as now")).rows[0].now;
     const { snapshot, policy, policyVersionId, policyVersions, bands, revisions } = await buildSnapshot(c, input.territoryId, now);
@@ -109,7 +123,7 @@ export async function runPlan(pool: Pool, input: { territoryId: string; trigger:
     const run = await c.query<{ id: string }>(
       `insert into plan_runs (territory_id, policy_version_id, computed_at, trigger, snapshot_refs, stats)
        values ($1, $2, $3, $4, $5, $6) returning id`,
-      [input.territoryId, policyVersionId, now, input.trigger, JSON.stringify({ incident_revisions: revisions, units: snapshot.units.map((u) => u.id), policy_versions: policyVersions }),
+      [input.territoryId, policyVersionId, now, trigger, JSON.stringify({ incident_revisions: revisions, units: snapshot.units.map((u) => u.id), policy_versions: policyVersions }),
         JSON.stringify({ incidents: snapshot.incidents.length, units: snapshot.units.length, proposals: result.proposals.length, pending: result.pending.length })],
     );
     const planRunId = run.rows[0].id;
@@ -125,9 +139,11 @@ export async function runPlan(pool: Pool, input: { territoryId: string; trigger:
       [input.territoryId, planRunId],
     );
     // La banda con la que se ordenó (promoción por antigüedad) queda también en el incidente, para que la vista coincida.
-    for (const [id, band] of Object.entries(bands)) {
-      await c.query("update incidents set priority_band = $2 where id = $1 and priority_band <> $2", [id, band]);
-    }
+    await c.query(
+      `update incidents i set priority_band = b.band from unnest($1::uuid[], $2::text[]) as b(id, band)
+       where i.id = b.id and i.priority_band <> b.band`,
+      [Object.keys(bands), Object.values(bands)],
+    );
     for (const q of result.queue) {
       // Un incidente ya asignado no está bloqueado: sigue en la cola con su orden activa.
       const assigned = q.pendingReasons.includes("active_assignment");
@@ -140,11 +156,11 @@ export async function runPlan(pool: Pool, input: { territoryId: string; trigger:
           JSON.stringify(q.proposal ? q.proposal.reasons : q.pendingReasons), status, q.proposal ? null : (q.pendingReasons[0] ?? null)],
       );
     }
-    await appendEvent(c, { entityType: "territory", entityId: input.territoryId, kind: "plan_computed", actorType: "system", data: { plan_run_id: planRunId, trigger: input.trigger, proposals: result.proposals.length } });
+    await appendEvent(c, { entityType: "territory", entityId: input.territoryId, kind: "plan_computed", actorType: "system", data: { plan_run_id: planRunId, trigger, proposals: result.proposals.length } });
     if (result.proposals.length) {
       await enqueue(c, { kind: "dispatch", entityType: "plan_run", entityId: planRunId, entityRevision: 0, territoryId: input.territoryId, payload: { plan_run_id: planRunId } });
     }
-    return { planRunId };
+    return { planRunId, coalesced };
   }, pool);
 }
 
@@ -153,18 +169,12 @@ export async function runPlan(pool: Pool, input: { territoryId: string; trigger:
  * anteriores a ella, así no se recalcula una vez por evento redundante.
  */
 export function planHandler(buildPlan: BuildPlan): { run: (deps: { pool: Pool }, job: Job) => Promise<void> } {
-  return { run: async (deps: { pool: Pool }, job: Job) => {
-    const territoryId = job.territory_id ?? job.entity_id;
-    const coalesced = await deps.pool.query<{ id: string }>(
-      `update jobs set status = 'done', last_error = 'coalesced:' || $3, updated_at = now()
-       where kind = 'plan' and entity_id = $1 and status = 'pending' and id <> $2 and run_after <= now()
-         and created_at <= (select created_at from jobs where id = $2)
-       returning id`,
-      [territoryId, job.id, job.id],
-    );
-    const trigger = String((job.payload as { trigger?: string }).trigger ?? job.payload?.reason ?? "event");
-    await runPlan(deps.pool, { territoryId, trigger: coalesced.rows.length ? `${trigger}+${coalesced.rows.length}` : trigger }, { buildPlan });
-  } };
+  return {
+    run: async (deps, job) => {
+      const trigger = String((job.payload as { trigger?: string; reason?: string }).trigger ?? job.payload?.reason ?? "event");
+      await runPlan(deps.pool, { territoryId: job.territory_id ?? job.entity_id, trigger, jobId: job.id }, { buildPlan });
+    },
+  };
 }
 
 /** Replanificación periódica (factores temporales: antigüedad, ventana, vigencia de posiciones). Un job por intervalo. */
