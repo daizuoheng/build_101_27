@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { policies } from "../../seeds/policies";
 import { checkText, redactFacts, userMessage, type TextInput } from "@/server/ai/llm/generate-text";
 import { TextgenPolicy } from "@/server/config/policies";
+import { textInputs } from "@/server/pipeline/textgen";
 
 const policy = TextgenPolicy.parse(policies.textgen);
 const input = (references: TextInput["references"] = []): TextInput => ({
@@ -22,6 +23,14 @@ describe("patrones prohibidos de textgen (seed)", () => {
     "Se enviará una cuadrilla",
     "Mandamos personal al lugar",
     "Se asignó una cuadrilla",
+    "Se enviaron dos cuadrillas al lugar.",
+    "Se envían 2 operarios",
+    "Una cuadrilla va a llegar en 30 minutos.",
+    "La unidad llegará en 2 h.",
+    "Llegará en 1h",
+    "Hay un equipo en camino.",
+    "Una cuadrilla irá mañana",
+    "Se resolverá en 24 horas",
   ])("rechaza «%s»", (body) => {
     expect(check(body)).toMatch(/prohibido por política/);
   });
@@ -89,5 +98,14 @@ describe("referencias ciudadanas en el mensaje", () => {
     expect(refs[0].text).toContain("Hay basura tirada");
     expect(refs[0].text).toContain(policy.labels.redacted);
     expect(refs[0].text).not.toMatch(/20 minutos/);
+  });
+});
+
+describe("explicación de prioridad sin desglose", () => {
+  const inc = (band: string) => ({ id: "i", territory_id: "t", revision: 1, type_name: "Bache", area_name: null, location_text: null, severity: "low",
+    active_hazard: false, passage: "none", accessibility: "not_affected", priority_band: band, priority_breakdown: {}, report_count: 1 });
+  it("una banda alta sin reglas no se explica como «sin motivos»", () => {
+    expect(textInputs(inc("high"), [], policy).explain_priority.facts.reasons).toEqual([policy.labels.unexplained_band]);
+    expect(textInputs(inc("unknown"), [], policy).explain_priority.facts.reasons).toEqual([policy.labels.no_reasons]);
   });
 });

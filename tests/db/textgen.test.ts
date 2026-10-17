@@ -262,6 +262,17 @@ describe("textos generados (textgen)", () => {
     expect(llm.calls).toHaveLength(0);
   });
 
+  it("apagar textgen retira el texto del LLM ya guardado y deja la plantilla", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    await generateText({ pool, llm: fakeLlm(citeFirst) }, input);
+    await pool.query("update policy_versions set config = jsonb_set(config, '{enabled}', 'false') where kind = 'textgen'");
+    const res = await generateText({ pool, llm: fakeLlm(citeFirst) }, input);
+    expect(res.source).toBe("template");
+    expect((await texts(pool)).rows[0]).toMatchObject({ body: "Bache — Av. Italia 2450", llm_run_id: null });
+  });
+
   it("con textgen.enabled = false usa la plantilla sin llamar al LLM", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);

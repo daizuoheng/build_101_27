@@ -187,18 +187,22 @@ export const policies = {
     // Las descripciones las escribe el ciudadano: se recortan antes de pasarlas al LLM.
     max_reference_chars: 500,
     // El texto se rechaza (y va la plantilla) si promete despacho o tiempos: eso lo decide el backend, no el LLM.
-    // Límites de palabra Unicode: \\b es ASCII en JS y no corta después de «á». Se compilan con flags "iu".
+    // Es una segunda barrera, no la principal: los hechos nunca traen estado ni despacho y las instrucciones lo
+    // prohíben. Ninguna lista de expresiones cubre todo el español; se suman casos a medida que aparecen.
+    // Límites de palabra Unicode: \b es ASCII en JS y no corta después de «á». Se compilan con flags "iu".
     forbidden_patterns: [
-      // Promesas de llegada o demora: verbo en presente o futuro y una cantidad de tiempo (no narración pasada).
-      "(?<![\\p{L}\\p{N}])(llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán)(?:\\s+(?!(?:hace|desde)(?![\\p{L}\\p{N}]))\\p{L}+){0,3}?\\s+(?:(?:en|dentro de)\\s+)?(\\d+|unos?|unas?|pocos?|pocas?|media)\\s+(minutos?|min|horas?|hs|días?)(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])(llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán)\\s+(hoy|mañana|pronto|enseguida|ya)(?![\\p{L}\\p{N}])",
-      // «en camino» solo como promesa: verbo justo antes y fin de frase o «a/al/hacia/para» después.
-      // «El bache está en Camino Carrasco» es una dirección, no un aviso.
-      "(?<![\\p{L}\\p{N}])(está|están|estamos|va|van|vamos|sigue|siguen|salió|salieron)\\s+en camino(?=\\s*(?:$|[.,;:!?)])|\\s+(?:a|al|hacia|para)(?![\\p{L}\\p{N}]))",
+      // Promesas de llegada, demora o resolución: verbo (presente, futuro o «va a …») y una cantidad de tiempo; no narración («no llega hace 5 días»).
+      "(?<![\\p{L}\\p{N}])(?:llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán|(?:va|van|vamos)\\s+a\\s+(?:llegar|arribar|demorar|tardar|ir|pasar|resolver))(?:\\s+(?!(?:hace|desde)(?![\\p{L}\\p{N}]))\\p{L}+){0,3}?\\s+(?:(?:en|dentro de)\\s+)?(?:\\d+\\s*|(?:unos?|unas?|pocos?|pocas?|media|dos|tres|cuatro|cinco|diez|veinte|treinta)\\s+)(?:minutos?|min|horas?|hs?|días?)(?![\\p{L}\\p{N}])",
+      "(?<![\\p{L}\\p{N}])(?:llega|llegan|llegará|llegarán|llegaría|llegamos|arriba|arriban|arribará|arribarán|demora|demoran|demorará|demorarán|tarda|tardan|tardará|tardarán|(?:va|van|vamos)\\s+a\\s+(?:llegar|arribar|demorar|tardar|ir|pasar|resolver))\\s+(?:hoy|mañana|pronto|enseguida|ya)(?![\\p{L}\\p{N}])",
+      // Cualquier futuro (-rá/-rán) con plazo: «se resolverá en 24 horas», «irá mañana».
+      "(?<![\\p{L}\\p{N}])\\p{L}+r(?:á|án)(?:\\s+\\p{L}+){0,2}?\\s+(?:(?:en|dentro de)\\s+)?(?:\\d+\\s*|(?:unos?|unas?|pocos?|pocas?|media|dos|tres|cuatro|cinco|diez|veinte|treinta)\\s+)(?:minutos?|min|horas?|hs?|días?)(?![\\p{L}\\p{N}])",
+      "(?<![\\p{L}\\p{N}])\\p{L}+r(?:á|án)\\s+(?:hoy|mañana|pronto|enseguida|ya)(?![\\p{L}\\p{N}])",
+      // «en camino» solo como aviso: seguido de fin de frase o «a/al/hacia/para». «El bache está en Camino Carrasco» es una dirección.
+      "(?<![\\p{L}\\p{N}])(?:hay|está|están|estamos|va|van|vamos|sigue|siguen|salió|salieron)(?:\\s+\\p{L}+){0,3}?\\s+en camino(?=\\s*(?:$|[.,;:!?)])|\\s+(?:a|al|hacia|para)(?![\\p{L}\\p{N}]))",
       // Despacho: «despachar» siempre; asignar, enviar o mandar solo con personal como objeto («se le asigna prioridad» pasa).
       "(?<![\\p{L}\\p{N}])despach\\p{L}*",
-      "(?<![\\p{L}\\p{N}])(fue|fueron|está|están|quedó|quedaron|ya)\\s+(asignad|enviad|derivad)[oa]s?(?![\\p{L}\\p{N}])",
-      "(?<![\\p{L}\\p{N}])(envi|mand|asign)\\p{L}*\\s+(a\\s+)?(una?\\s+|el\\s+|la\\s+)?(cuadrillas?|unidad(es)?|equipos?|personal|móvil(es)?|operarios?)(?![\\p{L}\\p{N}])",
+      "(?<![\\p{L}\\p{N}])(?:fue|fueron|está|están|quedó|quedaron|ya)\\s+(?:asignad|enviad|derivad)[oa]s?(?![\\p{L}\\p{N}])",
+      "(?<![\\p{L}\\p{N}])(?:envi|enví|mand|asign)\\p{L}*\\s+(?:a\\s+)?(?:(?:una?|el|la|los|las|\\d+|dos|tres|cuatro|cinco)\\s+)?(?:cuadrillas?|unidad(?:es)?|equipos?|personal|móvil(?:es)?|operarios?)(?![\\p{L}\\p{N}])",
     ],
     instructions: {
       common:
@@ -219,6 +223,7 @@ export const policies = {
       list_separator: ", ",
       no_reasons: "sin motivos de riesgo registrados",
       redacted: "[dato omitido]",
+      unexplained_band: "sin desglose registrado (puede ser un ajuste del operador)",
       severity: { low: "baja", medium: "media", high: "alta", undetermined: "sin determinar" },
       passage: { total: "bloqueado", partial: "parcialmente obstruido", none: "libre", undetermined: "sin determinar" },
       accessibility: { affected: "afectada", not_affected: "no afectada", undetermined: "sin determinar" },

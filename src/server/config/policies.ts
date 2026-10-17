@@ -128,6 +128,7 @@ export const TextgenPolicy = LlmCallConfig.extend({
     list_separator: z.string(),
     no_reasons: z.string(),
     redacted: z.string(),
+    unexplained_band: z.string(),
     severity: z.record(z.string(), z.string()),
     passage: z.record(z.string(), z.string()),
     accessibility: z.record(z.string(), z.string()),

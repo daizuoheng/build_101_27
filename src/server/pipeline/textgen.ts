@@ -81,7 +81,7 @@ export function textInputs(inc: Omit<IncidentRow, "status">, reports: { id: stri
     explain_priority: {
       ...base,
       purpose: "explain_priority",
-      facts: { priority: label(L.priority_band, inc.priority_band), reason_codes: rules, reasons: reasons.length ? reasons : [L.no_reasons] },
+      facts: { priority: label(L.priority_band, inc.priority_band), reason_codes: rules, reasons: reasons.length ? reasons : [["high", "medium"].includes(inc.priority_band) ? L.unexplained_band : L.no_reasons] },
       references: rules.map((r) => ({ id: r, text: label(L.priority_rule, r) })),
     },
   };

@@ -158,7 +158,8 @@ export async function generateText(
   const hit = await cached(deps.pool, input);
   // Una plantilla cacheada solo se reintenta si hay con qué: política prendida y cliente LLM. Un texto cacheado que
   // la política vigente ya no admite (se endurecieron patrones o límites) se vuelve a redactar y se reemplaza.
-  const stale = hit !== null && bodyViolation(policy, input.purpose, hit.body) !== null;
+  // Apagar textgen también retira los textos del LLM ya guardados: pasan a plantilla.
+  const stale = hit !== null && (bodyViolation(policy, input.purpose, hit.body) !== null || (!policy.enabled && hit.llm_run_id !== null));
   if (hit && !stale && (hit.llm_run_id || !policy.enabled || !deps.llm)) {
     return { body: hit.body, references: hit.references, llmRunId: hit.llm_run_id, source: "cache", discarded: false };
   }
