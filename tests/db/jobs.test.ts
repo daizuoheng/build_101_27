@@ -74,9 +74,16 @@ describe("cola de jobs (correcciones de revisión del PR #1)", () => {
     const moved = await importAreas(pool, { ...base, sourceUrl: "https://ejemplo.test/barrios.json", sourceDate: "2026-10-18" });
     expect(moved.updated).toBe(62);
     expect((await pool.query("select distinct source_url from areas")).rows).toEqual([{ source_url: "https://ejemplo.test/barrios.json" }]);
+
+    // Omitir la fuente conserva la guardada: ni se borra ni cuenta como actualización.
+    const omitted = await importAreas(pool, base);
+    expect(omitted.updated).toBe(0);
+    expect((await pool.query("select distinct source_url, source_date::text from areas")).rows).toEqual([{ source_url: "https://ejemplo.test/barrios.json", source_date: "2026-10-18" }]);
+
     await pool.query("update areas set checksum = 'viejo', name = 'NOMBRE VIEJO' where external_id = '51'");
-    const fixed = await importAreas(pool, { ...base, sourceUrl: "https://ejemplo.test/barrios.json", sourceDate: "2026-10-18" });
+    const fixed = await importAreas(pool, base);
     expect(fixed.updated).toBe(1);
+    expect((await pool.query("select source_url from areas where external_id = '51'")).rows[0].source_url).toBe("https://ejemplo.test/barrios.json");
     expect((await pool.query("select name from areas where external_id = '51'")).rows[0].name).toBe("CENTRO");
   });
 
