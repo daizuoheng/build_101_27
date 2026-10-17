@@ -6,7 +6,9 @@ Actualizado: 17 de octubre de 2026 (segunda sesión). Workspace: `/Users/fededal
 
 **Primer recorrido completo funcionando en local con IA real**: chat → borrador → confirmación idempotente → job → evaluación Jev → incidente visible en `/operacion`. Ver `docs/superpowers/notes/recorrido-1.md` (cómo correrlo) y `docs/superpowers/notes/jev-smoke.md` (validación de Jev 18/18, DeepSeek y Nominatim). Hechas las Tareas 1, 2, 3 y 7, y las partes de las 4, 5, 6, 8 y 13 que pide el recorrido. 29 tests (`pnpm test`).
 
-Falta: despliegue (esperando cuentas de Supabase y Railway), agrupación (T9), reevaluación y overrides (T10), planificador (T11), despacho y bandeja de unidad (T12), cola de revisión (T14) y textos generados con unidades de demo (T15).
+**Bases compartidas** (PR #2): contratos de plan, órdenes, revisión, overrides y vínculos en `src/shared/contracts/`; firmas de servicios entre módulos en `src/server/contracts.ts`; unidades y usuarios de demo (`pnpm cli seed-demo`, `refresh-demo-positions`, `reset-demo --yes`).
+
+Falta: despliegue (esperando cuentas de Supabase y Railway), agrupación (T9, en curso), reevaluación y overrides (T10), planificador (T11), despacho y bandeja de unidad (T12), cola de revisión (T14) y textos generados (T15).
 
 Para arrancar en local: `pnpm install && pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`. `.env` lleva las claves de Jev y DeepSeek. `.env.local` lleva `DATABASE_URL`, `SESSION_SECRET` y `DEMO_*_PASSWORD` (ver `.env.example`).
 
@@ -44,7 +46,9 @@ Visuales compartibles: [diseño de sistema](https://claude.ai/artifact/885kaef8r
 
 ## Reparto por módulos (desde 17 oct ~16:00)
 
-`feat/mvp` es la rama de integración. Cada módulo trabaja en su rama (`feat/recepcion`, `feat/operacion`, `feat/nucleo`) creada desde `feat/mvp` y abre PR contra `feat/mvp`. Mergear seguido, idealmente cada hora, para que el recorrido integrado no se rompa. `main` no se toca hasta congelar.
+**Flujo por épicas.** `main` tiene las bases compartidas: esquema completo, contratos y seeds (PR #1 y #2). Cada módulo tiene su épica creada desde `main`: `epic/recepcion`, `epic/operacion` y `epic/nucleo`. Cada tarea va en una rama `feat/<tarea>` desde su épica, con PR contra esa épica. Las épicas se mergean a `main` por PR al cerrar un hito, idealmente cada 2 horas. Después de cada merge a `main`, las épicas lo traen (`git merge origin/main`) para no desincronizarse.
+
+Cambios de bases compartidas (migraciones, `src/shared/contracts/*`, `src/server/contracts.ts`, seeds comunes) **no van por las épicas**: van en un PR chico directo a `main`, con aviso al equipo, y cada épica lo trae enseguida.
 
 ### Módulo Recepción y superficies móviles
 
@@ -75,15 +79,15 @@ Dueño de `migrations`, `seeds`, `scripts/cli.ts`, `src/server/{db,config,jobs,a
 ### Reglas de convivencia
 
 - **Esquema:** solo Núcleo agrega migraciones, para evitar choques de numeración. Si necesitás una columna, pedila.
-- **Archivos compartidos:** `src/shared/contracts/*`, `src/server/jobs/handlers.ts` y `scripts/cli.ts` se tocan con PR chico y aviso, y en `handlers.ts` solo se agregan entradas.
-- **Interfaces entre módulos:** las firmas son las de los bloques **Interfaces** del plan. `buildPlan(snapshot, policy, now)` y `applyPlan(pool, planRunId)` son el contrato entre Operación y Núcleo.
+- **Contratos:** HTTP y tipos en `src/shared/contracts/` (`intake`, `incident`, `evaluation`, `plan`, `assignment`, `review`). Firmas de servicios entre módulos en `src/server/contracts.ts`, con la ruta donde vive cada implementación. Se implementan tal cual; cambiarlos es un PR a `main`.
+- **Archivos compartidos:** `src/server/jobs/handlers.ts` y `scripts/cli.ts` solo admiten agregar entradas.
 - **Datos operativos:** nada hardcodeado. Unidades, umbrales, plantillas y textos de Jev salen de seeds y políticas.
 - **IA en tests:** los tests usan los dobles de `tests/db/fakes.ts`; las integraciones reales se prueban con `pnpm cli smoke-jev`.
 - **Antes de cada PR:** `pnpm test`, `pnpm typecheck` y `pnpm lint`.
 
 ### Puesta en marcha de cada persona
 
-1. `git checkout feat/mvp && pnpm install`.
+1. `git checkout main && git pull && pnpm install` (con los PR #1 y #2 mergeados), y crear o traer tu épica.
 2. Postgres con PostGIS local (o la base de desarrollo de Supabase cuando exista); crear las bases `radar_urbano` y `radar_urbano_test`.
 3. Copiar `.env.example` a `.env.local` y completarlo. Las claves de Jev y DeepSeek se pasan por privado, nunca por el repo.
 4. `pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`.
@@ -94,10 +98,10 @@ Dueño de `migrations`, `seeds`, `scripts/cli.ts`, `src/server/{db,config,jobs,a
 Un worktree por agente, nunca dos agentes en la misma carpeta:
 
 ```bash
-git checkout feat/mvp && git pull
-git branch feat/operacion feat/mvp && git push -u origin feat/operacion   # rama del módulo (una vez)
-scripts/agent-worktree.sh plan     feat/operacion 3201   # ../radar-plan     → rama feat/plan
-scripts/agent-worktree.sh revision feat/operacion 3202   # ../radar-revision → rama feat/revision
+git checkout main && git pull
+git branch epic/operacion main && git push -u origin epic/operacion   # épica del módulo (una vez)
+scripts/agent-worktree.sh plan     epic/operacion 3201   # ../radar-plan     → rama feat/plan
+scripts/agent-worktree.sh revision epic/operacion 3202   # ../radar-revision → rama feat/revision
 ```
 
 El script crea la carpeta hermana `../radar-<nombre>` con su rama (sin upstream, para que un `git push` no caiga en la base) y sus bases `radar_urbano_<nombre>` y `_test`. También comparte `.env` por symlink, instala, migra y seedea. **Las bases separadas son obligatorias**: los tests vacían la base de test, y dos agentes con la misma base se rompen entre sí.
@@ -105,7 +109,7 @@ El script crea la carpeta hermana `../radar-<nombre>` con su rama (sin upstream,
 - **Cantidad:** 2–3 agentes por persona como máximo. Más agentes es más tiempo integrando que construyendo.
 - **Separación por archivos:** cada agente es dueño de archivos distintos dentro del módulo. Ejemplo para Operación: agente 1 con `src/server/planning` (buildPlan puro y tests); agente 2 con la cola de revisión (`src/server/review`, `src/app/operacion/revision`); el despacho cuando `buildPlan` esté mergeado.
 - **Brief de cada agente:** leer `HANDOFF.md`, el plan (su Tarea N con su bloque **Interfaces**) y el diseño §5–7; qué archivos puede tocar; prohibido tocar `migrations/` y `seeds/`; terminar con `pnpm test && pnpm typecheck && pnpm lint` en verde y un commit en su rama.
-- **Integración (la hace la persona, no el agente):** mergear la rama del agente en la del módulo, correr tests y `scripts/e2e-walkthrough.mjs`, y abrir PR a `feat/mvp`. Rebasear los agentes sobre `feat/mvp` cada vez que entre algo.
+- **Integración (la hace la persona, no el agente):** PR de la rama del agente a la épica; antes, correr tests y `scripts/e2e-walkthrough.mjs`. Traer `main` a la épica cada vez que entre algo.
 - **Limpieza:** `git worktree remove ../radar-<nombre> && dropdb radar_urbano_<nombre> && dropdb radar_urbano_<nombre>_test`.
 
 Hitos (quedan unas 9 h): **20:00** recorrido desplegado y probado desde celular; **22:00** agrupación, reevaluación y plan; **00:00** despacho, bandeja de unidad y cola de revisión; **01:00** congelar y ensayar la demo.
