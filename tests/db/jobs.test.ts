@@ -6,7 +6,7 @@ import { appendCitizenMessage, createDraft, getReport, setLocation } from "@/ser
 import { confirmReport } from "@/server/intake/confirm";
 import { claimNext, completeJob, enqueue, failJob } from "@/server/jobs/queue";
 import { handlers } from "@/server/jobs/handlers";
-import { runOnce } from "@/server/jobs/worker-loop";
+import { runOnce, runWorker } from "@/server/jobs/worker-loop";
 import { incidentsAffectedByReviewItem, openReviewItem } from "@/server/review/items";
 import { newSession, territoryId, testDeps } from "./fakes";
 import { resetDb, testDb } from "./setup";
@@ -43,6 +43,21 @@ describe("cola de jobs (correcciones de revisión del PR #1)", () => {
     expect((await pool.query("select status from jobs")).rows[0].status).toBe("failed");
     const ri = await pool.query("select kind, entity_id from review_items where status = 'open'");
     expect(ri.rows).toEqual([{ kind: "provider_failure", entity_id: ENTITY }]);
+  });
+
+  it("runWorker ejecuta la tarea periódica al arrancar y luego cada everyMs, y sigue si falla", async () => {
+    const pool = await testDb();
+    const calls: number[] = [];
+    const controller = new AbortController();
+    const run = async () => { calls.push(Date.now()); if (calls.length === 2) throw new Error("tick roto"); };
+    const logs: string[] = [];
+    const done = runWorker(testDeps(pool), {}, { workerId: "w", idleMs: 5, signal: controller.signal, periodic: { everyMs: 40, run }, log: (m) => logs.push(m) });
+    await new Promise((r) => setTimeout(r, 150));
+    controller.abort();
+    await done;
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls[1] - calls[0]).toBeGreaterThanOrEqual(35);
+    expect(logs.some((m) => m.includes("tick roto"))).toBe(true);
   });
 
   it("reintentar la confirmación revive un process_report fallido", async () => {
