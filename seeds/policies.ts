@@ -206,6 +206,9 @@ export const policies = {
   },
   textgen: {
     enabled: true,
+    // Decisión del 17 oct: los tres textos salen de plantillas deterministas (hechos y códigos de motivo del backend).
+    // El LLM queda disponible por propósito, p. ej. ["summary"] para condensar las descripciones de los vecinos.
+    llm_purposes: [] as ("title" | "summary" | "explain_priority")[],
     model: "deepseek-flash",
     instructions_version: "textgen-v1",
     // Resumen de hasta 420 caracteres + hasta 5 ids citados en json: 300 se quedaba corto.

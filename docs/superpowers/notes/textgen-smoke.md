@@ -5,6 +5,16 @@
 (título, resumen y explicación de prioridad), redactados con `draftText`. No se cachea ni se crean incidentes. Desde la
 revisión interna tampoco escribe `llm_runs`, porque sus ids no son incidentes reales.
 
+
+> **Decisión del 17 oct: los textos son deterministas.** La política `textgen` del seed trae `llm_purposes: []`, así
+> que el título, el resumen y la explicación de prioridad salen de las plantillas `textgen_*`, armadas con los hechos y
+> los códigos de motivo del backend. No hay texto libre generado, por lo que no hay riesgo de que se prometa despacho
+> ni tiempos. El LLM sigue disponible por propósito (por ejemplo, `["summary"]` para condensar las descripciones de
+> los vecinos). Este smoke prueba ese camino forzando los tres propósitos.
+>
+> Ejemplo real con el worker: título «Accesibilidad obstruida — 18 de Julio 1234, CENTRO»; explicación «Prioridad
+> alta por: severidad alta, paso bloqueado, accesibilidad afectada.» (31 ms, sin LLM).
+
 ## Resultado
 
 **9/9 textos vinieron del LLM y validaron** contra el esquema, el largo máximo, las referencias del input y los
@@ -98,3 +108,6 @@ pnpm cli policy-upgrade --kind textgen     # publica la política del seed como 
 ```
 
 Una base nueva (Supabase) toma todo del seed.
+
+El seed nunca pisa plantillas que ya existen. Una base que ya tenía `textgen_summary` conserva la versión vieja
+(sin peligro activo, paso ni accesibilidad) hasta que alguien la actualice a mano desde `seeds/templates.ts`.

@@ -57,7 +57,8 @@ export async function smokeLlm(): Promise<number> {
     console.error("Correr primero `pnpm cli seed`.");
     return 2;
   }
-  const policy = TextgenPolicy.parse(policies.textgen);
+  // El seed deja todo determinista; el smoke prueba el camino del LLM para cuando se active por propósito.
+  const policy = TextgenPolicy.parse({ ...policies.textgen, llm_purposes: ["title", "summary", "explain_priority"] });
   console.log(`modelo ${policy.model} · ${policy.instructions_version} · proveedor ${llm.provider}\n`);
   let fallbacks = 0;
   for (const [i, ex] of examples.entries()) {

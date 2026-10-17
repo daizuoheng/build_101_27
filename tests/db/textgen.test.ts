@@ -49,6 +49,8 @@ describe("textos generados (textgen)", () => {
     const pool = await testDb();
     await resetDb(pool);
     await seedAll(pool, { importAreas: false });
+    // Estos tests ejercitan el camino del LLM; el seed lo deja apagado (todo determinista), ver el test de abajo.
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{llm_purposes}', '["title","summary","explain_priority"]') where kind = 'textgen'`);
   });
 
   it("cachea por (propósito, entidad, revisión): la misma revisión no vuelve a llamar al LLM, una nueva sí", async () => {
@@ -273,13 +275,38 @@ describe("textos generados (textgen)", () => {
     expect((await texts(pool)).rows[0]).toMatchObject({ body: "Bache — Av. Italia 2450", llm_run_id: null });
   });
 
+  it("con la política del seed (llm_purposes vacío) los tres textos salen de plantillas sin llamar al LLM", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{llm_purposes}', '[]') where kind = 'textgen'`);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const llm = fakeLlm(citeFirst);
+    const res = await runTextgen({ pool, llm }, (await claimNext(pool, "w", 60))!);
+    expect(res).toEqual({ discarded: false, sources: { title: "template", summary: "template", explain_priority: "template" }, fallbacks: {} });
+    expect(llm.calls).toHaveLength(0);
+    const rows = (await texts(pool)).rows;
+    expect(rows.find((r) => r.purpose === "title")!.body).toBe("Bache — Av. Italia 2450");
+    expect(rows.find((r) => r.purpose === "explain_priority")!.body).toBe("Prioridad alta por: severidad alta.");
+  });
+
+  it("un propósito listado usa el LLM y los demás quedan deterministas", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{llm_purposes}', '["summary"]') where kind = 'textgen'`);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const llm = fakeLlm(citeFirst);
+    const res = await runTextgen({ pool, llm }, (await claimNext(pool, "w", 60))!);
+    expect(res.sources).toEqual({ title: "template", summary: "llm", explain_priority: "template" });
+    expect(llm.calls).toHaveLength(1);
+  });
+
   it("con textgen.enabled = false usa la plantilla sin llamar al LLM", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);
     await pool.query("update policy_versions set config = jsonb_set(config, '{enabled}', 'false') where kind = 'textgen'");
     const llm = fakeLlm(citeFirst);
     const res = await generateText({ pool, llm }, await titleInput(pool, incidentId));
-    expect(res).toMatchObject({ source: "template", error: "textgen deshabilitado por política" });
+    expect(res).toMatchObject({ source: "template" });
     expect(llm.calls).toHaveLength(0);
   });
 
