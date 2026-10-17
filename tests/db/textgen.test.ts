@@ -111,6 +111,28 @@ describe("textos generados (textgen)", () => {
     expect((await texts(pool)).rows).toEqual([]);
   });
 
+  it("si plan promueve la banda mientras el LLM redacta (misma revisión), la explicación vieja no se guarda", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query("update incidents set severity = 'low', priority_band = 'low', priority_breakdown = '{\"rules\": []}' where id = $1", [incidentId]);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const job = (await claimNext(pool, "w", 60))!;
+    // Lo que hace planInTx al promover por antigüedad: banda nueva sin revisión nueva, explicación invalidada.
+    // Una sola vez, y todas las redacciones esperan a que termine (corren en paralelo).
+    let promoted: Promise<unknown> | null = null;
+    const promote = async () => {
+      await pool.query(`update incidents set priority_band = 'medium', priority_breakdown = '{"rules": [], "promoted_by_age": true, "computed_band": "medium"}' where id = $1`, [incidentId]);
+      await pool.query("delete from generated_texts where purpose = 'explain_priority' and entity_id = $1", [incidentId]);
+    };
+    const llm = fakeLlm(async (call) => {
+      await (promoted ??= promote());
+      return citeFirst(call);
+    });
+    const res = await runTextgen({ pool, llm }, job);
+    expect(res.discarded).toBe(true);
+    expect((await pool.query("select 1 from generated_texts where purpose = 'explain_priority' and entity_id = $1", [incidentId])).rows).toHaveLength(0);
+  });
+
   it("salida inválida dos veces ⇒ plantilla de respaldo, sin llm_run_id y con los dos intentos registrados", async () => {
     const pool = await testDb();
     const { incidentId } = await incidentWithReport(pool);

@@ -280,6 +280,16 @@ describe("assess_incident y correcciones", () => {
     expect(a.evidence_summary.all_report_ids).toHaveLength(3);
   });
 
+  it("si la reevaluación tras vincular falla del todo, la revisión nueva igual tiene su textgen", async () => {
+    const jev = jevAssess();
+    const incidentId = await incidentWithTwoReports(pool, t, jev);
+    const rev = await revisionOf(pool, incidentId);
+    await pool.query("update jobs set attempts = 2 where kind = 'assess_incident'");
+    await drain(pool, downJev());
+    expect((await one(pool, "select status from jobs where kind = 'assess_incident' and entity_revision = $1", [rev])).status).toBe("failed");
+    expect((await pool.query("select entity_revision from jobs where kind = 'textgen' and entity_id = $1", [incidentId])).rows.map((r) => r.entity_revision)).toContain(rev);
+  });
+
   it("una falla de reevaluación ya obsoleta no abre provider_failure", async () => {
     const jev = jevAssess();
     const incidentId = await incidentWithTwoReports(pool, t, jev);

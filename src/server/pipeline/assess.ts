@@ -160,6 +160,8 @@ export async function onAssessIncidentFailed(deps: IntakeDeps, job: Job, error: 
     if (job.territory_id) await c.query("select pg_advisory_xact_lock(hashtext($1))", [job.territory_id]);
     const inc = await loadIncident(c, job.entity_id, true);
     if (!inc || !OPEN_STATUSES.includes(inc.status) || inc.revision !== job.entity_revision) return;
+    // Textos del operador: esta revisión (la que subió touchIncident) no se queda sin textos porque Jev esté caído.
+    await enqueueTextgen(c, { incidentId: inc.id, revision: inc.revision, territoryId: inc.territory_id });
     await openReviewItem(c, {
       territoryId: job.territory_id, kind: "provider_failure", entityType: "incident", entityId: job.entity_id,
       reasons: [{ code: "provider_failure", stage: "assess_incident", revision: job.entity_revision, error: error.slice(0, 500) }],
