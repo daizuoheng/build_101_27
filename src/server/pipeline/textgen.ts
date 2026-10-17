@@ -115,7 +115,8 @@ export async function runTextgen(
   return {
     discarded: results.some(([, r]) => r.discarded),
     sources: Object.fromEntries(results.map(([p, r]) => [p, r.source])),
-    // Por qué cayó a plantilla (política apagada, sin cliente, salida inválida): para el log del worker.
+    // Por qué cayó a plantilla (textgen apagado, sin cliente, salida inválida) para el log del worker. Un propósito
+    // determinista por llm_purposes no es un fallo y no aparece acá.
     fallbacks: Object.fromEntries(results.flatMap(([p, r]) => (r.error ? [[p, r.error]] : []))),
   };
 }

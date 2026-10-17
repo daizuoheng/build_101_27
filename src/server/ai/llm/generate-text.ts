@@ -117,6 +117,8 @@ export async function draftText(
   policy: TextgenPolicy,
   input: TextInput,
 ): Promise<DraftedText> {
+  // Un propósito fuera de llm_purposes es determinista por diseño (sin motivo de fallo); textgen apagado sí se informa.
+  if (!policy.enabled) return fromTemplate(deps.db, policy, input, "textgen deshabilitado por política");
   if (!usesLlm(policy, input.purpose)) return fromTemplate(deps.db, policy, input, undefined);
   if (!deps.llm) return fromTemplate(deps.db, policy, input, "sin cliente LLM configurado");
   const fill = (s: string) => s.replace(/\{\{max_chars\}\}/g, String(policy.max_chars[input.purpose]));
@@ -165,9 +167,9 @@ export async function generateText(
   const hit = await cached(deps.pool, input);
   // Una plantilla cacheada solo se reintenta si hay con qué: política prendida y cliente LLM. Un texto cacheado que
   // la política vigente ya no admite (se endurecieron patrones o límites) se vuelve a redactar y se reemplaza.
-  // Apagar textgen también retira los textos del LLM ya guardados: pasan a plantilla.
   const llm = usesLlm(policy, input.purpose);
-  // Si el propósito dejó de usar el LLM, sus textos del LLM ya guardados pasan a plantilla.
+  // Si el propósito dejó de usar el LLM (textgen apagado o fuera de llm_purposes), sus textos del LLM ya guardados
+  // se reemplazan por la plantilla la próxima vez que se pidan (no hay barrido de revisiones ya procesadas).
   const stale = hit !== null && (bodyViolation(policy, input.purpose, hit.body) !== null || (!llm && hit.llm_run_id !== null));
   if (hit && !stale && (hit.llm_run_id || !llm || !deps.llm)) {
     return { body: hit.body, references: hit.references, llmRunId: hit.llm_run_id, source: "cache", discarded: false };

@@ -128,8 +128,11 @@ const Regex = z.string().transform((src, ctx) => {
 
 export const TextgenPolicy = LlmCallConfig.extend({
   enabled: z.boolean(),
-  /** Propósitos que redacta el LLM; el resto sale de su plantilla determinista. Vacío = todo determinista. */
-  llm_purposes: z.array(z.enum(["title", "summary", "explain_priority"])),
+  /**
+   * Propósitos que redacta el LLM; el resto sale de su plantilla determinista. Vacío = todo determinista, y es el
+   * valor si falta: así una política publicada antes de este campo sigue validando y conserva sus ajustes.
+   */
+  llm_purposes: z.array(z.enum(["title", "summary", "explain_priority"])).default([]),
   max_chars: z.object({ title: z.number().int().positive(), summary: z.number().int().positive(), explain_priority: z.number().int().positive() }),
   max_references: z.number().int().positive(),
   max_reference_chars: z.number().int().positive(),

@@ -109,5 +109,10 @@ pnpm cli policy-upgrade --kind textgen     # publica la política del seed como 
 
 Una base nueva (Supabase) toma todo del seed.
 
+Si se saca un propósito de `llm_purposes` (o se apaga textgen), sus textos del LLM ya guardados se reemplazan
+por la plantilla la próxima vez que se pidan para esa revisión. No hay barrido de las revisiones ya procesadas: para
+retirarlos de una vez hay que volver a encolar `textgen` o borrar esas filas de `generated_texts`. Hoy no aplica,
+porque ninguna base tiene textos del LLM en producción.
+
 El seed nunca pisa plantillas que ya existen. Una base que ya tenía `textgen_summary` conserva la versión vieja
 (sin peligro activo, paso ni accesibilidad) hasta que alguien la actualice a mano desde `seeds/templates.ts`.

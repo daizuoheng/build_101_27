@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
+import { policies } from "../../seeds/policies";
 import { generateText, type TextInput } from "@/server/ai/llm/generate-text";
 import { getActivePolicy } from "@/server/config/policies";
 import { claimNext } from "@/server/jobs/queue";
@@ -277,6 +278,7 @@ describe("textos generados (textgen)", () => {
 
   it("con la política del seed (llm_purposes vacío) los tres textos salen de plantillas sin llamar al LLM", async () => {
     const pool = await testDb();
+    expect(policies.textgen.llm_purposes).toEqual([]); // la decisión de diseño: determinista por defecto
     const { incidentId, territory } = await incidentWithReport(pool);
     await pool.query(`update policy_versions set config = jsonb_set(config, '{llm_purposes}', '[]') where kind = 'textgen'`);
     await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
@@ -287,6 +289,13 @@ describe("textos generados (textgen)", () => {
     const rows = (await texts(pool)).rows;
     expect(rows.find((r) => r.purpose === "title")!.body).toBe("Bache — Av. Italia 2450");
     expect(rows.find((r) => r.purpose === "explain_priority")!.body).toBe("Prioridad alta por: severidad alta.");
+  });
+
+  it("una política publicada antes de llm_purposes sigue validando y queda determinista", async () => {
+    const pool = await testDb();
+    const territory = await territoryId(pool);
+    await pool.query("update policy_versions set config = config - 'llm_purposes' where kind = 'textgen'");
+    expect((await getActivePolicy(pool, territory, "textgen")).config.llm_purposes).toEqual([]);
   });
 
   it("un propósito listado usa el LLM y los demás quedan deterministas", async () => {
@@ -306,7 +315,7 @@ describe("textos generados (textgen)", () => {
     await pool.query("update policy_versions set config = jsonb_set(config, '{enabled}', 'false') where kind = 'textgen'");
     const llm = fakeLlm(citeFirst);
     const res = await generateText({ pool, llm }, await titleInput(pool, incidentId));
-    expect(res).toMatchObject({ source: "template" });
+    expect(res).toMatchObject({ source: "template", error: "textgen deshabilitado por política" });
     expect(llm.calls).toHaveLength(0);
   });
 
