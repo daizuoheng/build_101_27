@@ -12,6 +12,7 @@ describe("poolConfig", () => {
       "postgres://[::1]:5432/radar_urbano",
       "postgres:///radar_urbano",
       "postgres:///radar_urbano?host=/tmp",
+      "postgres://%2Fvar%2Frun%2Fpostgresql/radar_urbano",
     ]) {
       expect(poolConfig(url, {}).ssl, url).toBeUndefined();
     }
@@ -19,6 +20,10 @@ describe("poolConfig", () => {
 
   it("?host= remoto pisa al host vacío de la URL: va con TLS", () => {
     expect(poolConfig("postgres:///app?host=db.remote.example", {}).ssl).toEqual({ rejectUnauthorized: false });
+  });
+
+  it("?host= vacío no pisa al host remoto (como pg): sigue con TLS", () => {
+    expect(poolConfig(`${SESSION}?host=`, {}).ssl).toEqual({ rejectUnauthorized: false });
   });
 
   it("sslmode=verify-full sin DATABASE_CA_CERT falla en vez de degradar a TLS sin verificar", () => {
@@ -73,6 +78,7 @@ describe("poolConfig", () => {
     for (const mode of ["prefer", "allow", "requiere"]) {
       expect(() => poolConfig(`${SESSION}?sslmode=${mode}`, {}), mode).toThrow(/no se admite/);
     }
+    expect(() => poolConfig(`${SESSION}?sslmode=`, {})).toThrow(/trae sslmode=: no se admite/);
   });
 
   it("tamaño del pool por entorno; vacío usa el default y un valor inválido falla", () => {
@@ -99,10 +105,12 @@ describe("poolConfig", () => {
     expect(poolConfig(SESSION, {}).keepAlive).toBe(true);
   });
 
-  it("verify-ca verifica la cadena pero no el nombre (túnel por localhost)", () => {
-    const ssl = poolConfig("postgres://localhost:6432/postgres?sslmode=verify-ca", { DATABASE_CA_CERT: "PEM" }).ssl;
-    expect(ssl).toMatchObject({ ca: "PEM", rejectUnauthorized: true });
-    expect(typeof ssl === "object" && ssl.checkServerIdentity?.("localhost", {} as never)).toBeUndefined();
+  it("verify-ca, y require con CA, verifican la cadena pero no el nombre (túnel por localhost)", () => {
+    for (const mode of ["verify-ca", "require"]) {
+      const ssl = poolConfig(`postgres://localhost:6432/postgres?sslmode=${mode}`, { DATABASE_CA_CERT: "PEM" }).ssl;
+      expect(ssl, mode).toMatchObject({ ca: "PEM", rejectUnauthorized: true });
+      expect(typeof ssl === "object" && ssl.checkServerIdentity?.("localhost", {} as never), mode).toBeUndefined();
+    }
   });
 
   it("no-verify de pg y el ?ssl= booleano se respetan", () => {

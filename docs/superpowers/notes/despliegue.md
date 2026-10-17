@@ -44,7 +44,8 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
   `require`) manda también en local:
   - `disable`: sin TLS (Postgres de CI o de red privada sin TLS; un Postgres de contenedor con host `db`/`postgres`
     cuenta como remoto y lo necesita, igual que antes de este cambio);
-  - `require`: TLS, verificado solo si hay CA; `no-verify` (de `pg`): TLS sin verificar aunque haya CA;
+  - `require`: TLS; con CA verifica la cadena (no el nombre, como libpq); `no-verify` (de `pg`): TLS sin verificar
+    aunque haya CA;
   - `verify-ca`/`verify-full`: exigen `DATABASE_CA_CERT` (si falta, error en vez de conectarse sin verificar);
     `verify-full` verifica cadena y nombre, `verify-ca` solo la cadena (como libpq: sirve por túnel o por IP);
   - `prefer`/`allow` u otro valor: error (`pg` no sabe caer a texto plano como libpq).
@@ -54,15 +55,19 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
   una conexión (reinicio de Supavisor, mantenimiento), ociosa o tomada por una transacción, se loguea
   `pg: conexión perdida` en vez de tirar el proceso (la consulta en curso falla con ese error). `keepAlive` detecta
   conexiones medio abiertas. El pool no tiene timeout de conexión (con el pool lleno las requests esperan turno, como
-  antes); `/api/health` tiene su propio tope de 5 s (también como `query_timeout` de su consulta) y con la base caída
-  responde 503 en vez de quedar colgado; mientras su consulta siga pendiente, los healthchecks siguientes la reusan en
-  vez de encolar otra.
+  antes). `/api/health` usa un pool propio de 1 conexión con topes de 3 s para conectar (o esperar turno) y 2 s para
+  la consulta, que cierra la conexión al segundo de quedar ociosa: con la base caída o un handshake trabado responde
+  503 en vez de quedar colgado, y no compite con la app por el pool.
 - **Reinicios**: web y worker con `restartPolicyType: ALWAYS`, para que una racha de caídas durante un corte de la
   base no deje el servicio parado cuando vuelva.
+- **Drenaje del worker**: Railway da por defecto 0 s entre SIGTERM y SIGKILL al desplegar; el worker declara
+  `drainingSeconds: 60` (el lease de un job) para que el apagado limpio llegue a correr. **Sin verificar:** que el
+  campo del SDK se traduzca en `RAILWAY_DEPLOYMENT_DRAINING_SECONDS`; revisarlo en `railway config plan`.
 - **Conexiones a Supabase**: en modo sesión cada cliente ocupa un backend del pool de Supavisor. Web usa hasta 4 y
   worker hasta 3; durante un redeploy pueden coexistir el despliegue viejo y el nuevo: (4 + 3) × 2 = 14, más 1 del
-  migrador del pre-deploy. `pg` abre conexiones a demanda y cierra las ociosas a los 10 s, así que es el peor caso.
-  **Sin verificar:** el pool size por defecto del plan (Database Settings → Connection pooling); si es menor que 15,
+  migrador del pre-deploy y 1 del healthcheck de web. `pg` abre conexiones a demanda y cierra las ociosas a los 10 s,
+  así que 16 es el peor caso.
+  **Sin verificar:** el pool size por defecto del plan (Database Settings → Connection pooling); si es menor que 16,
   subirlo ahí o bajar `DATABASE_POOL_MAX` en el IaC. Síntoma si no alcanza: errores de "max clients" en los logs.
 - **Storage**: `STORAGE_DRIVER=supabase` sobre un bucket **privado**; las fotos se sirven solo a través de la app
   tras autorizar. En Railway (`RAILWAY_ENVIRONMENT_ID` definida), `STORAGE_DRIVER=local` falla a propósito en el primer
@@ -178,12 +183,12 @@ unset DATABASE_URL
 - `.railway/railway.ts` compila con el SDK `railway@3.16.0` y su evaluación produce los dos servicios esperados;
   `pnpm typecheck` lo verifica (un campo mal escrito, p. ej. `healthcheckTimeot`, da error).
 - `pnpm typecheck` en un clon limpio (sin `next-env.d.ts` ni `.next/`): pasa gracias a `next typegen`.
-- Con `DATABASE_URL` apuntando a un host inalcanzable, `/api/health` responde 503 a los 5 s.
+- Con `DATABASE_URL` apuntando a un host inalcanzable, `/api/health` responde 503.
 - El build del worker (`tsc -p .railway/tsconfig.worker.json`) pasa en un clon limpio, sin `next typegen`.
 - Tests unitarios de `poolConfig`/`createPool`: TLS y CA; hosts locales (IPv6, mayúsculas, socket, `?host=`); cada
   `sslmode` y `?ssl=`; rechazo de 6543 (también `?port=`) y de `sslrootcert`; `DATABASE_POOL_MAX` vacío o inválido;
   `keepAlive`; conexión cortada (ociosa o tomada) sin tirar el proceso.
-- Tres `/api/health` simultáneos con la base inalcanzable: los tres 503 a los 5 s.
+- Tres `/api/health` simultáneos con la base inalcanzable: los tres 503 en ~3 s.
 
 ## Bloqueado hasta tener cuentas (no simulado)
 

@@ -25,9 +25,12 @@ const VERIFY_MODES = new Set(["verify-ca", "verify-full"]);
  */
 const SSL_MODES = new Set(["disable", "no-verify", "require", ...VERIFY_MODES]);
 
-/** Host efectivo como lo resuelve `pg-connection-string`: `?host=` pisa al de la URL; `/…` es un socket Unix. */
+/**
+ * Host efectivo como lo resuelve `pg-connection-string`: un `?host=` no vacío pisa al de la URL; `/…` es un socket
+ * Unix (en el hostname viene como `%2F…`).
+ */
 function isLocal(url: URL): boolean {
-  const host = (url.searchParams.get("host") ?? decodeURIComponent(url.hostname)).toLowerCase();
+  const host = (url.searchParams.get("host") || url.hostname.replace(/^%2f/i, "/")).toLowerCase();
   return LOCAL_HOSTS.has(host) || host.startsWith("/");
 }
 
@@ -37,7 +40,8 @@ function sslMode(url: URL): string | undefined {
   const flag = url.searchParams.get("ssl")?.toLowerCase();
   const mode = raw?.toLowerCase() ?? (flag === "0" || flag === "false" ? "disable" : flag === "1" || flag === "true" ? "require" : flag);
   if (mode !== undefined && !SSL_MODES.has(mode)) {
-    throw new Error(`DATABASE_URL trae ${raw ? `sslmode=${raw}` : `ssl=${flag}`}: no se admite; usá sslmode=disable, require, verify-ca o verify-full`);
+    const param = raw !== undefined ? `sslmode=${raw}` : `ssl=${flag}`;
+    throw new Error(`DATABASE_URL trae ${param}: no se admite; usá sslmode=disable, require, verify-ca o verify-full`);
   }
   return mode;
 }
@@ -53,9 +57,9 @@ function resolveSsl(url: URL, ca: string | undefined): PoolConfig["ssl"] {
   if (mode && VERIFY_MODES.has(mode) && !ca) throw new Error(`DATABASE_URL pide sslmode=${mode} pero falta DATABASE_CA_CERT`);
   if (!mode && isLocal(url)) return undefined;
   if (mode === "no-verify" || !ca) return { rejectUnauthorized: false }; // cifra sin verificar (`require` de libpq)
-  // verify-ca como libpq: la cadena sí, el nombre no (túnel por localhost o conexión por IP).
-  if (mode === "verify-ca") return { ca, rejectUnauthorized: true, checkServerIdentity: () => undefined };
-  return { ca, rejectUnauthorized: true };
+  // verify-ca, y require con CA, como libpq: la cadena sí, el nombre no (túnel por localhost o conexión por IP).
+  if (mode === "verify-ca" || mode === "require") return { ca, rejectUnauthorized: true, checkServerIdentity: () => undefined };
+  return { ca, rejectUnauthorized: true }; // verify-full, o sin sslmode en un host remoto: cadena y nombre
 }
 
 /**

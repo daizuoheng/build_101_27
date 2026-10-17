@@ -24,7 +24,7 @@ const shared = {
 };
 
 // Conexiones: el pooler de sesión de Supabase da un backend por cliente. Peor caso en un redeploy, con el despliegue
-// viejo y el nuevo a la vez: (4 web + 3 worker) × 2 = 14 más el migrador del pre-deploy. El pool size del proyecto
+// viejo y el nuevo a la vez: (4 web + 3 worker) × 2 = 14, más el migrador y el healthcheck de web. El pool size del proyecto
 // (Database Settings → Connection pooling) tiene que alcanzar: ver la guía de despliegue.
 // Las dos aplican migraciones antes de arrancar; el advisory lock del migrador las serializa.
 const migrate = "pnpm cli migrate";
@@ -56,23 +56,26 @@ export default defineRailway(() => {
       builder: "RAILPACK",
       buildCommand: "pnpm exec tsc --noEmit -p .railway/tsconfig.worker.json",
       // Lo que verifica el build, lo que lee en ejecución (tsx resuelve `@/*` con tsconfig.json) y su pre-deploy.
+      // Anclados a la raíz con `/` (sintaxis gitignore): sin barra, `tsconfig.json` también matchearía el de .railway/.
       watchPatterns: [
-        "src/server/**",
-        "src/shared/**",
-        "src/worker/**",
-        "migrations/**",
-        "scripts/cli.ts",
-        "tsconfig.json",
-        "package.json",
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-        ".railway/tsconfig.worker.json",
+        "/src/server/**",
+        "/src/shared/**",
+        "/src/worker/**",
+        "/migrations/**",
+        "/scripts/cli.ts",
+        "/tsconfig.json",
+        "/package.json",
+        "/pnpm-lock.yaml",
+        "/pnpm-workspace.yaml",
+        "/.railway/tsconfig.worker.json",
       ],
     },
     // tsx reenvía SIGTERM: el worker termina el job en curso y suelta el lease.
     start: "node_modules/.bin/tsx src/worker/index.ts",
     preDeploy: migrate,
-    deploy: { restartPolicyType: "ALWAYS" },
+    // Railway da por defecto 0 s entre SIGTERM y SIGKILL: sin drenaje el apagado limpio no llega a correr.
+    // 60 s = el lease de un job; uno que tarde más lo retoma otro worker al vencer.
+    deploy: { restartPolicyType: "ALWAYS", drainingSeconds: 60 },
     env: { ...shared, DATABASE_POOL_MAX: "3" },
   });
 
