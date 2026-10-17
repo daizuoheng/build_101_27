@@ -1,0 +1,80 @@
+{
+  "pair": {
+    "name": "mismo-bache-dos-textos",
+    "report": {
+      "texts": [
+        "Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda"
+      ],
+      "photo": "bache.jpg",
+      "crop": "left"
+    },
+    "candidates": [
+      {
+        "category": "Bache",
+        "distanceM": 6,
+        "hoursAgo": 20,
+        "texts": [
+          "Hay un bache muy grande en Avenida Italia casi Comercio, a la altura del 2450, ojo con las motos"
+        ],
+        "photo": "bache.jpg",
+        "crop": "right"
+      }
+    ],
+    "expect": {
+      "verdict": "link",
+      "match": [
+        "same_incident"
+      ]
+    }
+  },
+  "run": {
+    "purpose": "compare",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-mismo-bache-dos-textos",
+      "report_revision": 1,
+      "candidates": {
+        "c1": "incident-1"
+      },
+      "truncated": false,
+      "photos": {
+        "c1_r1_p1": "cand-1-photo",
+        "new_p1": "new-photo"
+      },
+      "policy_version_id": "46c22e61-3307-4a90-a8a4-147b5c695526"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b55430b77d6a505fe9159739489",
+    "response": {
+      "match_c1": {
+        "type": "choice",
+        "choice": "same_incident",
+        "confidence": 0.98,
+        "probabilities": {
+          "same_incident": 0.99,
+          "different_incident": 0.01,
+          "uncertain": 0
+        }
+      },
+      "object_conflict_c1": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "place_conflict_c1": {
+        "type": "noul",
+        "noul": 0.18
+      },
+      "time_conflict_c1": {
+        "type": "noul",
+        "noul": 0.06
+      }
+    },
+    "usage": {
+      "input_tokens": 6868,
+      "output_tokens": 109
+    },
+    "latencyMs": 1034,
+    "status": "ok"
+  }
+}

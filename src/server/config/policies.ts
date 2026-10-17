@@ -49,12 +49,32 @@ export const EvaluationPolicy = z.object({
   review: z.object({ min_applicability: z.number(), min_type: z.number(), min_contradiction: z.number() }),
 });
 
+/** Texto de pregunta por candidato: `{candidate}` se reemplaza por el índice local (c1, c2…), nunca por un id. */
+const PerCandidate = z.string().refine((s) => s.includes("{candidate}"), "debe incluir {candidate}");
+
 export const GroupingPolicy = z.object({
+  provider: z.literal("jev"),
+  model: z.string(),
+  image_header: z.boolean(),
+  timeout_ms: z.number().int().positive(),
   radius_m: z.number().positive(),
   max_candidates: z.number().int().positive(),
   same_threshold: z.number(),
   different_threshold: z.number(),
   conflict_band: z.number(),
+  evidence: z.object({
+    max_reports_per_candidate: z.number().int().positive(),
+    max_photos_per_candidate: z.number().int().nonnegative(),
+  }),
+  questions: z.object({
+    match: z.object({
+      instructions: PerCandidate,
+      criteria: z.object({ same_incident: z.string(), different_incident: z.string(), uncertain: z.string() }),
+    }),
+    object_conflict: z.object({ instructions: PerCandidate }),
+    place_conflict: z.object({ instructions: PerCandidate }),
+    time_conflict: z.object({ instructions: PerCandidate }),
+  }),
 });
 
 export const PriorityPolicy = z.object({
@@ -114,6 +134,17 @@ export class PolicyMissingError extends Error {
   }
 }
 
+export class PolicyInvalidError extends Error {
+  constructor(public territoryId: string, public kind: PolicyKind, public version: number, detail: string) {
+    super(`la política activa '${kind}' v${version} del territorio ${territoryId} no valida contra el esquema actual (${detail}). Correr \`pnpm cli seed\` publica la del seed como versión nueva`);
+  }
+}
+
+/** ¿La configuración valida contra el esquema actual de su tipo? */
+export function isValidPolicy(kind: PolicyKind, config: unknown): boolean {
+  return schemas[kind].safeParse(config).success;
+}
+
 /** Política activa validada. Falla si no existe o no valida: la app no inventa valores por defecto. */
 export async function getActivePolicy<K extends PolicyKind>(db: Db, territoryId: string, kind: K): Promise<Versioned<PolicyOf<K>>> {
   const { rows } = await db.query<{ id: string; version: number; config: unknown }>(
@@ -121,6 +152,7 @@ export async function getActivePolicy<K extends PolicyKind>(db: Db, territoryId:
     [territoryId, kind],
   );
   if (!rows[0]) throw new PolicyMissingError(territoryId, kind);
-  const config = schemas[kind].parse(rows[0].config) as PolicyOf<K>;
-  return { id: rows[0].id, version: rows[0].version, config };
+  const parsed = schemas[kind].safeParse(rows[0].config);
+  if (!parsed.success) throw new PolicyInvalidError(territoryId, kind, rows[0].version, parsed.error.issues.map((i) => i.path.join(".")).join(", "));
+  return { id: rows[0].id, version: rows[0].version, config: parsed.data as PolicyOf<K> };
 }
