@@ -14,7 +14,7 @@
 
 ## Dependencias externas (gating)
 
-| Task | Necesita en `main` (y traído a `epic/nucleo` con `/usr/bin/git merge origin/main`) |
+| Task | Necesita en `main` — vía el PR `epic/operacion → main` de Operación — y traído a `epic/nucleo` con `/usr/bin/git merge origin/main` (traer `main` solo no alcanza mientras ese PR no exista) |
 | --- | --- |
 | 1 (periódico) | nada: en ejecución en `nucleo/worker-periodico` |
 | 2 (`plan`) | `src/server/planning/build-plan.ts` exportando `buildPlan: BuildPlan` — PR #11 **mergeado en `epic/operacion`** (17 oct 23:04), falta el PR `epic/operacion → main` |
@@ -116,10 +116,14 @@ Expected: PASS.
 
 **Files:**
 - Modify: `src/server/jobs/handlers.ts` (agregar entrada `plan`)
-- Test: `tests/db/plan-job.test.ts`
+- Modify: `src/server/pipeline/process-report.ts` (encolar `plan` al crear o vincular; ver Step 3b)
+- Test: `tests/db/plan-job.test.ts`, `tests/db/group.test.ts`
+
+**Hueco de hoy (hallazgo de Tenki en #16):** nada encola `plan` cuando `process_report` **crea** un incidente ni cuando lo **vincula** a uno existente y la reevaluación no cambia nada efectivo. `plan` solo se encola en `recomputeEffective` con cambios (`effective.ts:97`), al archivar (`links.ts:56`), al cerrar (`overrides.ts:190`) y por el periódico. Sin arreglarlo, un incidente nuevo espera hasta `replan_interval_min` (5 min) para recibir orden, y una fuente nueva no reordena la cola.
 
 **Interfaces:**
 - Consumes: `planHandler(buildPlan)` de `src/server/pipeline/plan.ts` (devuelve `{ run(deps: { pool }, job) }`, compatible con `Handler`); `buildPlan: BuildPlan` de `@/server/planning/build-plan`; `seedDemo`, `refreshDemoPositions` de `seeds/demo.ts`; `runOnce` de `worker-loop.ts`.
+- Produces: `process_report`, cuando su resultado es `created` o `linked`, encola en la misma transacción `enqueue(c, { kind: "plan", entityType: "territory", entityId: territoryId, entityRevision: 0, territoryId, dedupeSuffix: \`report:${reportId}\` })`. Un pedido por reporte; el handler los junta (`coalesced`).
 
 - [ ] **Step 1: Test que falla** en `tests/db/plan-job.test.ts`:
 
@@ -156,6 +160,14 @@ import { planHandler } from "../pipeline/plan";
 plan: planHandler(buildPlan),
 ```
 
+- [ ] **Step 3b: Test que falla y encolado de `plan` en `process_report`.** En `tests/db/group.test.ts`, al final de `"sin candidatos ⇒ … crea el incidente …"` y de `"dos incidentes a 10 m: el reporte se asocia al correcto …"`:
+
+```ts
+expect((await pool.query("select dedupe_key from jobs where kind = 'plan' and dedupe_key like $1", [`%:report:${reportId}`])).rows).toHaveLength(1);
+```
+
+Correr → falla. Implementar el `enqueue` del bloque Interfaces en los dos caminos de `processReport` que terminan en `created` y `linked` (no en `review` ni `out_of_coverage`). Correr → pasa. Commit aparte: `fix(pipeline): un incidente nuevo o una fuente nueva piden plan del territorio`. Si el plan A ya está mergeado, `process-report.ts` tiene ahí su `enqueueTextgen`: agregar este `enqueue` al lado.
+
 - [ ] **Step 4: Tests → PASS, incluida la suite completa**
 
 Run: `pnpm vitest run tests/db/plan-job.test.ts && pnpm test`
@@ -166,6 +178,7 @@ Expected: PASS. Atención: hasta hoy `plan` no tenía handler y varios tests lo 
 ```bash
 /usr/bin/git add src/server/jobs/handlers.ts tests/db/plan-job.test.ts
 /usr/bin/git commit -m "feat(worker): el job plan corre con el planificador de Operación"
+# (el Step 3b va en su propio commit, con process-report.ts y group.test.ts)
 ```
 
 ---
@@ -198,7 +211,7 @@ describe("recorrido de atención: reporte → incidente → plan → orden", () 
   it("un reporte de bache termina en una orden 'offered' para una cuadrilla con vialidad", async () => {
     const jev = fakeJev(); // fakeAnswers() por defecto: bache aplicable
     await confirmedReport(pool, t, "Hay un pozo grande en la esquina");
-    await drain(pool, jev); // process_report → assess_incident → plan → dispatch → textgen
+    await drain(pool, jev); // process_report (encola plan y textgen; Task 2 Step 3b) → plan → dispatch → textgen
     const a = await one(pool, "select a.status, a.unit_id, i.status as incident_status from assignments a join incidents i on i.id = a.incident_id");
     expect(a.status).toBe("offered");
     expect(a.incident_status).toBe("assigned");
@@ -246,7 +259,7 @@ Expected: todo en verde, incluido `assess.test.ts` con los helpers importados.
 
 ### Task 4: Smoke local y PR
 
-- [ ] **Step 1:** `pnpm cli reset-demo --yes && pnpm cli refresh-demo-positions`; `pnpm dev` + `pnpm worker`; `node --env-file=.env.local scripts/e2e-walkthrough.mjs`. En los logs del worker, en orden: `✓ process_report`, `✓ assess_incident`, `✓ plan`, `✓ dispatch`, `✓ textgen`. En base: una fila en `assignments` con `status = 'offered'`. Al minuto, una línea `replanificación periódica: 1 territorio(s)` y después un `✓ plan` cada `replan_interval_min` (5 min en el seed).
+- [ ] **Step 1:** `pnpm cli reset-demo --yes && pnpm cli refresh-demo-positions`; `pnpm dev` + `pnpm worker`; `node --env-file=.env.local scripts/e2e-walkthrough.mjs`. En los logs del worker: `✓ process_report` y, después, `✓ plan`, `✓ dispatch` y `✓ textgen` (el orden entre `plan` y `textgen` depende de la cola; `assess_incident` solo aparece si el reporte se agrupó con uno existente). En base: una fila en `assignments` con `status = 'offered'`. Al minuto, una línea `replanificación periódica: 1 territorio(s)` y después un `✓ plan` cada `replan_interval_min` (5 min en el seed).
 - [ ] **Step 2:** Nota `docs/superpowers/notes/atencion-smoke.md`: qué se vio, latencias de `plan` y `dispatch`, y la regla "sin `onFailed` para plan/dispatch y por qué".
 - [ ] **Step 3:** Loop de `code-review` → corregir → `pnpm test && pnpm typecheck && pnpm lint` → push `nucleo/handlers-atencion` → PR contra `epic/nucleo` (`Núcleo: handlers plan y dispatch, replanificación periódica`) → check "Tenki Code Review" → merge. Después, PR `epic/nucleo → main` (segundo corte; el #15 fue el primero) diciendo que los jobs `plan` ya tienen handler y que hay que correr `pnpm cli seed` si cambió alguna política.
 

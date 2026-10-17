@@ -22,7 +22,7 @@
 
 ## Review Focus
 
-1. Un redeploy del `worker` en Railway con un job en curso: debe verse `worker detenido` en los logs y el job terminar o volver a `pending` por lease vencido (drenaje de 120 s). Verificación en Task 1 paso 6.
+1. Un redeploy del `worker` en Railway con un job en curso. Con SIGTERM, `runWorker` deja de tomar jobs pero espera a que termine el que está corriendo (`await runOnce`; `signal.aborted` se mira entre jobs) y después escribe `worker detenido`. Railway le da 120 s entre SIGTERM y SIGKILL (`drainingSeconds: 120` en `.railway/railway.ts:80`). Si el job no termina en ese tiempo, el proceso muere y el job vuelve a `pending` cuando vence el lease (60 s por defecto, `worker-loop.ts:14`). Lo que hay que ver: `worker detenido` después del `✓` del job en curso, y ningún job `running` colgado más de 60 s. Verificación en Task 1 paso 6.
 2. Supabase corta conexiones ociosas del pooler: el worker debe seguir vivo (`pg: conexión perdida` en el log, no caída del proceso). Dejar el worker 20 min sin tráfico y confirmar en Task 1.
 3. Fotos HEIC de iPhone y fotos verticales con EXIF: el derivado para Jev tiene que verse rotado bien en el detalle del incidente. Parte del guion de Task 2.
 4. Dos reportes del mismo lugar desde dos celulares distintos (dos `citizen_session_id`): deben agruparse y el incidente mostrar 2 fuentes; si Jev duda, aparece en la cola de revisión y los candidatos quedan bloqueados para despacho. Guion de Task 2.
@@ -58,7 +58,7 @@
 
 ### Task 2: Guion de demo y recorrido final
 
-**Precondición:** plan A y plan B en `main` (con el despliegue continuo, mergear ya es desplegar); `epic/operacion` en `main` con T11 (#11), T12 (#17) y las vistas; `epic/recepcion` en `main` con la bandeja `/unidad` (#13 → #6). Después del último merge, `pnpm cli seed` contra Supabase si alguno tocó políticas.
+**Precondición:** plan A en `main` (por su propio corte, plan A Task 4 Step 4) y plan B en `main` (corte siguiente) (con el despliegue continuo, mergear ya es desplegar); `epic/operacion` en `main` con T11 (#11), T12 (#17) y las vistas; `epic/recepcion` en `main` con la bandeja `/unidad` (#13 → #6). Después del último merge, `pnpm cli seed` contra Supabase si alguno tocó políticas.
 
 **Files:**
 - Create: `docs/superpowers/notes/recorrido-final.md`

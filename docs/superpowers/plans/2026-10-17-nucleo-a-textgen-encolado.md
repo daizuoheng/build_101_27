@@ -60,7 +60,9 @@ const textgenJobs = (pool: Pool, incidentId: string) =>
 it("una corrección del operador encola textgen para la revisión nueva", async () => {
   const pool = await testDb();
   const { incidentId } = await incidentWithReport(pool); // revisión 1, sin jobs
-  await withTx((c) => setOverride(c, { incidentId, override: { field: "severity", value: "low" }, reason: "test", actor: { type: "operator", id: null }, expectedRevision: 1 }), pool);
+  // setOverride exige un operador identificado (requireOperator): mismo id fijo que tests/db/assess.test.ts.
+  const operator = { type: "operator" as const, id: "00000000-0000-4000-8000-0000000000aa" };
+  await withTx((c) => setOverride(c, { incidentId, override: { field: "severity", value: "low" }, reason: "test", actor: operator, expectedRevision: 1 }), pool);
   expect((await textgenJobs(pool, incidentId)).rows.map((r) => r.entity_revision)).toEqual([2]);
 });
 
@@ -243,6 +245,7 @@ Expected: todo en verde (170+ tests).
 - [ ] **Step 1: Smoke local.** Con `pnpm dev` y `pnpm worker` corriendo, `node --env-file=.env.local scripts/e2e-walkthrough.mjs`. En los logs del worker debe verse `✓ textgen <id>@1` después de `✓ process_report`. En base: `select purpose, entity_revision, llm_run_id is null as plantilla from generated_texts` ⇒ tres filas de la revisión 1 (plantilla, porque `llm_purposes` del seed está vacío).
 - [ ] **Step 2: Nota.** Agregar a `docs/superpowers/notes/textgen-smoke.md` una sección "Encolado (fecha)" con la regla de los tres puntos de entrada, el caso de la banda por antigüedad y lo observado en el smoke (3 líneas).
 - [ ] **Step 3: Loop de review y PR** según `AGENTS.md`: `code-review` sobre el diff → corregir → repetir hasta sin hallazgos graves; `pnpm test && pnpm typecheck && pnpm lint`; push de `nucleo/textgen-encolado`; PR contra `epic/nucleo` con título `Núcleo: encolado de textgen y lector de textos`; en el cuerpo, citar el hilo `4304842842` del PR #15 como resuelto y avisar a Operación y Recepción de `latestTexts`/`latestTextsMany`. Esperar el check "Tenki Code Review"; mergear si queda limpio.
+- [ ] **Step 4: Llevarlo a `main`.** Con A mergeado en `epic/nucleo`, quien coordina Núcleo abre el corte `epic/nucleo → main` (segundo corte; el #15 fue el primero) **sin esperar al plan B**, que puede tardar por Operación. Ese merge despliega en producción. Después del merge: `pnpm cli seed` contra Supabase solo si A cambió seeds de políticas (no debería). Si B Task 1 (`nucleo/worker-periodico`) ya está en `epic/nucleo`, entra en el mismo corte.
 
 ```bash
 /usr/bin/git commit -am "docs(textgen): nota del encolado y del smoke"
