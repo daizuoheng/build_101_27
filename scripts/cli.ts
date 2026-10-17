@@ -37,6 +37,19 @@ const commands: Record<string, () => Promise<Command>> = {
   },
   "smoke-jev": async () => (await import("./smoke-jev")).smokeJev,
   "smoke-llm": async () => (await import("./smoke-llm")).smokeLlm,
+  // Publica como versión nueva activa la política del seed de un kind si difiere (los seeds nunca pisan filas).
+  "policy-upgrade": async () => async (args) => {
+    const { spawnSync } = await import("node:child_process");
+    const kinds = (args.kind ?? "").split(",").filter(Boolean);
+    if (!kinds.length) {
+      console.error("uso: policy-upgrade --kind <grouping[,evaluation,...]> [--territory montevideo]");
+      return 2;
+    }
+    for (const k of kinds) {
+      const r = spawnSync("tsx", ["scripts/policy-upgrade.ts", k, "--territory", args.territory ?? "montevideo"], { stdio: "inherit" });
+      if (r.status !== 0) return r.status ?? 1;
+    }
+  },
   "seed-demo": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { seedDemo } = await import("../seeds/demo");

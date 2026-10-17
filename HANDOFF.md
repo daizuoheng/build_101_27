@@ -91,6 +91,8 @@ Dueño de `migrations`, `seeds`, `scripts/cli.ts`, `src/server/{db,config,jobs,a
 2. Postgres con PostGIS local (o la base de desarrollo de Supabase cuando exista); crear las bases `radar_urbano` y `radar_urbano_test`.
 3. Copiar `.env.example` a `.env.local` y completarlo. Las claves de Jev y DeepSeek se pasan por privado, nunca por el repo.
 4. `pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`.
+   Si tu base ya estaba sembrada y cambió una política del seed, publicala como versión nueva (no se edita en el lugar): `pnpm cli policy-upgrade --kind grouping`.
+   Antes de probar, verificá que no quede un worker viejo corriendo: el worker no recarga el código solo.
 5. `node --env-file=.env.local scripts/e2e-walkthrough.mjs` para verificar el recorrido.
 
 ### Varios agentes en paralelo por persona

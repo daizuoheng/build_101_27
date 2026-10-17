@@ -1,0 +1,76 @@
+{
+  "pair": {
+    "name": "ambiguo-sin-detalle",
+    "report": {
+      "texts": [
+        "acá en la esquina hay un problema en la calle, está feo"
+      ]
+    },
+    "candidates": [
+      {
+        "category": "Bache",
+        "distanceM": 15,
+        "hoursAgo": 30,
+        "texts": [
+          "Pozo enorme en la calle frente al 2450 de Av. Italia, casi rompo la rueda"
+        ],
+        "photo": "bache.jpg"
+      }
+    ],
+    "expect": {
+      "verdict": "review",
+      "match": [
+        "uncertain"
+      ]
+    }
+  },
+  "run": {
+    "purpose": "compare",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-ambiguo-sin-detalle",
+      "report_revision": 1,
+      "candidates": {
+        "c1": "incident-1"
+      },
+      "truncated": false,
+      "photos": {
+        "c1_r1_p1": "cand-1-photo"
+      },
+      "policy_version_id": "46c22e61-3307-4a90-a8a4-147b5c695526"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b5549cf7692a1ac9f40022450bb",
+    "response": {
+      "match_c1": {
+        "type": "choice",
+        "choice": "uncertain",
+        "confidence": 0.7,
+        "probabilities": {
+          "same_incident": 0.01,
+          "different_incident": 0.19,
+          "uncertain": 0.8
+        }
+      },
+      "object_conflict_c1": {
+        "type": "noul",
+        "noul": 0.18
+      },
+      "place_conflict_c1": {
+        "type": "noul",
+        "noul": 0.42
+      },
+      "time_conflict_c1": {
+        "type": "noul",
+        "noul": 0.51
+      }
+    },
+    "usage": {
+      "input_tokens": 4117,
+      "output_tokens": 109
+    },
+    "latencyMs": 592,
+    "status": "ok"
+  }
+}

@@ -122,7 +122,43 @@ export const policies = {
     ],
     review: { min_applicability: 0.9, min_type: 0.9, min_contradiction: 0.6 },
   },
-  grouping: { radius_m: 30, max_candidates: 5, same_threshold: 0.9, different_threshold: 0.8, conflict_band: 0.15 },
+  grouping: {
+    provider: "jev",
+    model: "jev-1.14.0",
+    image_header: true,
+    timeout_ms: 20000,
+    radius_m: 30,
+    max_candidates: 5,
+    same_threshold: 0.9,
+    different_threshold: 0.8,
+    conflict_band: 0.15,
+    evidence: { max_reports_per_candidate: 3, max_photos_per_candidate: 2 },
+    questions: {
+      match: {
+        instructions:
+          "The state holds a new citizen report (new_report) about an urban public-space problem (Spanish, Uruguay) and nearby open incidents (candidates), each with the original reports already grouped into it. Does new_report describe the same real-world problem as candidate {candidate}? Compare the object, its exact place and the time; a nearby location alone does not make it the same problem.",
+        criteria: {
+          same_incident:
+            "new_report and candidate {candidate} describe the same physical problem at the same spot (e.g. the same pothole, the same pile of waste, the same broken light), possibly with different words or photos.",
+          different_incident:
+            "new_report and candidate {candidate} are different problems: a different kind of object or damage, or clearly a different spot or a different occurrence.",
+          uncertain: "The evidence does not allow deciding whether new_report and candidate {candidate} are the same problem.",
+        },
+      },
+      object_conflict: {
+        instructions:
+          "Do new_report and candidate {candidate} describe or show different objects or kinds of problem (e.g. a pothole vs. waste, a streetlight vs. a tree)?",
+      },
+      place_conflict: {
+        instructions:
+          "Do the texts or photos of new_report and candidate {candidate} indicate different exact places (different street number, corner, side of the street or landmark)?",
+      },
+      time_conflict: {
+        instructions:
+          "Do new_report and candidate {candidate} refer to different occurrences in time (e.g. a fire that ended and a new one, waste collected and piled up again)?",
+      },
+    },
+  },
   priority: {
     high: { severity: ["high"], active_hazard: true, passage: ["total"], accessibility: ["affected"] },
     medium: { severity: ["medium"] },
