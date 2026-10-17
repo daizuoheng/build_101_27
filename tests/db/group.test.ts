@@ -167,7 +167,7 @@ describe("agrupación automática", () => {
     await pool.query("insert into assignments (incident_id, unit_id, status) values ($1, $2, 'accepted')", [incidentId, unit.rows[0].id]);
     await pool.query("update incidents set status = 'assigned' where id = $1", [incidentId]);
 
-    const res = await withTx((c) => unlinkReport(c, { reportId, reason: "no corresponde", actorId: null }), pool);
+    const res = await withTx((c) => unlinkReport(c, { reportId, reason: "no corresponde", actor: { type: "operator", id: null } }), pool);
     expect(res).toEqual({ incidentId, archived: true });
     expect((await pool.query("select status, archived_at is not null as has_date from incidents where id = $1", [incidentId])).rows[0]).toEqual({ status: "archived", has_date: true });
     expect((await pool.query("select status, closed_reason from assignments")).rows[0]).toEqual({ status: "cancelled", closed_reason: "incident_archived" });
@@ -181,7 +181,7 @@ describe("agrupación automática", () => {
     const from = (await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows[0].incident_id;
     const to = await insertIncident(pool, t, east(20), "bache");
 
-    const res = await withTx((c) => linkReport(c, { reportId, incidentId: to, origin: "manual", decisionId: null, actorId: null }), pool);
+    const res = await withTx((c) => linkReport(c, { reportId, incidentId: to, origin: "manual", actor: { type: "operator", id: null } }), pool);
     expect(res.previousIncidentId).toBe(from);
     expect((await pool.query("select status from incidents where id = $1", [from])).rows[0].status).toBe("archived");
     expect(await count(pool, "select count(*)::int as n from report_incident_links where report_id = $1 and active and incident_id = $2", [reportId, to])).toBe(1);

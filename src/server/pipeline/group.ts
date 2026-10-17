@@ -123,7 +123,7 @@ export async function applyGrouping(
   });
 
   if (verdict.kind === "link") {
-    await linkReport(c, { reportId: report.id, incidentId: verdict.incidentId, origin: "auto", decisionId });
+    await linkReport(c, { reportId: report.id, incidentId: verdict.incidentId, origin: "auto", groupingDecisionId: decisionId, actor: { type: "system", id: null } });
     return { decisionId, kind: "link", incidentId: verdict.incidentId };
   }
   if (verdict.kind === "review") {

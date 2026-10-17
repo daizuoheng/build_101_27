@@ -1,12 +1,15 @@
 import type { Db } from "../db/pool";
+import type { Actor, LinkReport, UnlinkReport } from "../contracts";
 import { appendEvent } from "../events/append";
 import { badRequest, conflict, notFound } from "../errors";
 import { enqueue } from "../jobs/queue";
+import { ACTIVE_ASSIGNMENT_STATUSES } from "@/shared/contracts/assignment";
 
 const OPEN_STATUSES = ["open", "assigned", "in_progress"];
-const ACTIVE_ASSIGNMENT = ["offered", "accepted", "in_progress"];
+const ACTIVE_ASSIGNMENT: readonly string[] = ACTIVE_ASSIGNMENT_STATUSES;
 
-type Actor = { actorType: "system" | "operator"; actorId: string | null };
+type EventActor = { actorType: "system" | "operator" | "unit"; actorId: string | null };
+const eventActor = (a: Actor): EventActor => ({ actorType: a.type, actorId: a.id });
 
 async function lockTerritory(db: Db, territoryId: string) {
   // Reentrante dentro de la misma transacción: convive con el lock que ya toma el pipeline.
@@ -23,7 +26,7 @@ async function touchIncident(db: Db, incidentId: string, territoryId: string) {
 }
 
 /** Desactiva el vínculo activo del reporte. Si el incidente queda sin reportes ⇒ `archived` y su orden activa cancelada. */
-async function detach(db: Db, link: { id: string; incident_id: string; territory_id: string }, reason: string, actor: Actor) {
+async function detach(db: Db, link: { id: string; incident_id: string; territory_id: string }, reason: string, actor: EventActor) {
   await db.query("update report_incident_links set active = false, deactivated_at = now(), deactivation_reason = $2 where id = $1", [link.id, reason]);
   const left = await db.query<{ n: number }>("select count(*)::int as n from report_incident_links where incident_id = $1 and active", [link.incident_id]);
   if (left.rows[0].n > 0) {
@@ -71,11 +74,13 @@ export async function insertLink(
 /**
  * Asocia un reporte a un incidente abierto existente. Si el reporte ya tenía otro vínculo activo, lo desactiva
  * (y archiva el incidente anterior si queda vacío). Reevalúa los incidentes afectados. Llamar dentro de una transacción.
+ * Firma: `LinkReport` de src/server/contracts.ts.
  */
 export async function linkReport(
   db: Db,
-  { reportId, incidentId, origin, decisionId, actorId }: { reportId: string; incidentId: string; origin: "auto" | "manual"; decisionId: string | null; actorId?: string | null },
+  { reportId, incidentId, origin, groupingDecisionId, actor: who }: Parameters<LinkReport>[1],
 ): Promise<{ linkId: string; previousIncidentId: string | null }> {
+  const decisionId = groupingDecisionId ?? null;
   const inc = await db.query<{ territory_id: string; status: string }>("select territory_id, status from incidents where id = $1", [incidentId]);
   if (!inc.rows[0]) throw notFound("Incidente inexistente.");
   const territoryId = inc.rows[0].territory_id;
@@ -88,7 +93,7 @@ export async function linkReport(
     throw badRequest("report_not_linkable", "El reporte no está confirmado o es de otro territorio.");
   }
 
-  const actor: Actor = origin === "manual" ? { actorType: "operator", actorId: actorId ?? null } : { actorType: "system", actorId: null };
+  const actor = eventActor(who);
   const prev = await activeLink(db, reportId);
   if (prev?.incident_id === incidentId) return { linkId: prev.id, previousIncidentId: null };
   if (prev) await detach(db, prev, "relinked", actor);
@@ -106,20 +111,25 @@ export async function linkReport(
 /**
  * Desasocia el reporte de su incidente. Si era el único reporte, el incidente queda `archived` y su orden activa
  * se cancela en la misma transacción; si no, se reevalúa. El reporte queda sin agrupar (`grouping = pending`).
+ * Firma: `UnlinkReport` de src/server/contracts.ts.
  */
 export async function unlinkReport(
   db: Db,
-  { reportId, reason, actorId }: { reportId: string; reason: string; actorId: string | null },
+  { reportId, reason, actor: who }: Parameters<UnlinkReport>[1],
 ): Promise<{ incidentId: string; archived: boolean }> {
   const first = await activeLink(db, reportId);
   if (!first) throw notFound("El reporte no está asociado a ningún incidente.");
   await lockTerritory(db, first.territory_id);
   const link = await activeLink(db, reportId); // relectura bajo el lock del territorio
   if (!link) throw notFound("El reporte no está asociado a ningún incidente.");
-  const actor: Actor = { actorType: "operator", actorId };
+  const actor = eventActor(who);
   const { archived } = await detach(db, link, reason, actor);
   await db.query("update reports set grouping = 'pending', updated_at = now() where id = $1", [reportId]);
   await appendEvent(db, { entityType: "incident", entityId: link.incident_id, kind: "report_unlinked", ...actor, data: { report_id: reportId, reason, archived } });
   await appendEvent(db, { entityType: "report", entityId: reportId, kind: "unlinked", ...actor, data: { incident_id: link.incident_id, reason } });
   return { incidentId: link.incident_id, archived };
 }
+
+// Las implementaciones cumplen las firmas del contrato entre módulos (aceptan además un Pool, más general).
+linkReport satisfies LinkReport;
+unlinkReport satisfies UnlinkReport;
