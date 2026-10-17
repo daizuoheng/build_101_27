@@ -6,8 +6,12 @@ export type ReplyLexicon = { yes: string[]; no: string[]; send: string[] };
 export type ReplyKind = "yes" | "no" | "send";
 
 /** minúsculas, sin tildes, sin signos ni emojis, espacios simples. */
+// Emojis de asentimiento habituales en chats: equivalen a «ok» (si no, la normalización los borraría).
+const AFFIRMATIVE_EMOJI = /(\u{1F44D}|\u{1F44C}|\u2705|\u2714\uFE0F?)(\u{1F3FB}|\u{1F3FC}|\u{1F3FD}|\u{1F3FE}|\u{1F3FF})?/gu;
+
 export function normalizeReply(text: string): string {
   return text
+    .replace(AFFIRMATIVE_EMOJI, " ok ")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -36,13 +40,17 @@ const CODE_WORDS = /\b(c[oó]digo|reporte|estado|n[uú]mero)\b/i;
 
 /**
  * Código de reporte mencionado en el texto (6 caracteres del alfabeto de `confirm.ts`). Para no confundir palabras
- * comunes («calles»), se acepta si tiene un dígito, si está escrito en mayúsculas o si el mensaje habla de un código.
+ * comunes («calles», «CALLES»), se acepta si tiene un dígito, si el mensaje es solo el código en mayúsculas o si habla de un
+ * código o reporte.
  */
 export function extractPublicCode(text: string): string | null {
   const mentionsCode = CODE_WORDS.test(text);
+  const alone = text.trim().replace(/[¿?¡!.,]/g, "").trim();
   for (const m of text.matchAll(TOKEN)) {
     const token = m[2];
-    if (/\d/.test(token) || token === token.toUpperCase() || mentionsCode) return token.toUpperCase();
+    // Solo letras en mayúscula («CALLES») no alcanza: hace falta un dígito, que el mensaje sea solo el código
+    // o que hable de un código o reporte.
+    if (/\d/.test(token) || mentionsCode || (alone === token && token === token.toUpperCase())) return token.toUpperCase();
   }
   return null;
 }

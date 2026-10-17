@@ -58,4 +58,27 @@ describe("geocode de esquinas", () => {
     const cached = await pool.query("select result from geocode_cache");
     expect(cached.rows).toEqual([{ result: { hit: null } }]);
   });
+
+  it("prueba como mucho 2 formas de partir una esquina", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    const nom = fakeNominatim({});
+    expect(await geocode(pool, { query: "Alfa y Beta y Gamma y Delta", territoryId: t, policy, fetchImpl: nom.fetchImpl })).toBeNull();
+    // 1 búsqueda directa + 2 candidatos × 2 calles (sin tramos no hay tercera búsqueda).
+    expect(nom.calls.length).toBe(5);
+  });
+
+  it("pedidos concurrentes respetan el intervalo mínimo entre llamadas", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    const at: number[] = [];
+    const fetchImpl = (async () => {
+      at.push(Date.now());
+      return new Response("[]", { status: 200 });
+    }) as unknown as typeof fetch;
+    const slow = { ...policy, min_interval_ms: 150 };
+    await Promise.all(["Calle Uno 100", "Calle Dos 200", "Calle Tres 300"].map((q) => geocode(pool, { query: q, territoryId: t, policy: slow, fetchImpl })));
+    const gaps = at.slice(1).map((x, i) => x - at[i]);
+    expect(gaps.every((g) => g >= 140)).toBe(true);
+  });
 });
