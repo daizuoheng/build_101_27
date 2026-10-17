@@ -197,6 +197,6 @@ unset DATABASE_URL
 
 - Driver de Supabase Storage contra un bucket real (subida, lectura, rechazo de acceso público).
 - Conexión al pooler de sesión de Supabase con TLS y, si se carga, con el certificado.
-- `railway config plan/apply` (la CLI de Railway no está instalada y no hay proyecto) y el build real de Railpack.
+- `railway config plan/apply` (la CLI de Railway no está instalada y no hay proyecto) y el build real de Railpack (incluido que resuelva Node `26.x` desde `engines`).
 - Imagen Docker: no aplica (no hay Dockerfile) y Docker no estaba corriendo en esta Mac.
 - Verificación desde celular por internet.
