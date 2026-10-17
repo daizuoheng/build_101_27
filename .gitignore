@@ -19,3 +19,4 @@ next-env.d.ts
 
 # storage local de fotos (desarrollo)
 storage/
+.vitest/

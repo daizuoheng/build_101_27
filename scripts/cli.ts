@@ -35,6 +35,7 @@ const commands: Record<string, () => Promise<Command>> = {
       (select count(*) from message_templates)::int as plantillas, (select count(*) from areas)::int as areas`);
     console.log("seed ok", rows[0]);
   },
+  "smoke-jev": async () => (await import("./smoke-jev")).smokeJev,
   "import-areas": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { importAreas } = await import("../src/server/geo/import-areas");

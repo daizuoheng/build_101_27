@@ -1,0 +1,158 @@
+{
+  "case": {
+    "name": "quemado-foto-dice-fuego",
+    "texts": [
+      "Hay un contenedor prendido fuego ahora mismo, vengan rápido!!"
+    ],
+    "photo": "contenedor-quemado.jpg",
+    "expect": {
+      "text_photo_consistency": "contradiction"
+    }
+  },
+  "run": {
+    "purpose": "evaluate",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-quemado-foto-dice-fuego",
+      "report_revision": 1,
+      "message_ids": [
+        "m1"
+      ],
+      "attachment_ids": [
+        "photo-quemado-foto-dice-fuego"
+      ],
+      "catalog_hash": "ae042fdb95651dfa",
+      "policy_version_id": "418f39e4-efa0-4be9-9f50-0daad7be1077"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b225ad37fd0b889c04c8637b969",
+    "response": {
+      "intent": {
+        "type": "choice",
+        "choice": "report",
+        "confidence": 0.97,
+        "probabilities": {
+          "report": 0.98,
+          "status_query": 0,
+          "other": 0.02
+        }
+      },
+      "applicability": {
+        "type": "choice",
+        "choice": "applicable",
+        "confidence": 0.92,
+        "probabilities": {
+          "applicable": 0.95,
+          "unrelated": 0.01,
+          "insufficient": 0.04
+        }
+      },
+      "severity": {
+        "type": "choice",
+        "choice": "low",
+        "confidence": 0.12,
+        "probabilities": {
+          "low": 0.34,
+          "medium": 0.28,
+          "high": 0.32,
+          "undetermined": 0.06
+        }
+      },
+      "active_fire": {
+        "type": "choice",
+        "choice": "no",
+        "confidence": 0.28,
+        "probabilities": {
+          "yes": 0.45,
+          "no": 0.52,
+          "undeterminable": 0.03
+        }
+      },
+      "passage": {
+        "type": "choice",
+        "choice": "none",
+        "confidence": 0.49,
+        "probabilities": {
+          "total": 0.01,
+          "partial": 0.29,
+          "none": 0.62,
+          "undetermined": 0.08
+        }
+      },
+      "accessibility": {
+        "type": "choice",
+        "choice": "not_affected",
+        "confidence": 0.18,
+        "probabilities": {
+          "affected": 0.27,
+          "not_affected": 0.45,
+          "undetermined": 0.28
+        }
+      },
+      "location_in_text": {
+        "type": "choice",
+        "choice": "absent",
+        "confidence": 0.91,
+        "probabilities": {
+          "precise": 0,
+          "vague": 0.06,
+          "absent": 0.94
+        }
+      },
+      "photo_quality": {
+        "type": "choice",
+        "choice": "useful",
+        "confidence": 0.52,
+        "probabilities": {
+          "useful": 0.68,
+          "insufficient": 0.32,
+          "no_photo": 0
+        }
+      },
+      "text_photo_consistency": {
+        "type": "choice",
+        "choice": "contradiction",
+        "confidence": 0.66,
+        "probabilities": {
+          "consistent": 0.23,
+          "contradiction": 0.77,
+          "not_evaluable": 0
+        }
+      },
+      "problem_type": {
+        "type": "choice",
+        "choice": "contenedor_danado",
+        "confidence": 0.53,
+        "probabilities": {
+          "bache": 0,
+          "basura_acumulada": 0,
+          "accesibilidad_obstruida": 0,
+          "contenedor_danado": 0.5700000000000001,
+          "contenedor_fuego": 0.43,
+          "vereda_rota": 0,
+          "carteleria": 0,
+          "alumbrado": 0,
+          "arbol_caido": 0,
+          "desague_obstruido": 0,
+          "other": 0,
+          "unknown": 0
+        }
+      },
+      "fact_photo_shows_fire": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "fact_recurring_problem_claimed": {
+        "type": "noul",
+        "noul": 0.02
+      }
+    },
+    "usage": {
+      "input_tokens": 5501,
+      "output_tokens": 567
+    },
+    "latencyMs": 666,
+    "status": "ok"
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "case": {
+    "name": "basura-foto-sin-lugar",
+    "texts": [
+      "mirá cómo dejaron la basura"
+    ],
+    "photo": "basura.jpg",
+    "expect": {
+      "problem_type": "basura_acumulada",
+      "location_in_text": "absent"
+    }
+  },
+  "run": {
+    "purpose": "evaluate",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-basura-foto-sin-lugar",
+      "report_revision": 1,
+      "message_ids": [
+        "m1"
+      ],
+      "attachment_ids": [
+        "photo-basura-foto-sin-lugar"
+      ],
+      "catalog_hash": "ae042fdb95651dfa",
+      "policy_version_id": "418f39e4-efa0-4be9-9f50-0daad7be1077"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b2261147494abea7e4bd45d3a5e",
+    "response": {
+      "intent": {
+        "type": "choice",
+        "choice": "report",
+        "confidence": 1,
+        "probabilities": {
+          "report": 1,
+          "status_query": 0,
+          "other": 0
+        }
+      },
+      "applicability": {
+        "type": "choice",
+        "choice": "applicable",
+        "confidence": 1,
+        "probabilities": {
+          "applicable": 1,
+          "unrelated": 0,
+          "insufficient": 0
+        }
+      },
+      "severity": {
+        "type": "choice",
+        "choice": "medium",
+        "confidence": 0.65,
+        "probabilities": {
+          "low": 0.13,
+          "medium": 0.74,
+          "high": 0.13,
+          "undetermined": 0
+        }
+      },
+      "active_fire": {
+        "type": "choice",
+        "choice": "no",
+        "confidence": 1,
+        "probabilities": {
+          "yes": 0,
+          "no": 1,
+          "undeterminable": 0
+        }
+      },
+      "passage": {
+        "type": "choice",
+        "choice": "partial",
+        "confidence": 0.77,
+        "probabilities": {
+          "total": 0.02,
+          "partial": 0.83,
+          "none": 0.14,
+          "undetermined": 0.01
+        }
+      },
+      "accessibility": {
+        "type": "choice",
+        "choice": "affected",
+        "confidence": 0.77,
+        "probabilities": {
+          "affected": 0.85,
+          "not_affected": 0.11,
+          "undetermined": 0.04
+        }
+      },
+      "location_in_text": {
+        "type": "choice",
+        "choice": "absent",
+        "confidence": 0.97,
+        "probabilities": {
+          "precise": 0,
+          "vague": 0.02,
+          "absent": 0.98
+        }
+      },
+      "photo_quality": {
+        "type": "choice",
+        "choice": "useful",
+        "confidence": 1,
+        "probabilities": {
+          "useful": 1,
+          "insufficient": 0,
+          "no_photo": 0
+        }
+      },
+      "text_photo_consistency": {
+        "type": "choice",
+        "choice": "consistent",
+        "confidence": 1,
+        "probabilities": {
+          "consistent": 1,
+          "contradiction": 0,
+          "not_evaluable": 0
+        }
+      },
+      "problem_type": {
+        "type": "choice",
+        "choice": "basura_acumulada",
+        "confidence": 0.99,
+        "probabilities": {
+          "bache": 0,
+          "basura_acumulada": 0.99,
+          "accesibilidad_obstruida": 0.01,
+          "contenedor_danado": 0,
+          "contenedor_fuego": 0,
+          "vereda_rota": 0,
+          "carteleria": 0,
+          "alumbrado": 0,
+          "arbol_caido": 0,
+          "desague_obstruido": 0,
+          "other": 0,
+          "unknown": 0
+        }
+      },
+      "fact_photo_shows_fire": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "fact_recurring_problem_claimed": {
+        "type": "noul",
+        "noul": 0.05
+      }
+    },
+    "usage": {
+      "input_tokens": 5492,
+      "output_tokens": 563
+    },
+    "latencyMs": 640,
+    "status": "ok"
+  }
+}

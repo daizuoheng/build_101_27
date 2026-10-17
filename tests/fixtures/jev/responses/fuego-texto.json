@@ -1,0 +1,156 @@
+{
+  "case": {
+    "name": "fuego-texto",
+    "texts": [
+      "Se está prendiendo fuego el contenedor de 8 de Octubre y Garibaldi, sale humo negro"
+    ],
+    "expect": {
+      "problem_type": "contenedor_fuego",
+      "active_fire": "yes"
+    }
+  },
+  "run": {
+    "purpose": "evaluate",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-fuego-texto",
+      "report_revision": 1,
+      "message_ids": [
+        "m1"
+      ],
+      "attachment_ids": [],
+      "catalog_hash": "ae042fdb95651dfa",
+      "policy_version_id": "418f39e4-efa0-4be9-9f50-0daad7be1077"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b22552173b6ad96cf70edfd0dd8",
+    "response": {
+      "intent": {
+        "type": "choice",
+        "choice": "report",
+        "confidence": 0.92,
+        "probabilities": {
+          "report": 0.95,
+          "status_query": 0,
+          "other": 0.05
+        }
+      },
+      "applicability": {
+        "type": "choice",
+        "choice": "applicable",
+        "confidence": 0.89,
+        "probabilities": {
+          "applicable": 0.93,
+          "unrelated": 0,
+          "insufficient": 0.07
+        }
+      },
+      "severity": {
+        "type": "choice",
+        "choice": "high",
+        "confidence": 0.97,
+        "probabilities": {
+          "low": 0,
+          "medium": 0,
+          "high": 0.98,
+          "undetermined": 0.02
+        }
+      },
+      "active_fire": {
+        "type": "choice",
+        "choice": "yes",
+        "confidence": 0.98,
+        "probabilities": {
+          "yes": 0.99,
+          "no": 0,
+          "undeterminable": 0.01
+        }
+      },
+      "passage": {
+        "type": "choice",
+        "choice": "undetermined",
+        "confidence": 0.91,
+        "probabilities": {
+          "total": 0.03,
+          "partial": 0.03,
+          "none": 0.01,
+          "undetermined": 0.9299999999999999
+        }
+      },
+      "accessibility": {
+        "type": "choice",
+        "choice": "undetermined",
+        "confidence": 0.98,
+        "probabilities": {
+          "affected": 0,
+          "not_affected": 0.01,
+          "undetermined": 0.99
+        }
+      },
+      "location_in_text": {
+        "type": "choice",
+        "choice": "precise",
+        "confidence": 0.94,
+        "probabilities": {
+          "precise": 0.96,
+          "vague": 0.04,
+          "absent": 0
+        }
+      },
+      "photo_quality": {
+        "type": "choice",
+        "choice": "no_photo",
+        "confidence": 1,
+        "probabilities": {
+          "useful": 0,
+          "insufficient": 0,
+          "no_photo": 1
+        }
+      },
+      "text_photo_consistency": {
+        "type": "choice",
+        "choice": "not_evaluable",
+        "confidence": 1,
+        "probabilities": {
+          "consistent": 0,
+          "contradiction": 0,
+          "not_evaluable": 1
+        }
+      },
+      "problem_type": {
+        "type": "choice",
+        "choice": "contenedor_fuego",
+        "confidence": 1,
+        "probabilities": {
+          "bache": 0,
+          "basura_acumulada": 0,
+          "accesibilidad_obstruida": 0,
+          "contenedor_danado": 0,
+          "contenedor_fuego": 1,
+          "vereda_rota": 0,
+          "carteleria": 0,
+          "alumbrado": 0,
+          "arbol_caido": 0,
+          "desague_obstruido": 0,
+          "other": 0,
+          "unknown": 0
+        }
+      },
+      "fact_photo_shows_fire": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "fact_recurring_problem_claimed": {
+        "type": "noul",
+        "noul": 0.05
+      }
+    },
+    "usage": {
+      "input_tokens": 2228,
+      "output_tokens": 570
+    },
+    "latencyMs": 233,
+    "status": "ok"
+  }
+}
