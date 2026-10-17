@@ -240,6 +240,15 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
   const lastUiIndex = lastIndexWithUi(draft.messages);
   const lastUi = lastUiIndex >= 0 ? draft.messages[lastUiIndex].ui : null;
   const status = statusOf(draft, lastUi);
+  // Cada botón tiene su equivalente escrito (como en WhatsApp, donde no hay botones): el campo lo sugiere.
+  const hint =
+    lastUi?.kind === "propose_location" && actionable(lastUi, draft)
+      ? "Respondé «sí» o escribí otra dirección…"
+      : lastUi?.kind === "ready" && draft.card.ready
+        ? "Respondé «enviar» o escribí qué cambiar…"
+        : lastUi?.kind === "ask_location" && !draft.location?.confirmed
+          ? "Escribí la dirección o una esquina…"
+          : "Escribí un mensaje…";
   const area = draft.location?.confirmed ? draft.location.areaName : null;
 
   const review = (
@@ -399,6 +408,15 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                 >
                   <IconCamera />
                 </button>
+                <button
+                  type="button"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-low text-ink hover:text-accent disabled:opacity-55"
+                  onClick={shareLocation}
+                  disabled={locating || busy}
+                  aria-label={locating ? "Obteniendo tu ubicación" : "Enviar mi ubicación"}
+                >
+                  <IconLocate />
+                </button>
                 <label htmlFor="composer" className="sr-only">Mensaje</label>
                 <textarea
                   ref={composer}
@@ -407,7 +425,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                   rows={1}
                   value={text}
                   maxLength={2000}
-                  placeholder="Escribí un mensaje…"
+                  placeholder={hint}
                   enterKeyHint="send"
                   onChange={(e) => {
                     setText(e.target.value);
