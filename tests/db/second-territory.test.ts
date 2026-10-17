@@ -96,4 +96,39 @@ describe("segundo territorio (Montevideo es configuración)", () => {
       (select count(*) from policy_versions where territory_id = $1)::int as policies, (select count(*) from areas where territory_id = $1)::int as areas`, [b]);
     expect(n.rows[0]).toEqual({ units: 1, policies: Object.keys(demoB.policies).length, areas: 1 });
   });
+
+  it("reseedear tras cambiar la config publica una versión nueva y conserva la anterior", async () => {
+    const pool = await testDb();
+    const v1 = await getActivePolicy(pool, b, "grouping");
+    await seedTerritoryDemoB(pool, { policies: { grouping: { ...demoB.policies.grouping, radius_m: 120 } } });
+
+    const v2 = await getActivePolicy(pool, b, "grouping");
+    expect(v2).toMatchObject({ version: v1.version + 1, config: { radius_m: 120 } });
+    // La versión anterior no se edita: lo ya calculado con ella sigue siendo trazable.
+    const old = await pool.query("select config->>'radius_m' as radius, active from policy_versions where id = $1", [v1.id]);
+    expect(old.rows).toEqual([{ radius: "75", active: false }]);
+    // Los kinds sin cambios no se versionan.
+    expect((await getActivePolicy(pool, b, "textgen")).version).toBe(1);
+
+    await seedTerritoryDemoB(pool);
+    expect((await getActivePolicy(pool, b, "grouping")).config.radius_m).toBe(75);
+    expect(await activeCounts(b)).toEqual(Object.fromEntries(Object.keys(demoB.policies).map((k) => [k, 1])));
+  });
+
+  it("reseedear con la versión 1 inactiva deja una versión activa con la config del seed", async () => {
+    const pool = await testDb();
+    await pool.query("update policy_versions set active = false where territory_id = $1", [b]);
+    await seedTerritoryDemoB(pool);
+    expect(await activeCounts(b)).toEqual(Object.fromEntries(Object.keys(demoB.policies).map((k) => [k, 1])));
+    expect(await getActivePolicy(pool, b, "grouping")).toMatchObject({ version: 2, config: { radius_m: 75 } });
+  });
 });
+
+/** Versiones activas por kind de un territorio. */
+async function activeCounts(territory: string): Promise<Record<string, number>> {
+  const { rows } = await (await testDb()).query<{ kind: string; n: number }>(
+    "select kind, count(*) filter (where active)::int as n from policy_versions where territory_id = $1 group by kind",
+    [territory],
+  );
+  return Object.fromEntries(rows.map((r) => [r.kind, r.n]));
+}

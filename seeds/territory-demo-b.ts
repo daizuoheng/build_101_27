@@ -1,6 +1,7 @@
 // Segundo territorio SINTÉTICO, solo para tests: prueba que Montevideo es configuración y no código.
 // No entra en seedAll. Un cuadrado de ~1 km en el golfo de Guinea (0°, 0°), lejos de cualquier dato real.
 import type { Pool } from "pg";
+import { isValidPolicy, type PolicyKind } from "../src/server/config/policies";
 import { withTx } from "../src/server/db/tx";
 import { policies } from "./policies";
 
@@ -35,8 +36,14 @@ export const demoB = {
   },
 };
 
-/** Requiere `seedAll` antes (catálogo y capacidades globales). Idempotente por clave natural. */
-export async function seedTerritoryDemoB(pool: Pool): Promise<{ territoryId: string; unitId: string }> {
+/**
+ * Requiere `seedAll` antes (catálogo y capacidades globales). Idempotente por clave natural.
+ * `opts.policies` reemplaza por kind las políticas de `demoB` (los tests lo usan para simular un cambio de config).
+ */
+export async function seedTerritoryDemoB(
+  pool: Pool,
+  opts: { policies?: Partial<Record<PolicyKind, unknown>> } = {},
+): Promise<{ territoryId: string; unitId: string }> {
   const t = demoB;
   const env = `st_multi(st_makeenvelope(${SQUARE.minLon}, ${SQUARE.minLat}, ${SQUARE.maxLon}, ${SQUARE.maxLat}, 4326))`;
   return withTx(async (c) => {
@@ -59,11 +66,21 @@ export async function seedTerritoryDemoB(pool: Pool): Promise<{ territoryId: str
     );
     const enabled = await c.query<{ n: number }>("select count(*)::int as n from territory_problem_types where territory_id = $1", [territoryId]);
     if (enabled.rows[0].n !== t.problemTypes.length) throw new Error("catálogo de demo-b incompleto (¿falta seedAll?)");
-    for (const [kind, config] of Object.entries(t.policies)) {
+    // demo-b es sintético y su única fuente de verdad es este archivo: si la política activa falta o difiere
+    // de la del seed, se publica la del seed como versión nueva activa. Se versiona y no se edita (como
+    // `policy-upgrade`), porque evaluaciones y decisiones guardan el `policy_version_id` con que se calcularon.
+    for (const [kind, config] of Object.entries({ ...t.policies, ...opts.policies }) as [PolicyKind, unknown][]) {
+      if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' de demo-b no valida contra su esquema`);
+      const active = await c.query<{ same: boolean }>(
+        "select config = $3::jsonb as same from policy_versions where territory_id = $1 and kind = $2 and active",
+        [territoryId, kind, JSON.stringify(config)],
+      );
+      if (active.rows[0]?.same) continue;
+      await c.query("update policy_versions set active = false where territory_id = $1 and kind = $2 and active", [territoryId, kind]);
       await c.query(
-        `insert into policy_versions (territory_id, kind, version, config, active) values ($1, $2, 1, $3, true)
-         on conflict (territory_id, kind, version) do nothing`,
-        [territoryId, kind, config],
+        `insert into policy_versions (territory_id, kind, version, config, active)
+         select $1, $2, coalesce(max(version), 0) + 1, $3, true from policy_versions where territory_id = $1 and kind = $2`,
+        [territoryId, kind, JSON.stringify(config)],
       );
     }
     const u = t.unit;

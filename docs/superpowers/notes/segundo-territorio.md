@@ -20,11 +20,21 @@ en `seedAll`. Tiene:
 - Un reporte en `demo-b` recorre recepción → confirmación → worker (`process_report`) y crea el incidente en `demo-b`,
   con su área.
 - `seedAll` de producción no crea `demo-b`, y reseedear `demo-b` es idempotente.
+- Reseedear `demo-b` con otra config publica una versión nueva activa y deja la anterior intacta e inactiva; si no
+  queda ninguna activa (p. ej. la v1 desactivada), el reseed publica una. Siempre hay exactamente una activa por kind.
 
 **Pendiente**: el plan pide además que "su plan solo considera unidades de demo-b". El snapshot del planificador
 (`src/server/pipeline/plan.ts`, sesión A) todavía no existe en `epic/nucleo`. Por ahora el test fija la consulta de
 unidades por territorio que ese snapshot tiene que respetar. Cuando entre `runPlan`, conviene agregar el caso:
 `runPlan(demo-b)` ⇒ `plan_items` solo con `cuadrilla-b`.
+
+## Políticas de `demo-b`: se versionan, no se editan
+
+`seedAll` nunca pisa una política válida, porque en Montevideo la puede haber cambiado operación. `demo-b` no tiene
+operación: su única fuente de verdad es `seeds/territory-demo-b.ts`. Por eso su seed compara la versión activa con
+la del archivo y, si falta o difiere, publica la del archivo como `max(version) + 1` activa, igual que
+`policy-upgrade`. No usa `on conflict do update set config`: las evaluaciones y decisiones guardan el
+`policy_version_id` con que se calcularon, y editar esa fila cambiaría a posteriori lo que dice esa traza.
 
 ## Referencias a Montevideo y al locale en `src/`
 
