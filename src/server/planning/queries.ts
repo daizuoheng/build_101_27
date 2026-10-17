@@ -87,6 +87,17 @@ export async function requestReplan(pool: Pool, input: { territoryId: string; ac
     );
     if (open.rows[0]) return { jobId: open.rows[0].id, created: false };
 
+    // Sufijo de generación determinista (sin reloj): si el último recálculo manual falló se reutiliza su clave y
+    // `enqueue` lo revive; si terminó, se pasa a la generación siguiente. Así no se duplican filas tras un fallo y
+    // un plan ya calculado no bloquea nuevos pedidos. La clave replica el formato de `enqueue` (jobs/queue.ts).
+    const prefix = `plan:territory:${input.territoryId}:0:manual:`;
+    const last = await c.query<{ status: string; dedupe_key: string }>(
+      `select status, dedupe_key from jobs where kind = 'plan' and starts_with(dedupe_key, $1) order by created_at desc limit 1`,
+      [prefix],
+    );
+    const lastGen = last.rows[0] ? Number(last.rows[0].dedupe_key.slice(prefix.length)) || 0 : 0;
+    const generation = last.rows[0]?.status === "failed" ? lastGen : lastGen + 1;
+
     const job = await enqueue(c, {
       kind: "plan",
       entityType: "territory",
@@ -94,6 +105,7 @@ export async function requestReplan(pool: Pool, input: { territoryId: string; ac
       entityRevision: 0,
       territoryId: input.territoryId,
       payload: { trigger: "manual" },
+      dedupeSuffix: `manual:${generation}`,
     });
     await appendEvent(c, {
       entityType: "territory",

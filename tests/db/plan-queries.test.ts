@@ -91,24 +91,20 @@ describe("lectura del plan y pedido de recálculo", () => {
     const ev = await pool.query("select kind, actor_type, actor_id from events where entity_type = 'territory'");
     expect(ev.rows).toEqual([{ kind: "plan_requested", actor_type: "operator", actor_id: OPERATOR }]);
 
-    // dedupe_key estable: un job terminado colapsa a la misma clave; el ON CONFLICT no revive un `done`,
-    // así que un nuevo pedido reutiliza el mismo job (mismo id) en vez de duplicarlo.
+    // Terminado el job anterior, un nuevo pedido crea otro (generación siguiente).
     await pool.query("update jobs set status = 'done'");
     const third = await requestReplan(pool, { territoryId: t, actorId: OPERATOR });
-    expect(third.jobId).toBe(first.jobId);
-    const afterThird = await pool.query("select count(*)::int as n from jobs where kind = 'plan'");
-    expect(afterThird.rows[0].n).toBe(1);
+    expect(third.created).toBe(true);
+    expect(third.jobId).not.toBe(first.jobId);
 
-    // Un job `failed` se revive con la misma clave (ON CONFLICT revive-failed) y vuelve a quedar pendiente,
-    // sin crear un job nuevo.
-    await pool.query("update jobs set status = 'failed'");
+    // Si el último falló, se revive el mismo job (ON CONFLICT de enqueue) en vez de insertar otra fila.
+    await pool.query("update jobs set status = 'failed' where id = $1", [third.jobId]);
     const fourth = await requestReplan(pool, { territoryId: t, actorId: OPERATOR });
-    expect(fourth.jobId).toBe(first.jobId);
+    expect(fourth.jobId).toBe(third.jobId);
     const revived = await pool.query<{ status: string; n: number }>(
       "select status, (select count(*)::int from jobs where kind = 'plan') as n from jobs where id = $1",
       [fourth.jobId],
     );
-    expect(revived.rows[0].status).toBe("pending");
-    expect(revived.rows[0].n).toBe(1);
+    expect(revived.rows[0]).toEqual({ status: "pending", n: 2 });
   });
 });
