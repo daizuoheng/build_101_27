@@ -26,7 +26,18 @@ describe("seeds de demo", () => {
     expect(rows.find((r) => r.slug === "cuadrilla-limpieza").capacity).toBe(3);
   });
 
-  it("es atómico: sin contraseña de unidad no deja unidades ni usuarios a medias", async () => {
+  it("es atómico: un error a mitad de la transacción revierte las unidades ya insertadas", async () => {
+    const pool = await testDb();
+    // Sin la capacidad 'fuego', las dos primeras unidades se insertan y la tercera (cuadrilla-fuego) falla.
+    await pool.query("delete from problem_type_requirements where capability_id = (select id from capabilities where slug = 'fuego')");
+    await pool.query("delete from capabilities where slug = 'fuego'");
+    await expect(seedDemo(pool, "montevideo")).rejects.toThrow("capacidad inexistente: fuego");
+    const left = await pool.query(`select (select count(*) from response_units)::int as units, (select count(*) from unit_capabilities)::int as caps,
+      (select count(*) from internal_users)::int as users, (select count(*) from events where kind = 'demo_seeded')::int as events`);
+    expect(left.rows[0]).toEqual({ units: 0, caps: 0, users: 0, events: 0 });
+  });
+
+  it("falla antes de escribir si falta la contraseña de unidad", async () => {
     const pool = await testDb();
     const saved = process.env.DEMO_UNIT_PASSWORD;
     delete process.env.DEMO_UNIT_PASSWORD;
