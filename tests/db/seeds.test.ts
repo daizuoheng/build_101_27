@@ -71,6 +71,22 @@ describe("seeds y geografía", () => {
     await pool.query("update policy_versions set active = true, config = $2 where territory_id = $1 and kind = 'grouping'", [t, policies.grouping]);
   });
 
+  it("una activa inválida que sigue sin validar al completarla se reemplaza por la del seed, sin claves viejas", async () => {
+    const pool = await testDb();
+    const t = (await pool.query("select id from territories where slug = 'montevideo'")).rows[0].id;
+    await pool.query(
+      `update policy_versions set config = '{"radius_m":"cuarenta","legacy_flag":true}' where territory_id = $1 and kind = 'grouping'`,
+      [t],
+    );
+    await seedAll(pool, { importAreas: false });
+    const stored = (await pool.query("select config from policy_versions where territory_id = $1 and kind = 'grouping' and active", [t])).rows[0].config;
+    expect(stored.radius_m).toBe(policies.grouping.radius_m);
+    expect(stored).not.toHaveProperty("legacy_flag");
+
+    await pool.query("delete from policy_versions where territory_id = $1 and kind = 'grouping' and version = 2", [t]);
+    await pool.query("update policy_versions set active = true, config = $2 where territory_id = $1 and kind = 'grouping'", [t, policies.grouping]);
+  });
+
   it("sin ninguna versión activa, reseedear publica la del seed como versión nueva", async () => {
     const pool = await testDb();
     const t = (await pool.query("select id from territories where slug = 'montevideo'")).rows[0].id;

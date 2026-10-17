@@ -11,12 +11,13 @@ export const territories = [montevideo];
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** Valores de `current` sobre los de `defaults`, recursivo en objetos; arrays y escalares de `current` se toman enteros. */
-function fillMissing(defaults: unknown, current: unknown): unknown {
-  if (!isObject(defaults) || !isObject(current)) return current === undefined ? defaults : current;
-  const out: Record<string, unknown> = { ...defaults };
-  for (const [k, v] of Object.entries(current)) out[k] = k in defaults ? fillMissing(defaults[k], v) : v;
-  return out;
+/**
+ * La política del seed con las secciones de primer nivel que ya tenía la guardada, cada una entera: no se mezclan
+ * por dentro (una clave quitada de un mapa como `strategies` sigue quitada) y se descartan las que el seed ya no tiene.
+ */
+function fillMissing(seed: unknown, stored: unknown): unknown {
+  if (!isObject(seed) || !isObject(stored)) return seed;
+  return Object.fromEntries(Object.entries(seed).map(([k, v]) => [k, k in stored ? stored[k] : v]));
 }
 
 /**
@@ -76,7 +77,7 @@ export async function seedAll(pool: Pool, opts: { importAreas?: boolean } = {}):
         );
         // Si no queda ninguna activa, o el esquema cambió y la activa ya no valida, se publica una versión nueva:
         // se versiona, no se edita, y una política válida (aunque la haya cambiado operación) no se toca.
-        // Sobre una activa inválida se conservan sus valores y el seed completa lo que falta; si aun así no valida, va la del seed.
+        // Sobre una activa inválida se conservan sus secciones y el seed completa las que faltan; si aun así no valida, va la del seed.
         const active = await c.query<{ version: number; config: unknown }>(
           "select version, config from policy_versions where territory_id = $1 and kind = $2 and active",
           [territoryId, kind],
