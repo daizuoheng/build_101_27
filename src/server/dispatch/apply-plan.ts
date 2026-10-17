@@ -27,7 +27,7 @@ export type SkipReason =
   | "out_of_radius"
   | "no_zone_owner";
 
-type Outcome = { kind: "created"; assignmentId: string } | { kind: "skipped"; reason: SkipReason } | { kind: "replan" } | { kind: "done" };
+type Outcome = { kind: "created"; assignmentId: string } | { kind: "skipped"; reason: SkipReason } | { kind: "replan" } | { kind: "obsolete" } | { kind: "done" };
 
 type Run = { id: string; territoryId: string; incidentRevisions: Record<string, unknown> };
 type Item = { id: string; incidentId: string; unitId: string; reasons: unknown };
@@ -52,18 +52,20 @@ export const applyPlan: ApplyPlan = async (pool, planRunId) => {
   const skipped: { incidentId: string; reason: string }[] = [];
   if (!items.length) return { created, skipped, stoppedForReplan: false };
 
-  // Las propuestas obsoletas no se envían: solo se ejecuta el último plan del territorio.
-  const latest = await pool.query<{ id: string }>(
-    "select id from plan_runs where territory_id = $1 order by computed_at desc, created_at desc limit 1",
-    [run.territoryId],
-  );
-  if (latest.rows[0]?.id !== run.id) {
+  // Las propuestas obsoletas no se envían: solo se ejecuta el último plan del territorio. Atajo antes del loop;
+  // `applyOne` lo vuelve a verificar dentro de cada transacción por si otro plan se confirma a mitad de camino.
+  if (!(await isLatestRun(pool, run))) {
     return { created, skipped: items.map((i) => ({ incidentId: i.incidentId, reason: "obsolete_plan" })), stoppedForReplan: false };
   }
 
   const policy = await getActivePolicy(pool, run.territoryId, "dispatch");
-  for (const item of items) {
+  for (const [idx, item] of items.entries()) {
     const out = await withTx((c) => applyOne(c, run, item, policy), pool);
+    if (out.kind === "obsolete") {
+      // Un plan más nuevo se confirmó durante el despacho: lo que falta de este plan ya no se envía.
+      skipped.push(...items.slice(idx).map((i) => ({ incidentId: i.incidentId, reason: "obsolete_plan" })));
+      return { created, skipped, stoppedForReplan: false };
+    }
     if (out.kind === "created") created.push(out.assignmentId);
     else if (out.kind === "skipped") skipped.push({ incidentId: item.incidentId, reason: out.reason });
     else if (out.kind === "replan") {
@@ -78,7 +80,11 @@ export const applyPlan: ApplyPlan = async (pool, planRunId) => {
 /** Una propuesta, revalidada bajo bloqueo. Orden de bloqueo fijo (ítem → incidente → unidad) para no generar ciclos. */
 async function applyOne(c: PoolClient, run: Run, item: Item, policy: Versioned<DispatchPolicy>): Promise<Outcome> {
   const it = await c.query<{ status: string }>("select status from plan_items where id = $1 for update", [item.id]);
-  if (it.rows[0]?.status !== "proposed") return { kind: "done" }; // otro applyPlan ya la procesó
+  if (it.rows[0]?.status !== "proposed") return { kind: "done" }; // otro applyPlan (o un plan nuevo) ya la procesó
+  if (!(await isLatestRun(c, run))) {
+    await c.query("update plan_items set status = 'obsolete', blocked_reason = 'obsolete_plan' where id = $1", [item.id]);
+    return { kind: "obsolete" };
+  }
 
   const inc = (
     await c.query<{
@@ -175,6 +181,14 @@ async function applyOne(c: PoolClient, run: Run, item: Item, policy: Versioned<D
   });
   await appendEvent(c, { entityType: "incident", entityId: item.incidentId, kind: "assigned", actorType: "system", data: { assignment_id: assignmentId, unit_id: item.unitId } });
   return { kind: "created", assignmentId };
+}
+
+async function isLatestRun(db: Pool | PoolClient, run: Run): Promise<boolean> {
+  const latest = await db.query<{ id: string }>(
+    "select id from plan_runs where territory_id = $1 order by computed_at desc, created_at desc limit 1",
+    [run.territoryId],
+  );
+  return latest.rows[0]?.id === run.id;
 }
 
 async function block(c: PoolClient, item: Item, reason: SkipReason): Promise<Outcome> {

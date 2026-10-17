@@ -200,6 +200,34 @@ describe("despacho transaccional", () => {
     expect(res.skipped).toEqual([{ incidentId: b, reason: "obsolete_plan" }]);
   });
 
+  it("si se confirma un plan más nuevo a mitad del despacho, lo que falta del plan viejo no se envía", async () => {
+    const u = await unit("u1", ["limpieza"], { capacity: 3 });
+    const a = await incident("basura_acumulada");
+    const b = await incident("basura_acumulada", { lonOffset: 0.001 });
+    const run = await plan([{ incidentId: a, unitId: u }, { incidentId: b, unitId: u }]);
+    // Simula el job `plan` confirmando otra corrida justo después de la primera orden de este plan.
+    await pool.query(`
+      create or replace function test_newer_plan() returns trigger language plpgsql as $$
+      begin
+        insert into plan_runs (territory_id, policy_version_id, computed_at, trigger)
+        select territory_id, policy_version_id, clock_timestamp(), 'test' from plan_runs where id = '${run}';
+        return new;
+      end $$;
+      create trigger test_newer_plan after insert on assignments for each row execute function test_newer_plan();`);
+    try {
+      const res = await applyPlan(pool, run);
+      expect(res.created).toHaveLength(1);
+      expect(res.skipped).toEqual([{ incidentId: b, reason: "obsolete_plan" }]);
+      expect(await one("select status, blocked_reason from plan_items where plan_run_id = $1 and incident_id = $2", [run, b])).toEqual({
+        status: "obsolete",
+        blocked_reason: "obsolete_plan",
+      });
+      expect(await activeOrders(u)).toBe(1);
+    } finally {
+      await pool.query("drop trigger test_newer_plan on assignments; drop function test_newer_plan();");
+    }
+  });
+
   describe("transiciones", () => {
     async function offered() {
       const u = await unit("u1", ["limpieza"]);
