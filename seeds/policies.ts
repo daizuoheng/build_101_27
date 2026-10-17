@@ -92,15 +92,16 @@ const judgement = {
  * para que las dos direcciones no se desincronicen. Siguen siendo datos de la política (strings); el código no los conoce.
  * - Rechaza: «se envió una cuadrilla», «la unidad llegará», «están enviándole una cuadrilla», «la cuadrilla llegó»
  *   (el pasado afirmativo afirmaría un estado que el backend no dio).
- * - Pasa: un verbo negado aunque haya auxiliares o pronombres en el medio («no ha llegado», «no se envió ninguna
- *   cuadrilla», «tampoco llegó»), y el actor como destinatario («vecinos mandaron fotos al equipo»).
+ * - Pasa: una negación hasta 25 caracteres antes del verbo («no ha podido llegar», «ninguna cuadrilla llegó»,
+ *   «no está asignada»), el actor como destinatario («fotos al equipo», «a ninguna cuadrilla») y los pedidos en
+ *   subjuntivo («piden que envíen una cuadrilla»).
  */
 const L = String.raw`(?<![\p{L}\p{N}])`;
 const R = String.raw`(?![\p{L}\p{N}])`;
-const NEGATED = String.raw`(?<!(?:^|[^\p{L}\p{N}])(?:no|ni|nunca|jam[áa]s|tampoco|todav[íi]a no|a[úu]n no|sin que)\s+(?:(?:se|le|les|lo|la|los|las|nos|me|te|ha|han|hab[íi]a|hab[íi]an|fue|fueron|sido|va|van|a|ning[úu]na?|ning[úu]n)\s+){0,3})`;
-const ACTOR = String.raw`(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?|móvil(?:es)?|inspector(?:es|as?)?|órden(?:es)?|orden(?:es)?)`;
-const AS_RECIPIENT = String.raw`(?<!(?:al|a la|a las|a los|del|de la|de las|de los|para el|para la|para los)\s+)`;
-const VERB = String.raw`(?:lleg\p{L}*|arrib\p{L}*|(?:va|van|vamos)\s+a\s+\p{L}+|ir(?:á|án)|yendo|pasar(?:á|án)|sal(?:e|en|ió|ieron|drá|drán|iendo)|en camino|asign\p{L}*|(?:envi|enví|mand)\p{L}*|despach\p{L}*|derivad[oa]s?)`;
+const NEGATED = String.raw`(?<!(?:^|[^\p{L}\p{N}])(?:no|ni|nunca|jam[áa]s|tampoco|sin que|ning[úu]n\p{L}*)(?![\p{L}\p{N}])[^.;]{0,25})`;
+const ACTOR = String.raw`(?:cuadrillas?|unidad(?:es)?|equipos?|personal|operarios?|móvil(?:es)?|inspector(?:es|as?)?|[óo]rden(?:es)?)`;
+const AS_RECIPIENT = String.raw`(?<!(?:al|a la|a las|a los|del|de la|de las|de los|para el|para la|para los|a ning[úu]n\p{L}*)\s+)`;
+const VERB = String.raw`(?:lleg\p{L}*|arrib\p{L}*|(?:va|van|vamos)\s+a\s+\p{L}+|ir(?:á|án)|yendo|pasar(?:á|án)|sal(?:e|en|ió|ieron|drá|drán|iendo)|en camino|asign\p{L}*|(?:envi|enví)(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas|ando|ándo\p{L}+)|mand(?:a|an|amos|ó|aron|ará|arán|ado|ada|ados|adas|ando|ándo\p{L}+)|despach\p{L}*|derivad[oa]s?)`;
 const ACTOR_PATTERNS = [
   `${L}${ACTOR}${R}[^.;]{0,40}?${L}${NEGATED}${VERB}${R}`,
   `${L}${NEGATED}${VERB}${R}[^.;]{0,40}?${L}${AS_RECIPIENT}${ACTOR}${R}`,
@@ -241,8 +242,7 @@ export const policies = {
     // prohíben. Se prioriza no rechazar narración legítima de los reportes; los casos nuevos se suman con tests.
     // Límites de palabra Unicode: \b es ASCII en JS y no corta después de «á». Se compilan con flags "iu".
     forbidden_patterns: [
-      // Despacho o llegada atribuidos a un actor del servicio, en cualquier orden y a menos de 40 caracteres.
-      // Ver ACTOR_PATTERNS arriba: negaciones y destinatarios («fotos al equipo») pasan.
+      // Actor del servicio + acción: ver ACTOR_PATTERNS.
       ...ACTOR_PATTERNS,
       // Futuro de llegada o resolución con plazo, aunque no nombre al actor: «llegará en 30 minutos», «se demorará 5 horas». El presente narrativo pasa: «el camión demora 5 días en pasar».
       "(?<![\\p{L}\\p{N}])(?:llegará|llegarán|arribará|arribarán|irá|irán|pasará|pasarán|demorará|demorarán|tardará|tardarán|estará|estarán)\\s+(?:en|dentro de|hoy|mañana|pronto|enseguida|\\d|unos?|unas?|dos|tres|media|pocos?|pocas?)(?![\\p{L}\\p{N}])",
