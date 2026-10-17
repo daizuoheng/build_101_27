@@ -5,6 +5,7 @@ import { getActivePolicy } from "../config/policies";
 import { appendEvent } from "../events/append";
 import { enqueue, type Job } from "../jobs/queue";
 import { computePriority } from "./priority";
+import { enqueueTextgen } from "./textgen";
 import type { BuildPlan, DispatchStrategy, PlanIncident, PlanPolicy, PlanSnapshot, PlanUnit, PriorityBand } from "@/shared/contracts/plan";
 
 const OPEN = ["open", "assigned", "in_progress"];
@@ -15,7 +16,7 @@ const DEFERRED = "%:deferred:%"; // clave de los jobs `plan` diferidos (`deferPl
  * Snapshot del territorio para `buildPlan`, todo desde la base y con un único instante `now`.
  * La banda se recalcula con la hora actual (promoción por antigüedad) salvo que haya una banda corregida a mano.
  */
-export async function buildSnapshot(db: Db, territoryId: string, now: Date): Promise<{ snapshot: PlanSnapshot; policy: PlanPolicy; policyVersionId: string; policyVersions: Record<string, string>; bands: Record<string, PriorityBand>; revisions: Record<string, number> }> {
+export async function buildSnapshot(db: Db, territoryId: string, now: Date): Promise<{ snapshot: PlanSnapshot; policy: PlanPolicy; policyVersionId: string; policyVersions: Record<string, string>; bands: Record<string, PriorityBand>; breakdowns: Record<string, Record<string, unknown>>; revisions: Record<string, number> }> {
   const planning = await getActivePolicy(db, territoryId, "planning");
   const dispatch = await getActivePolicy(db, territoryId, "dispatch");
   const priority = await getActivePolicy(db, territoryId, "priority");
@@ -35,9 +36,15 @@ export async function buildSnapshot(db: Db, territoryId: string, now: Date): Pro
      from incidents i where i.territory_id = $1 and i.status = any($4) order by i.id`,
     [territoryId, now, planning.config.window_hours, OPEN],
   );
+  // Desglose recalculado ahora, solo para las bandas calculadas (una banda corregida a mano conserva el suyo).
+  const breakdowns: Record<string, Record<string, unknown>> = {};
   const incidents: PlanIncident[] = inc.rows.map((r) => {
-    const band = r.priority_breakdown?.band_override
-      ?? computePriority({ severity: r.severity, activeHazard: r.active_hazard, passage: r.passage, accessibility: r.accessibility }, r.created_at, now, priority.config).band;
+    let band = r.priority_breakdown?.band_override;
+    if (!band) {
+      const computed = computePriority({ severity: r.severity, activeHazard: r.active_hazard, passage: r.passage, accessibility: r.accessibility }, r.created_at, now, priority.config);
+      band = computed.band;
+      breakdowns[r.id] = computed.breakdown;
+    }
     return {
       id: r.id, revision: r.revision, band, activeHazard: r.active_hazard, createdAt: r.created_at, sourcesInWindow: r.sources_in_window,
       // Sin tipo no hay capacidades requeridas: no se despacha a cualquier unidad hasta que alguien lo clasifique.
@@ -91,6 +98,7 @@ export async function buildSnapshot(db: Db, territoryId: string, now: Date): Pro
     policyVersionId: planning.id,
     policyVersions: { planning: planning.id, dispatch: dispatch.id, priority: priority.id },
     bands: Object.fromEntries(incidents.map((i) => [i.id, i.band])),
+    breakdowns,
     revisions: Object.fromEntries(incidents.map((i) => [i.id, i.revision])),
   };
 }
@@ -144,7 +152,7 @@ async function planInTx(
   const trigger = coalesced ? `${input.trigger}+${coalesced}` : input.trigger;
   // Un único instante, del reloj de la base (no del worker): ordena bien los planes aunque haya varios workers.
   const now = deps.now?.() ?? (await c.query<{ now: Date }>("select now() as now")).rows[0].now;
-  const { snapshot, policy, policyVersionId, policyVersions, bands, revisions } = await buildSnapshot(c, input.territoryId, now);
+  const { snapshot, policy, policyVersionId, policyVersions, bands, breakdowns, revisions } = await buildSnapshot(c, input.territoryId, now);
   const result = deps.buildPlan(snapshot, policy, now);
 
   const run = await c.query<{ id: string }>(
@@ -165,12 +173,26 @@ async function planInTx(
      where kind = 'dispatch' and territory_id = $1 and status = 'pending'`,
     [input.territoryId, planRunId],
   );
-  // La banda con la que se ordenó (promoción por antigüedad) queda también en el incidente, para que la vista coincida.
-  await c.query(
-    `update incidents i set priority_band = b.band from unnest($1::uuid[], $2::text[]) as b(id, band)
-     where i.id = b.id and i.priority_band <> b.band`,
-    [Object.keys(bands), Object.values(bands)],
+  // La banda con la que se ordenó (promoción por antigüedad) queda también en el incidente, con su desglose, para que
+  // la vista y la explicación coincidan. Una banda corregida a mano no trae desglose: se conserva el que tenía.
+  const ids = Object.keys(bands);
+  const promoted = await c.query<{ id: string; revision: number; band: PriorityBand }>(
+    `update incidents i set priority_band = b.band,
+       priority_breakdown = case when b.breakdown is null then i.priority_breakdown
+         else i.priority_breakdown || b.breakdown || jsonb_build_object('computed_band', b.band) end
+     from unnest($1::uuid[], $2::text[], $3::jsonb[]) as b(id, band, breakdown)
+     where i.id = b.id and i.priority_band <> b.band
+     returning i.id, i.revision, b.band`,
+    [ids, ids.map((id) => bands[id]), ids.map((id) => (breakdowns[id] ? JSON.stringify(breakdowns[id]) : null))],
   );
+  // La banda por antigüedad cambia sin revisión nueva: se renueva solo la explicación de prioridad de la revisión vigente.
+  for (const row of promoted.rows) {
+    await c.query(
+      "delete from generated_texts where purpose = 'explain_priority' and entity_type = 'incident' and entity_id = $1 and entity_revision = $2",
+      [row.id, row.revision],
+    );
+    await enqueueTextgen(c, { incidentId: row.id, revision: row.revision, territoryId: input.territoryId, dedupeSuffix: `band:${row.band}` });
+  }
   for (const q of result.queue) {
     // Un incidente ya asignado no está bloqueado: sigue en la cola con su orden activa.
     const assigned = q.pendingReasons.includes("active_assignment");

@@ -70,6 +70,27 @@ describe("job plan", () => {
     expect(policy).toMatchObject({ window_hours: 24, weight_hours: 2, cap_hours: 12, max_distance_m: 3000, position_max_age_min: 30 });
   });
 
+  it("una banda promovida por antigüedad actualiza el desglose, invalida la explicación de prioridad y reencola textgen", async () => {
+    const viejo = await incident(pool, t, { slug: "bache", severity: "low", hoursAgo: 50 }); // priority_band 'low' en el insert
+    await pool.query(
+      `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body) values
+         ('explain_priority', 'incident', $1, 1, 'Prioridad baja'), ('title', 'incident', $1, 1, 'Bache')`,
+      [viejo],
+    );
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    const inc = await one(pool, "select priority_band, priority_breakdown from incidents where id = $1", [viejo]);
+    expect(inc.priority_band).toBe("medium");
+    expect(inc.priority_breakdown).toMatchObject({ promoted_by_age: true, computed_band: "medium" });
+    expect((await pool.query("select purpose from generated_texts where entity_id = $1 order by purpose", [viejo])).rows).toEqual([{ purpose: "title" }]);
+    const job = await one(pool, "select entity_revision, dedupe_key from jobs where kind = 'textgen' and entity_id = $1", [viejo]);
+    expect(job).toMatchObject({ entity_revision: 1 });
+    expect(job.dedupe_key).toMatch(/:band:medium$/);
+
+    // Segunda corrida sin cambio de banda: no borra ni encola de nuevo.
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'textgen' and entity_id = $1", [viejo])).n).toBe(1);
+  });
+
   it("guarda el plan, deja obsoleto el anterior y encola dispatch si hay propuestas", async () => {
     const a = await incident(pool, t, { slug: "bache" });
     const b = await incident(pool, t, { slug: "basura_acumulada", blocked: true });
