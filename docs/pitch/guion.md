@@ -40,20 +40,22 @@ Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee. Son unas 40
 
 *[Confirma]*
 
-## [1:50–2:10] Lo que ve el municipio
+## [1:50–2:20] Lo que ve el municipio: un incidente, y primero
 
-*[Pantalla del operador]*
+*[Pantalla del operador. Antes del fuego, la lista ya tiene el contenedor desbordado que cargamos antes con tres reportes. El compañero toca "Actualizar"]*
 
-> Y esto es lo que ve el municipio. No son dos reclamos: es un incidente con dos reportes, prioridad alta, en el mapa.
-> Nadie los juntó a mano. La IA comparó lo que dijo cada uno y decidió que es el mismo contenedor.
+> Y esto es lo que ve el municipio. No son dos reclamos: es un incidente con dos reportes, en el mapa.
+> Y va primero. Arriba del contenedor desbordado que cargamos antes con tres vecinos, porque acá hay fuego activo.
+> El sistema ordena por riesgo, no por cuántos se quejan: diez reportes no hacen más grave un pozo, y un fuego va primero aunque lo avise una sola persona.
+> Nadie los juntó ni los ordenó a mano.
 
-## [2:10–2:40] Por qué IA, y cómo sabemos que funciona
+## [2:20–2:45] Por qué IA, y cómo sabemos que funciona
 
 > Sin IA, esto es un formulario: el vecino tiene que elegir una categoría y el municipio recibe duplicados.
 > Acá la IA hace tres cosas que una regla fija no puede: entender un texto libre y una foto, detectar la urgencia y decidir si dos relatos distintos son el mismo problema.
 > Lo medimos: en nuestro set de prueba de agrupación acertó las 11 comparaciones. Y cuando la foto contradice el texto, no adivina: lo manda a revisión humana.
 
-## [2:40–3:00] Cierre
+## [2:45–3:00] Cierre
 
 > Hoy funcionan el reporte del vecino, la clasificación, la agrupación y el mapa del operador. Lo que sigue es la bandeja de las cuadrillas y el despacho automático.
 > Diez vecinos, un incidente, una cuadrilla. Eso es Radar Urbano.
@@ -63,10 +65,16 @@ Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee. Son unas 40
 ## Notas para quien maneja la demo
 
 - **Antes de subir:** `reset-demo`; la foto ya en la galería del celular 1; los textos copiados para pegarlos, no tipearlos.
+- **Contexto para el triage:** antes del pitch, cargar con el flujo real (no por base de datos) un contenedor desbordado con tres reportes de sesiones distintas, en otro punto de la ciudad. Así el fuego entra arriba de ese incidente en la lista. En el pitch se dice que se cargó antes.
+- **Refresco:** la lista del operador se actualiza sola cada 10 s; para no esperar, tocar "Actualizar".
 - **Ubicación con GPS:** los dos celulares van a estar juntos en el LATU, así que quedan dentro del radio de 30 m y se agrupan solos. Probarlo en el lugar antes del pitch.
 - **Riesgo con el vecino 2:** la frase "humo, huele a plástico" sin foto puede salir como evidencia insuficiente. Si en el ensayo pasa eso, que el texto diga "el contenedor está largando mucho humo".
 - **Proyección:** tener resuelto cómo se espejan los celulares en la pantalla, y un video de respaldo grabado por si falla internet.
 - **Aviso de emergencia:** con fuego activo el chat muestra el texto de `emergency_channel` del seed de Montevideo (`seeds/territory-montevideo.ts`). Hoy dice "consultá el canal de emergencias local de tu zona"; para la demo conviene que diga algo concreto, como "llamá a Bomberos al 104".
+
+## Cómo se prioriza (para las preguntas)
+
+La IA (Jev) extrae los hechos de cada reporte: fuego activo, severidad, paso bloqueado, accesibilidad. La banda de prioridad la calcula una regla explícita sobre esos hechos (`pipeline/priority.ts`): cualquier riesgo alto → Alta; si no, por severidad; una Baja sube a Media por antigüedad. La lista ordena peligro activo primero, después banda, después el más viejo (`incidents/queries.ts`). La cantidad de reportes **no** sube la prioridad, a propósito: que se quejen más no hace más grave el problema. Por qué así: la IA interpreta lo que un formulario no puede, y la decisión de qué va primero queda auditable y la puede ajustar el municipio por política, sin tocar el modelo.
 
 ## Qué no prometer como hecho
 
