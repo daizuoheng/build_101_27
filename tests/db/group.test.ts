@@ -245,6 +245,24 @@ describe("agrupación automática", () => {
     expect(await count(pool, "select count(*)::int as n from incidents")).toBe(1);
   });
 
+  it("reprocesar con vínculo manual igual abre la revisión de la evaluación y marca la discrepancia si no aplica", async () => {
+    const reportId = await confirmedReport(pool, t, P);
+    const target = await insertIncident(pool, t, east(500), "bache");
+    await withTx((c) => insertLinkForTest(c, reportId, target), pool);
+    const noAplica = fakeJev(() => fakeAnswers({
+      applicability: { type: "choice", choice: "unrelated", confidence: 1, probabilities: { unrelated: 1 } },
+      text_photo_consistency: { type: "choice", choice: "contradiction", confidence: 1, probabilities: { contradiction: 0.9 } },
+    }));
+    await runOnce(testDeps(pool, noAplica), handlers, { workerId: "test" });
+    expect((await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows).toEqual([{ incident_id: target }]);
+    const items = await pool.query("select kind, reasons->0->>'code' as code from review_items where entity_id = $1 and status = 'open' order by kind", [target]);
+    expect(items.rows).toEqual([
+      { kind: "contradiction", code: "contradiction" }, // motivo de revisión de la propia evaluación
+      { kind: "insufficient_evidence", code: "evaluation_disagrees_with_manual_link" },
+    ]);
+    expect((await pool.query("select dispatch_blocked from incidents where id = $1", [target])).rows[0].dispatch_blocked).toBe(true);
+  });
+
   it("revisión por truncamiento bloquea y lista a todos los incidentes del radio, no solo a los comparados", async () => {
     const max = (await getActivePolicy(pool, t, "grouping")).config.max_candidates;
     const ids: string[] = [];

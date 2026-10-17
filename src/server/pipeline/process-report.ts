@@ -61,10 +61,32 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
     return true;
   };
 
+  const openEvaluationReviews = async (entityType: "incident" | "report", entityId: string) => {
+    for (const reason of ev.reviewReasons) {
+      const kind: ReviewKind = reason === "insufficient_evidence" ? "insufficient_evidence" : reason;
+      await openReviewItem(c, {
+        territoryId: r.territory_id, kind, entityType, entityId,
+        reasons: [{ code: reason, evaluation_id: ev.id }], evidenceRefs: [{ report_id: r.id, ai_run_id: ev.aiRunId }],
+      });
+    }
+  };
+
   // Reproceso de un reporte que ya tiene vínculo (p. ej. un operador lo asoció a mano mientras estaba en error):
-  // la decisión humana se conserva; no se reagrupa.
+  // la decisión humana se conserva y no se reagrupa, pero la evaluación nueva igual pasa por la revisión.
   const linked = await c.query<{ incident_id: string }>("select incident_id from report_incident_links where report_id = $1 and active", [r.id]);
-  if (linked.rows[0]) return finish("applicable", { incident_id: linked.rows[0].incident_id, grouping: "kept_existing_link" });
+  if (linked.rows[0]) {
+    const incidentId = linked.rows[0].incident_id;
+    await openEvaluationReviews("incident", incidentId);
+    if (!isApplicable(ev)) {
+      // La IA no ve un problema aplicable donde el operador sí: se deja la discrepancia a la vista y se frena el despacho.
+      await openReviewItem(c, {
+        territoryId: r.territory_id, kind: "insufficient_evidence", entityType: "incident", entityId: incidentId,
+        reasons: [{ code: "evaluation_disagrees_with_manual_link", intent: ev.intent, applicability: ev.applicability, evaluation_id: ev.id }],
+        evidenceRefs: [{ report_id: r.id, ai_run_id: ev.aiRunId }],
+      });
+    }
+    return finish("applicable", { incident_id: incidentId, grouping: "kept_existing_link" });
+  }
 
   const located = r.lon !== null && r.lat !== null ? await locatePoint(c, r.lon, r.lat) : null;
   if (!located || located.territoryId !== r.territory_id) {
@@ -96,15 +118,6 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
   }
   const evidenceRefs = { report_id: r.id, evaluation_id: ev.id, evaluation_ai_run_id: ev.aiRunId };
   const grouped = await applyGrouping(c, { report: { id: r.id, territoryId: r.territory_id! }, plan, verdict, evidenceRefs });
-  const openEvaluationReviews = async (entityType: "incident" | "report", entityId: string) => {
-    for (const reason of ev.reviewReasons) {
-      const kind: ReviewKind = reason === "insufficient_evidence" ? "insufficient_evidence" : reason;
-      await openReviewItem(c, {
-        territoryId: r.territory_id, kind, entityType, entityId,
-        reasons: [{ code: reason, evaluation_id: ev.id }], evidenceRefs: [{ report_id: r.id, ai_run_id: ev.aiRunId }],
-      });
-    }
-  };
   if (grouped.kind === "link") {
     await openEvaluationReviews("incident", grouped.incidentId!);
     return finish("applicable", { incident_id: grouped.incidentId, grouping: "linked", grouping_decision_id: grouped.decisionId });
