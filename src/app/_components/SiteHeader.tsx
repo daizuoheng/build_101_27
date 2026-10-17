@@ -34,7 +34,7 @@ export function SiteHeader({
             <span className="h-2 w-2 shrink-0 rounded-full bg-success" aria-hidden />
             <span>Piloto · unidades y datos de prueba</span>
           </p>
-          {emergencyText && <p>No reemplaza a los servicios de emergencia: {emergencyText}</p>}
+          {emergencyText && <p className="hidden sm:block">No reemplaza a los servicios de emergencia: {emergencyText}</p>}
         </div>
       </div>
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 md:px-8">

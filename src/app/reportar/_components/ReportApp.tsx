@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { z } from "zod";
 import type { DraftView, MessageUi, MessageView, MyReportItem as MyReportItemSchema } from "@/shared/contracts/intake";
@@ -9,11 +8,6 @@ import { SiteHeader } from "@/app/_components/SiteHeader";
 import { IconAlert, IconCamera, IconChat, IconCheck, IconEdit, IconLocate, IconMap, IconPin, IconSend } from "@/app/_components/icons";
 import { LocationPanel, type LocationMode, type Proposed } from "./LocationPanel";
 import { ReviewCard } from "./DraftCardView";
-
-const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
-  ssr: false,
-  loading: () => <div className="h-[220px] animate-pulse rounded-[var(--radius)] bg-surface-2" aria-hidden />,
-});
 
 type MyReportItem = z.infer<typeof MyReportItemSchema>;
 type Pending = { clientMessageId: string; body: string; kind: "text" | "photo"; file?: File; preview?: string; failed?: string };
@@ -28,7 +22,6 @@ const time = (iso: string) => new Date(iso).toLocaleTimeString("es-UY", { hour: 
 
 export function ReportApp({ territorySlug }: { territorySlug: string }) {
   const [draft, setDraft] = useState<DraftView | null>(null);
-  const [history, setHistory] = useState<MyReportItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +52,6 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
       applyDraft(await api<DraftView>("/api/reportar/drafts", { method: "POST", json: { territorySlug } }));
       setPending([]);
       setLocation(null);
-      setHistory(await api<MyReportItem[]>(`/api/reportar/drafts?territory=${encodeURIComponent(territorySlug)}`));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -74,7 +66,6 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
       try {
         const list = await api<MyReportItem[]>(`/api/reportar/drafts?territory=${encodeURIComponent(territorySlug)}`);
         if (cancelled) return;
-        setHistory(list);
         if (list[0]) {
           const d = await api<DraftView>(draftUrl(list[0].id));
           if (!cancelled) setDraft(d);
@@ -271,19 +262,14 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
 
   return (
     <Shell territorySlug={territorySlug} territoryName={territory.name} emergencyText={territory.emergencyText}>
-      <main className="mx-auto grid w-full max-w-6xl flex-1 gap-8 px-4 pb-4 pt-6 md:px-8 lg:grid-cols-12 lg:gap-10">
-        <section aria-labelledby="report-title" className="flex min-w-0 flex-col gap-4 lg:col-span-7">
-          <header className="flex flex-col gap-1.5">
-            <h1 id="report-title" className="text-[26px] font-bold leading-tight tracking-tight text-primary lg:text-[32px]">
-              {`Reportá un problema en tu ${territory.areaLabel.toLowerCase()}`}
-            </h1>
-            <p className="text-ink-2">Contanos qué pasa y dónde. Te vamos guiando por chat; no hace falta crear una cuenta.</p>
-          </header>
-
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 px-0 pb-0 pt-3 sm:px-4 sm:pb-4">
+        <h1 className="sr-only">{`Reportá un problema en tu ${territory.areaLabel.toLowerCase()}`}</h1>
+        <div className="px-3 sm:px-0">
           <StatusBand status={status} areaLabel={territory.areaLabel} area={area} code={draft.publicCode} />
+        </div>
 
-          <PastReports items={history} currentId={draft.id} className="lg:hidden" />
-
+        <section aria-label="Chat" className="flex flex-1 flex-col border-line-soft bg-surface sm:rounded-2xl sm:border sm:shadow-sm">
+          <div className="flex-1 px-3 py-4 sm:px-6 sm:py-6">
           <ol aria-label="Conversación" aria-live="polite" className="flex flex-col gap-5">
             <li className="flex justify-center">
               <span className="badge badge-muted">Hoy · {territory.name}</span>
@@ -365,10 +351,11 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
               </li>
             )}
           </ol>
-          <div ref={bottom} />
+            <div ref={bottom} className="scroll-mb-40" />
+          </div>
 
           {!confirmed && (
-            <div className="sticky bottom-0 z-[500] -mx-4 border-t border-line-soft bg-bg/95 px-4 pb-3 pt-3 backdrop-blur md:mx-0 md:rounded-2xl md:border md:bg-surface md:px-3 md:shadow-sm">
+            <div className="sticky bottom-0 z-[500] border-t border-line-soft bg-surface/95 px-3 pb-2 pt-3 backdrop-blur sm:px-4">
               {error && (
                 <p role="alert" className="mb-2 rounded-lg bg-danger-soft px-3 py-2 text-danger-strong">{error}</p>
               )}
@@ -424,54 +411,10 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                   <IconSend />
                 </button>
               </form>
+              <p className="mt-2 text-center text-xs text-ink-2">Te responde un asistente automático.</p>
             </div>
           )}
         </section>
-
-        <aside aria-label="Resumen" className="hidden flex-col gap-6 lg:col-span-5 lg:flex">
-          <section className="card flex flex-col gap-3 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 font-semibold text-ink">
-                <span className={`h-2 w-2 rounded-full ${draft.location?.confirmed ? "bg-success" : "bg-line"}`} aria-hidden />
-                Ubicación del reporte
-              </h2>
-              {area && <span className="badge badge-muted">{territory.areaLabel} · {area}</span>}
-            </div>
-            <LeafletMap
-              label="Mapa con la ubicación del reporte"
-              center={territory.center}
-              zoom={territory.zoom}
-              pin={draft.location ? { lon: draft.location.lon, lat: draft.location.lat } : null}
-              height={240}
-            />
-            <p className="text-sm text-ink-2">
-              {draft.location?.confirmed
-                ? draft.location.text ?? `${draft.location.lat.toFixed(5)}, ${draft.location.lon.toFixed(5)}`
-                : "Todavía no confirmaste dónde está el problema."}
-            </p>
-          </section>
-
-          <section className="card flex flex-col gap-4 p-4">
-            <h2 className="font-semibold text-primary">¿Cómo funciona este piloto?</h2>
-            <ol className="flex flex-col gap-3">
-              {[
-                ["Contás el problema por chat", "Sin cuenta ni aplicación. Podés sumar fotos y marcar el lugar."],
-                ["El sistema lo analiza", "Lo clasifica y lo junta con otros reportes del mismo problema."],
-                ["Se asigna a una unidad", "Una unidad de prueba recibe la orden en su bandeja."],
-              ].map(([t, d], i) => (
-                <li key={t} className="flex gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-bold text-ink">{i + 1}</span>
-                  <span>
-                    <span className="block font-semibold text-ink">{t}</span>
-                    <span className="text-[15px] text-ink-2">{d}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          <PastReports items={history} currentId={draft.id} />
-        </aside>
       </main>
     </Shell>
   );
@@ -482,11 +425,6 @@ function Shell({ territorySlug, territoryName, emergencyText, children }: { terr
     <div className="flex min-h-full flex-1 flex-col">
       <SiteHeader active="reportar" territorySlug={territorySlug} territoryName={territoryName} emergencyText={emergencyText} />
       {children}
-      <footer className="mt-auto border-t border-line-soft bg-surface py-4">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 text-sm text-ink-2 md:px-8">
-          <span><span className="font-bold text-primary">Radar Urbano</span> · Piloto cívico para reportar problemas del espacio público</span>
-        </div>
-      </footer>
     </div>
   );
 }
@@ -727,23 +665,5 @@ function Tracking({ draft, onNew, busy }: { draft: DraftView; onNew: () => void;
         Nuevo reporte
       </button>
     </section>
-  );
-}
-
-function PastReports({ items, currentId, className = "" }: { items: MyReportItem[]; currentId?: string; className?: string }) {
-  const others = items.filter((i) => i.id !== currentId && i.status === "confirmed");
-  if (!others.length) return null;
-  return (
-    <details className={`card p-4 ${className}`}>
-      <summary className="min-h-[44px] cursor-pointer content-center font-semibold">Mis reportes anteriores ({others.length})</summary>
-      <ul className="mt-2 flex flex-col gap-2">
-        {others.map((r) => (
-          <li key={r.id} className="text-[15px] text-ink-2">
-            <span className="font-mono font-semibold text-ink">{r.publicCode}</span> · {new Date(r.createdAt).toLocaleString("es-UY")}
-            {r.preview && <span className="block truncate">{r.preview}</span>}
-          </li>
-        ))}
-      </ul>
-    </details>
   );
 }
