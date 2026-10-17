@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { seedAll } from "../../seeds";
 import { seedDemo } from "../../seeds/demo";
-import { buildSnapshot, enqueuePeriodicPlans, planHandler, runPlan } from "@/server/pipeline/plan";
+import { buildSnapshot, enqueuePeriodicPlans, periodicPlanTask, planHandler, runPlan } from "@/server/pipeline/plan";
 import { enqueue } from "@/server/jobs/queue";
 import type { BuildPlan } from "@/shared/contracts/plan";
 import { resetDb, testDb } from "./setup";
@@ -84,11 +84,26 @@ describe("job plan", () => {
     expect((await pool.query("select purpose from generated_texts where entity_id = $1 order by purpose", [viejo])).rows).toEqual([{ purpose: "title" }]);
     const job = await one(pool, "select entity_revision, dedupe_key from jobs where kind = 'textgen' and entity_id = $1", [viejo]);
     expect(job).toMatchObject({ entity_revision: 1 });
-    expect(job.dedupe_key).toMatch(/:band:medium$/);
+    expect(job.dedupe_key).toMatch(/:band:medium:/);
 
     // Segunda corrida sin cambio de banda: no borra ni encola de nuevo.
     await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'textgen' and entity_id = $1", [viejo])).n).toBe(1);
+  });
+
+  it("si la banda vuelve a un valor que ya tuvo en la misma revisión, la explicación se vuelve a pedir", async () => {
+    const viejo = await incident(pool, t, { slug: "bache", severity: "low", hoursAgo: 50 });
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner }); // low → medium
+    await pool.query("update jobs set status = 'done' where kind = 'textgen' and entity_id = $1", [viejo]); // el worker lo corrió
+    await pool.query(
+      "insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body) values ('explain_priority', 'incident', $1, 1, 'Prioridad baja')",
+      [viejo],
+    );
+    // La banda vuelve a low sin revisión nueva (p. ej. una versión de política que se revierte) y el plan la promueve otra vez.
+    await pool.query("update incidents set priority_band = 'low' where id = $1", [viejo]);
+    await runPlan(pool, { territoryId: t, trigger: "test" }, { buildPlan: testPlanner });
+    expect((await one(pool, "select count(*)::int as n from generated_texts where entity_id = $1 and purpose = 'explain_priority'", [viejo])).n).toBe(0);
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'textgen' and entity_id = $1 and status = 'pending'", [viejo])).n).toBe(1);
   });
 
   it("guarda el plan, deja obsoleto el anterior y encola dispatch si hay propuestas", async () => {
@@ -263,6 +278,14 @@ describe("job plan", () => {
     }
     expect((await run!).planRunId).toEqual(expect.any(String));
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan'")).n).toBe(0);
+  });
+
+  it("la tarea periódica del worker solo existe si hay handler para plan", async () => {
+    expect(periodicPlanTask({}, pool)).toBeUndefined(); // sin handler: no se llena la cola de jobs que fallan
+    const task = periodicPlanTask({ plan: planHandler(testPlanner) }, pool)!;
+    expect(task.everyMs).toBe(60_000);
+    await task.run();
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan'")).n).toBe(1);
   });
 
   it("la replanificación periódica encola un job por territorio por intervalo", async () => {

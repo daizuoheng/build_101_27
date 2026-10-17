@@ -3,7 +3,7 @@ import type { Db } from "../db/pool";
 import { withTx } from "../db/tx";
 import { getActivePolicy } from "../config/policies";
 import { appendEvent } from "../events/append";
-import { enqueue, type Job } from "../jobs/queue";
+import { enqueue, type Job, type JobKind } from "../jobs/queue";
 import { computePriority } from "./priority";
 import { enqueueTextgen } from "./textgen";
 import type { BuildPlan, DispatchStrategy, PlanIncident, PlanPolicy, PlanSnapshot, PlanUnit, PriorityBand } from "@/shared/contracts/plan";
@@ -186,12 +186,14 @@ async function planInTx(
     [ids, ids.map((id) => bands[id]), ids.map((id) => (breakdowns[id] ? JSON.stringify(breakdowns[id]) : null))],
   );
   // La banda por antigüedad cambia sin revisión nueva: se renueva solo la explicación de prioridad de la revisión vigente.
+  // La clave lleva la corrida: si la banda vuelve a un valor que ya tuvo en esta revisión, `band:<b>` solo ya estaría
+  // `done` y el pedido no haría nada, dejando la explicación borrada.
   for (const row of promoted.rows) {
     await c.query(
       "delete from generated_texts where purpose = 'explain_priority' and entity_type = 'incident' and entity_id = $1 and entity_revision = $2",
       [row.id, row.revision],
     );
-    await enqueueTextgen(c, { incidentId: row.id, revision: row.revision, territoryId: input.territoryId, dedupeSuffix: `band:${row.band}` });
+    await enqueueTextgen(c, { incidentId: row.id, revision: row.revision, territoryId: input.territoryId, dedupeSuffix: `band:${row.band}:${planRunId}` });
   }
   for (const q of result.queue) {
     // Un incidente ya asignado no está bloqueado: sigue en la cola con su orden activa.
@@ -274,4 +276,24 @@ export async function enqueuePeriodicPlans(pool: Pool, now = new Date()): Promis
     if (r.created) n++;
   }
   return n;
+}
+
+/**
+ * Tarea periódica del worker. Sin handler `plan` registrado no existe: si no, cada intervalo dejaría en producción un
+ * job `plan` que falla sin efecto. Se activa sola cuando `handlers.ts` registre `plan`. `everyMs` es solo cada cuánto
+ * se mira el reloj; el intervalo de replanificación sale de la política `planning.replan_interval_min`.
+ */
+export function periodicPlanTask(
+  handlers: Partial<Record<JobKind, unknown>>,
+  pool: Pool,
+  log: (msg: string) => void = () => {},
+): { everyMs: number; run: () => Promise<void> } | undefined {
+  if (!handlers.plan) return undefined;
+  return {
+    everyMs: 60_000,
+    run: async () => {
+      const n = await enqueuePeriodicPlans(pool);
+      if (n) log(`replanificación periódica: ${n} territorio(s)`);
+    },
+  };
 }
