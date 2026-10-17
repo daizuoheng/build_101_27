@@ -54,7 +54,7 @@ export type DemoB = typeof demoB;
  */
 export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> = {}): Promise<{ territoryId: string; unitId: string }> {
   const t = { ...demoB, ...overrides };
-  // Todas las políticas se validan antes de escribir nada.
+  // Las políticas se validan antes de abrir la transacción. Catálogo y capacidades se validan dentro, contra la base.
   const policyEntries = Object.entries(t.policies) as [PolicyKind, unknown][];
   for (const [kind, config] of policyEntries) {
     if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' de demo-b no valida contra su esquema`);
@@ -80,8 +80,9 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       [...sqParams, territoryId, t.area.externalId, t.area.name],
     );
 
-    // Catálogo: habilita los tipos de la lista y deshabilita los que salieron de ella. Se valida antes de
-    // escribir, y solo cuentan los tipos activos, como en `getActiveCatalog`.
+    // Catálogo: habilita los tipos de la lista y deshabilita los que salieron de ella. Se valida antes de tocar
+    // `territory_problem_types` (lo ya escrito lo revierte la transacción), y solo cuentan los tipos activos,
+    // como en `getActiveCatalog`.
     const knownTypes = await c.query<{ n: number }>("select count(*)::int as n from problem_types where slug = any($1) and active", [t.problemTypes]);
     const missing = new Set(t.problemTypes).size - knownTypes.rows[0].n;
     if (missing) throw new Error(`catálogo de demo-b incompleto: ${missing} tipo(s) inexistentes o inactivos (¿falta seedAll?)`);
@@ -135,7 +136,8 @@ export async function seedTerritoryDemoB(pool: Pool, overrides: Partial<DemoB> =
       await appendEvent(c, { entityType: "response_unit", entityId: unitId, kind: "demo_seeded", actorType: "system" });
     }
 
-    // Capacidades: exactamente las de la lista. Se valida antes de escribir, como el catálogo.
+    // Capacidades: exactamente las de la lista. Se validan antes de tocar `unit_capabilities`, como el catálogo;
+    // lo ya escrito en esta corrida lo revierte la transacción.
     const known = await c.query<{ n: number }>("select count(*)::int as n from capabilities where slug = any($1)", [u.capabilities]);
     const missingCaps = new Set(u.capabilities).size - known.rows[0].n;
     if (missingCaps) throw new Error(`capacidades de demo-b incompletas: ${missingCaps} inexistente(s) (¿falta seedAll?)`);
