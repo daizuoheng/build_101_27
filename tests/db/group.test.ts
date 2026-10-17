@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
+import { getActivePolicy } from "@/server/config/policies";
 import { seedAll } from "../../seeds";
 import { withTx } from "@/server/db/tx";
 import type { JevCall } from "@/server/ai/jev/client";
@@ -7,7 +8,7 @@ import { appendCitizenMessage, createDraft, getReport, setLocation } from "@/ser
 import { confirmReport } from "@/server/intake/confirm";
 import { runOnce } from "@/server/jobs/worker-loop";
 import { handlers } from "@/server/jobs/handlers";
-import { linkReport, unlinkReport } from "@/server/incidents/links";
+import { insertLink, linkReport, unlinkReport } from "@/server/incidents/links";
 import { findCandidates } from "@/server/pipeline/group";
 import { incidentsAffectedByReviewItem, openReviewItem, recomputeDispatchBlocked } from "@/server/review/items";
 import { fakeAnswers, fakeComparison, fakeJev, newSession, territoryId, testDeps } from "./fakes";
@@ -51,6 +52,9 @@ async function confirmedReport(pool: Pool, t: string, at: { lon: number; lat: nu
 }
 
 const count = async (pool: Pool, sql: string, params: unknown[] = []) => (await pool.query<{ n: number }>(sql, params)).rows[0].n;
+
+const insertLinkForTest = (c: PoolClient, reportId: string, incidentId: string) =>
+  insertLink(c, { reportId, incidentId, origin: "manual", decisionId: null });
 
 describe("agrupación automática", () => {
   let pool: Pool;
@@ -201,15 +205,56 @@ describe("agrupación automática", () => {
       "insert into response_units (territory_id, slug, name, unit_kind, capacity) values ($1, 'test-unit', 'Unidad test', 'cuadrilla', 1) returning id",
       [t],
     );
-    await pool.query("insert into assignments (incident_id, unit_id, status) values ($1, $2, 'accepted')", [incidentId, unit.rows[0].id]);
+    const asg = await pool.query<{ id: string }>("insert into assignments (incident_id, unit_id, status) values ($1, $2, 'accepted') returning id", [incidentId, unit.rows[0].id]);
     await pool.query("update incidents set status = 'assigned' where id = $1", [incidentId]);
+    await openReviewItem(pool, { territoryId: t, kind: "contradiction", entityType: "incident", entityId: incidentId });
 
     const res = await withTx((c) => unlinkReport(c, { reportId, reason: "no corresponde", actor: { type: "operator", id: null } }), pool);
     expect(res).toEqual({ incidentId, archived: true });
-    expect((await pool.query("select status, archived_at is not null as has_date from incidents where id = $1", [incidentId])).rows[0]).toEqual({ status: "archived", has_date: true });
+    expect((await pool.query("select status, archived_at is not null as has_date, dispatch_blocked from incidents where id = $1", [incidentId])).rows[0])
+      .toEqual({ status: "archived", has_date: true, dispatch_blocked: false });
     expect((await pool.query("select status, closed_reason from assignments")).rows[0]).toEqual({ status: "cancelled", closed_reason: "incident_archived" });
     expect((await pool.query("select active, deactivation_reason from report_incident_links where report_id = $1", [reportId])).rows[0]).toEqual({ active: false, deactivation_reason: "no corresponde" });
-    expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("pending");
+    // La orden cancelada queda en events, se replanifica el territorio y el ítem del incidente archivado se descarta.
+    expect(await count(pool, "select count(*)::int as n from events where entity_type = 'assignment' and entity_id = $1 and kind = 'cancelled'", [asg.rows[0].id])).toBe(1);
+    expect(await count(pool, "select count(*)::int as n from jobs where kind = 'plan' and entity_id = $1", [t])).toBe(1);
+    expect((await pool.query("select status from review_items where entity_id = $1", [incidentId])).rows[0].status).toBe("dismissed");
+    // El reporte no queda huérfano: va a revisión pendiente de asociación.
+    expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("review");
+    expect(await count(pool, "select count(*)::int as n from review_items where kind = 'uncertain_duplicate' and entity_id = $1 and status = 'open'", [reportId])).toBe(1);
+  });
+
+  it("desasociar el último reporte de un incidente resuelto no lo pasa a archivado", async () => {
+    const reportId = await confirmedReport(pool, t, P);
+    await runOnce(testDeps(pool, jevWith(() => ({}))), handlers, { workerId: "test" });
+    const incidentId = (await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows[0].incident_id;
+    await pool.query("update incidents set status = 'resolved', resolved_at = now() where id = $1", [incidentId]);
+    const res = await withTx((c) => unlinkReport(c, { reportId, reason: "no corresponde", actor: { type: "operator", id: null } }), pool);
+    expect(res.archived).toBe(false);
+    expect((await pool.query("select status from incidents where id = $1", [incidentId])).rows[0].status).toBe("resolved");
+  });
+
+  it("reprocesar un reporte que ya tiene vínculo conserva el vínculo y no crea otro incidente", async () => {
+    const reportId = await confirmedReport(pool, t, P);
+    const target = await insertIncident(pool, t, east(500), "bache");
+    // Un operador lo asoció a mano mientras el procesamiento estaba en error; el reintento revive el job.
+    await withTx((c) => insertLinkForTest(c, reportId, target), pool);
+    await runOnce(testDeps(pool, jevWith(() => ({}))), handlers, { workerId: "test" });
+    expect((await pool.query("select processing, outcome from reports where id = $1", [reportId])).rows[0]).toEqual({ processing: "done", outcome: "applicable" });
+    expect((await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows).toEqual([{ incident_id: target }]);
+    expect(await count(pool, "select count(*)::int as n from incidents")).toBe(1);
+  });
+
+  it("revisión por truncamiento bloquea y lista a todos los incidentes del radio, no solo a los comparados", async () => {
+    const max = (await getActivePolicy(pool, t, "grouping")).config.max_candidates;
+    const ids: string[] = [];
+    for (let i = 0; i <= max; i++) ids.push(await insertIncident(pool, t, east(2 + i * 3), "bache"));
+    const reportId = await confirmedReport(pool, t, P);
+    await runOnce(testDeps(pool, jevWith((cands) => fakeComparison(Object.fromEntries(Object.keys(cands).map((ref) => [ref, { match: "different_incident" }]))))), handlers, { workerId: "test" });
+    expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("review");
+    const ri = await pool.query("select evidence_refs from review_items where kind = 'uncertain_duplicate' and entity_id = $1", [reportId]);
+    expect(ri.rows[0].evidence_refs[0].candidate_incident_ids.sort()).toEqual([...ids].sort());
+    expect(await count(pool, "select count(*)::int as n from incidents where dispatch_blocked")).toBe(max + 1);
   });
 
   it("linkReport manual mueve el reporte: el incidente anterior vacío se archiva y el nuevo se reevalúa", async () => {

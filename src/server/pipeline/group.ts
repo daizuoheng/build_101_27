@@ -128,7 +128,18 @@ export async function applyGrouping(
     return { decisionId, kind: "link", incidentId: verdict.incidentId };
   }
   if (verdict.kind === "review") {
-    const candidateIds = plan.found.candidates.map((x) => x.incidentId);
+    // Si el límite truncó la lista, el operador tiene que ver (y el despacho esperar) a todos los del radio, no solo a los comparados.
+    const candidateIds = plan.found.truncated
+      ? (
+          await c.query<{ id: string }>(
+            `select i.id from incidents i, reports r
+             where r.id = $1 and i.territory_id = $2 and i.status in ('open', 'assigned', 'in_progress')
+               and st_dwithin(i.location, r.location, $3)
+             order by st_distance(i.location, r.location), i.id`,
+            [report.id, report.territoryId, plan.policy.config.radius_m],
+          )
+        ).rows.map((x) => x.id)
+      : plan.found.candidates.map((x) => x.incidentId);
     await c.query("update reports set grouping = 'review', updated_at = now() where id = $1", [report.id]);
     await openReviewItem(c, {
       territoryId: report.territoryId, kind: "uncertain_duplicate", entityType: "report", entityId: report.id,

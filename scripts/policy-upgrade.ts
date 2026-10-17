@@ -6,6 +6,7 @@ import { loadEnv } from "../src/server/env";
 import { getPool } from "../src/server/db/pool";
 import { withTx } from "../src/server/db/tx";
 import { policies } from "../seeds/policies";
+import { isValidPolicy } from "../src/server/config/policies";
 
 loadEnv();
 const kind = process.argv[2] as keyof typeof policies;
@@ -35,6 +36,8 @@ async function main() {
       [territoryId, kind],
     );
     const config = JSON.parse(JSON.stringify(policies[kind]));
+    // Nunca activar una política que el pipeline no puede leer.
+    if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' del seed no valida contra su esquema; no se publica`);
     if (active.rows[0] && isDeepStrictEqual(active.rows[0].config, config))
       return `sin cambios (versión ${active.rows[0].version})`;
     const next = await c.query<{ v: number }>(

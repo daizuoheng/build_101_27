@@ -3,6 +3,7 @@ import type { Actor, LinkReport, UnlinkReport } from "../contracts";
 import { appendEvent } from "../events/append";
 import { badRequest, conflict, notFound } from "../errors";
 import { enqueue } from "../jobs/queue";
+import { openReviewItem } from "../review/items";
 import { ACTIVE_ASSIGNMENT_STATUSES } from "@/shared/contracts/assignment";
 
 const OPEN_STATUSES = ["open", "assigned", "in_progress"];
@@ -25,7 +26,10 @@ async function touchIncident(db: Db, incidentId: string, territoryId: string) {
   await enqueue(db, { kind: "assess_incident", entityType: "incident", entityId: incidentId, entityRevision: rows[0].revision, territoryId });
 }
 
-/** Desactiva el vínculo activo del reporte. Si el incidente queda sin reportes ⇒ `archived` y su orden activa cancelada. */
+/**
+ * Desactiva el vínculo activo del reporte. Si el incidente abierto queda sin reportes ⇒ `archived`, con su orden
+ * activa cancelada y sus ítems de revisión descartados, en la misma transacción. Uno ya resuelto conserva su estado.
+ */
 async function detach(db: Db, link: { id: string; incident_id: string; territory_id: string }, reason: string, actor: EventActor) {
   await db.query("update report_incident_links set active = false, deactivated_at = now(), deactivation_reason = $2 where id = $1", [link.id, reason]);
   const left = await db.query<{ n: number }>("select count(*)::int as n from report_incident_links where incident_id = $1 and active", [link.incident_id]);
@@ -33,18 +37,32 @@ async function detach(db: Db, link: { id: string; incident_id: string; territory
     await touchIncident(db, link.incident_id, link.territory_id);
     return { archived: false };
   }
-  await db.query(
-    "update incidents set status = 'archived', archived_at = now(), revision = revision + 1, updated_at = now() where id = $1",
-    [link.incident_id],
+  const archivedRow = await db.query(
+    `update incidents set status = 'archived', archived_at = now(), dispatch_blocked = false, revision = revision + 1, updated_at = now()
+     where id = $1 and status = any($2)`,
+    [link.incident_id, OPEN_STATUSES],
   );
-  const cancelled = await db.query<{ id: string }>(
+  if (!archivedRow.rowCount) return { archived: false }; // resuelto o ya archivado: no se reabre ni se cambia
+  const cancelled = await db.query<{ id: string; unit_id: string }>(
     `update assignments set status = 'cancelled', closed_reason = 'incident_archived', version = version + 1, updated_at = now()
-     where incident_id = $1 and status = any($2) returning id`,
+     where incident_id = $1 and status = any($2) returning id, unit_id`,
     [link.incident_id, ACTIVE_ASSIGNMENT],
+  );
+  for (const a of cancelled.rows) {
+    await appendEvent(db, { entityType: "assignment", entityId: a.id, kind: "cancelled", ...actor, data: { reason: "incident_archived", unit_id: a.unit_id } });
+  }
+  // Se liberó capacidad de una unidad: replanificar el territorio (una vez por incidente archivado).
+  if (cancelled.rows.length) {
+    await enqueue(db, { kind: "plan", entityType: "territory", entityId: link.territory_id, entityRevision: 0, territoryId: link.territory_id, dedupeSuffix: `archived:${link.incident_id}` });
+  }
+  const dismissed = await db.query<{ id: string }>(
+    `update review_items set status = 'dismissed', resolution = '{"action":"dismiss","reason":"incident_archived"}', resolved_at = now(), updated_at = now()
+     where entity_type = 'incident' and entity_id = $1 and status = 'open' returning id`,
+    [link.incident_id],
   );
   await appendEvent(db, {
     entityType: "incident", entityId: link.incident_id, kind: "archived", ...actor,
-    data: { reason: "no_reports", cancelled_assignment_ids: cancelled.rows.map((r) => r.id) },
+    data: { reason: "no_reports", cancelled_assignment_ids: cancelled.rows.map((r) => r.id), dismissed_review_item_ids: dismissed.rows.map((r) => r.id) },
   });
   return { archived: true };
 }
@@ -114,7 +132,8 @@ export async function linkReport(
 
 /**
  * Desasocia el reporte de su incidente. Si era el único reporte, el incidente queda `archived` y su orden activa
- * se cancela en la misma transacción; si no, se reevalúa. El reporte queda sin agrupar (`grouping = pending`).
+ * se cancela en la misma transacción; si no, se reevalúa. El reporte no queda huérfano: pasa a revisión pendiente
+ * de asociación (`grouping = review` + `uncertain_duplicate`), donde el operador lo asocia o crea su incidente.
  * Firma: `UnlinkReport` de src/server/contracts.ts.
  */
 export async function unlinkReport(
@@ -128,7 +147,11 @@ export async function unlinkReport(
   if (!link) throw notFound("El reporte no está asociado a ningún incidente.");
   const actor = eventActor(who);
   const { archived } = await detach(db, link, reason, actor);
-  await db.query("update reports set grouping = 'pending', updated_at = now() where id = $1", [reportId]);
+  await db.query("update reports set grouping = 'review', updated_at = now() where id = $1", [reportId]);
+  await openReviewItem(db, {
+    territoryId: link.territory_id, kind: "uncertain_duplicate", entityType: "report", entityId: reportId,
+    reasons: [{ code: "unlinked_by_operator", reason }], evidenceRefs: [{ report_id: reportId, previous_incident_id: link.incident_id }],
+  });
   await appendEvent(db, { entityType: "incident", entityId: link.incident_id, kind: "report_unlinked", ...actor, data: { report_id: reportId, reason, archived } });
   await appendEvent(db, { entityType: "report", entityId: reportId, kind: "unlinked", ...actor, data: { incident_id: link.incident_id, reason } });
   return { incidentId: link.incident_id, archived };

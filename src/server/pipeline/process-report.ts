@@ -61,6 +61,11 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
     return true;
   };
 
+  // Reproceso de un reporte que ya tiene vínculo (p. ej. un operador lo asoció a mano mientras estaba en error):
+  // la decisión humana se conserva; no se reagrupa.
+  const linked = await c.query<{ incident_id: string }>("select incident_id from report_incident_links where report_id = $1 and active", [r.id]);
+  if (linked.rows[0]) return finish("applicable", { incident_id: linked.rows[0].incident_id, grouping: "kept_existing_link" });
+
   const located = r.lon !== null && r.lat !== null ? await locatePoint(c, r.lon, r.lat) : null;
   if (!located || located.territoryId !== r.territory_id) {
     await openReviewItem(c, { territoryId: r.territory_id, kind: "out_of_coverage", entityType: "report", entityId: r.id, reasons: [{ code: "outside_territory" }] });

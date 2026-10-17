@@ -55,6 +55,7 @@ export async function seedAll(pool: Pool, opts: { importAreas?: boolean } = {}):
       );
 
       for (const [kind, config] of Object.entries(policies) as [PolicyKind, unknown][]) {
+        if (!isValidPolicy(kind, config)) throw new Error(`la política '${kind}' del seed no valida contra su esquema`);
         await c.query(
           `insert into policy_versions (territory_id, kind, version, config, active)
            values ($1, $2, 1, $3, not exists (select 1 from policy_versions where territory_id = $1 and kind = $2 and active))
