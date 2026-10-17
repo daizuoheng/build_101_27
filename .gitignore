@@ -17,6 +17,6 @@ build/
 next-env.d.ts
 .pnpm-debug.log*
 
-# storage local de fotos (desarrollo)
-storage/
+# storage local de fotos (desarrollo); anclado a la raíz para no ignorar src/server/storage
+/storage/
 .vitest/
