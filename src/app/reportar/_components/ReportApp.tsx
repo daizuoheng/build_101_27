@@ -8,6 +8,7 @@ import { SiteHeader } from "@/app/_components/SiteHeader";
 import dynamic from "next/dynamic";
 import { IconAlert, IconCamera, IconChat, IconCheck, IconEdit, IconLocate, IconPin, IconSend } from "@/app/_components/icons";
 import { ReviewCard } from "./DraftCardView";
+import { newClientId } from "@/app/_components/ids";
 
 type MyReportItem = z.infer<typeof MyReportItemSchema>;
 type Pending = { clientMessageId: string; body: string; kind: "text" | "photo"; file?: File; preview?: string; failed?: string };
@@ -23,7 +24,7 @@ const POLL_MS = 4000;
 // Fotos: cualquier imagen; HEIC/HEIF por extensión porque algunos navegadores no informan su tipo MIME.
 const PHOTO_ACCEPT = "image/*,.heic,.heif";
 
-const newId = () => crypto.randomUUID();
+const newId = newClientId;
 
 /**
  * ¿`next` es al menos tan nuevo como `cur`? Las respuestas pueden llegar desordenadas (un polling lanzado antes

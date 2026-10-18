@@ -1,11 +1,8 @@
 import { HttpError } from "@/app/_components/http";
+import { newClientId } from "@/app/_components/ids";
 
-/** Clave de idempotencia. `crypto.randomUUID` solo existe en contexto seguro (https o localhost); afuera, una equivalente. */
-export function newIdempotencyKey(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  const b = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-}
+/** Clave de idempotencia (ver `newClientId`: también sirve fuera de contexto seguro). */
+export const newIdempotencyKey = newClientId;
 
 /**
  * Qué se sabe de un pedido que falló. Solo un 4xx dice que el servidor no lo aplicó. Un error de red, un corte

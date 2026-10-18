@@ -8,6 +8,7 @@ import { api, errorMessage, HttpError, withTimeout } from "@/app/_components/htt
 import { SiteHeader } from "@/app/_components/SiteHeader";
 import { IconAlert, IconClock, IconPin, IconRefresh, IconTruck } from "@/app/_components/icons";
 import { ACTION, ago, distance, PRIORITY, PRIORITY_RULE, PROPOSAL_REASON, STATUS } from "./labels";
+import { newClientId } from "@/app/_components/ids";
 
 const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
   ssr: false,
@@ -139,7 +140,7 @@ export function UnitInbox() {
   async function act(card: UnitAssignmentCard, action: UnitAction, reason?: string) {
     // Misma clave para reintentos de la misma acción sobre la misma versión: el servidor no la aplica dos veces.
     const k = `${card.id}:${action}:${card.version}`;
-    if (!keys.current.has(k)) keys.current.set(k, crypto.randomUUID());
+    if (!keys.current.has(k)) keys.current.set(k, newClientId());
     setBusyId(card.id);
     setNotice(null);
     // La acción invalida las cargas que ya estaban en vuelo y frena las nuevas hasta terminar.
