@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { IconLogo } from "./icons";
+import { BrandMark } from "./BrandMark";
 
 export type Section = "reportar" | "unidad" | "operacion";
 
@@ -44,7 +44,7 @@ export function SiteHeader({
       </div>
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 md:px-8">
         <Link href={`/reportar/${territorySlug}`} className="flex min-h-[44px] items-center gap-2.5 rounded-lg">
-          <IconLogo />
+          <BrandMark />
           <span className="flex flex-col">
             <span className="ru-wordmark text-[17px] font-bold leading-tight text-ink">Radar Urbano</span>
             {territoryName && <span className="text-xs font-medium text-ink-2">{territoryName}</span>}

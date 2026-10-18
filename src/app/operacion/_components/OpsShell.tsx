@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import type { PriorityBand } from "@/shared/contracts/plan";
-import { BrandMark, Icon, type IconName } from "./Icons";
+import { BrandMark } from "../../_components/BrandMark";
+import { Icon, type IconName } from "./Icons";
 import { PRIORITY } from "./labels";
 
 // Piezas compartidas de la consola de Operación (diseño Stitch «Centro de Operaciones»).
