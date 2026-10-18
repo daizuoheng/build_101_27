@@ -7,8 +7,8 @@ export default function Home() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-4 py-12">
       <header className="flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-wide text-ink-2">Piloto</p>
-        <h1 className="text-3xl font-bold">Radar Urbano</h1>
+        <p className="text-[15px] font-semibold text-ink-2">Piloto</p>
+        <h1 className="ru-wordmark text-[34px] font-bold leading-[41px]">Radar Urbano</h1>
         <p className="text-lg text-ink-2">
           Reportá problemas del espacio público conversando. Cada reporte se evalúa, se agrupa con otros del mismo
           problema y se asigna a una unidad de respuesta.

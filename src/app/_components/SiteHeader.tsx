@@ -27,11 +27,11 @@ export function SiteHeader({
   right?: React.ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-[600] border-b border-line-soft bg-surface/90 backdrop-blur">
-      <div className="border-b border-line-soft/70 px-4 py-1.5 text-[13px] text-ink-2 md:px-8">
+    <header className="glass sticky top-0 z-[600] border-b border-line-soft">
+      <div className="border-b border-line-soft px-4 py-1.5 text-[13px] text-ink-2 md:px-8">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-0.5">
           <p className="flex items-center gap-2">
-            <span className="h-2 w-2 shrink-0 rounded-full bg-success" aria-hidden />
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink-2" aria-hidden />
             <span>Piloto · datos de prueba</span>
           </p>
           {/* Aviso de seguridad visible en todos los tamaños; en celular, en una línea más corta. */}
@@ -46,7 +46,7 @@ export function SiteHeader({
         <Link href={`/reportar/${territorySlug}`} className="flex min-h-[44px] items-center gap-2.5 rounded-lg">
           <IconLogo />
           <span className="flex flex-col">
-            <span className="text-[17px] font-bold leading-tight tracking-tight text-primary">Radar Urbano</span>
+            <span className="ru-wordmark text-[17px] font-bold leading-tight text-ink">Radar Urbano</span>
             {territoryName && <span className="text-xs font-medium text-ink-2">{territoryName}</span>}
           </span>
         </Link>
@@ -56,8 +56,8 @@ export function SiteHeader({
               key={n.key}
               href={n.href(territorySlug)}
               aria-current={active === n.key ? "page" : undefined}
-              className={`inline-flex min-h-[44px] items-center rounded-lg px-3.5 text-[15px] font-semibold ${
-                active === n.key ? "bg-accent text-accent-ink" : "text-ink-2 hover:bg-surface-2 hover:text-ink"
+              className={`inline-flex min-h-[44px] items-center rounded-full px-4 text-[15px] transition-colors ${
+                active === n.key ? "bg-accent-soft font-semibold text-accent" : "font-medium text-ink hover:bg-surface-low"
               }`}
             >
               {n.label}

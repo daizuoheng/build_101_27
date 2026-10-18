@@ -368,7 +368,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
           <StatusBand status={status} areaLabel={territory.areaLabel} area={area} code={draft.publicCode} />
         </div>
 
-        <section aria-label="Chat" className="flex flex-1 flex-col border-line-soft bg-surface sm:rounded-2xl sm:border sm:shadow-sm">
+        <section aria-label="Chat" className="flex flex-1 flex-col bg-surface sm:rounded-[var(--r-xl)] sm:shadow-[var(--shadow-1)]">
           <div className="flex-1 px-3 py-4 sm:px-6 sm:py-6">
           <ol aria-label="Conversación" aria-live="polite" className="flex flex-col gap-5">
             <li className="flex justify-center">
@@ -386,7 +386,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                 {p.kind === "photo" ? (
                   <PhotoCard src={p.preview} name={p.body} state={p.failed ? "failed" : "sending"} />
                 ) : (
-                  <div className="rounded-2xl rounded-br-none bg-primary px-4 py-2.5 text-white opacity-80">
+                  <div className="rounded-[20px] rounded-br-[6px] bg-accent px-4 py-2.5 text-[17px] leading-[22px] text-accent-ink opacity-70">
                     <p className="whitespace-pre-wrap">{p.body}</p>
                   </div>
                 )}
@@ -418,7 +418,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
               <li className="flex flex-col gap-2">
                 <div className="flex max-w-[92%] items-start gap-3">
                   <BotAvatar />
-                  <p className="rounded-2xl rounded-tl-none bg-surface-low px-4 py-3">Revisá tu reporte antes de mandarlo:</p>
+                  <p className="rounded-[20px] rounded-tl-[6px] bg-surface-low px-4 py-2.5 text-[17px] leading-[22px]">Revisá tu reporte antes de mandarlo:</p>
                 </div>
                 <div className="sm:pl-11">{review}</div>
               </li>
@@ -427,12 +427,12 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
             {(draft.analysisPending || pending.some((p) => !p.failed)) && (
               <li className="flex items-center gap-3" role="status">
                 <BotAvatar />
-                <span className="rounded-2xl rounded-tl-none bg-surface-low px-4 py-3 text-ink-2">
+                <span className="rounded-[20px] rounded-tl-[6px] bg-surface-low px-4 py-3.5 text-ink-2">
                   <span className="sr-only">Radar Urbano está analizando tu mensaje</span>
-                  <span aria-hidden className="inline-flex gap-1">
-                    <span className="h-2 w-2 animate-bounce rounded-full bg-ink-2 [animation-delay:-0.2s]" />
-                    <span className="h-2 w-2 animate-bounce rounded-full bg-ink-2 [animation-delay:-0.1s]" />
-                    <span className="h-2 w-2 animate-bounce rounded-full bg-ink-2" />
+                  <span aria-hidden className="inline-flex gap-1.5">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-ink-2 [animation-delay:-0.6s]" />
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-ink-2 [animation-delay:-0.3s]" />
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-ink-2" />
                   </span>
                 </span>
               </li>
@@ -448,9 +448,9 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
           </div>
 
           {!confirmed && (
-            <div className="sticky bottom-0 z-[500] border-t border-line-soft bg-surface/95 px-3 pb-2 pt-3 backdrop-blur sm:px-4">
+            <div className="glass sticky bottom-0 z-[500] border-t border-line-soft px-3 pb-2 pt-3 sm:rounded-b-[var(--r-xl)] sm:px-4">
               {error && (
-                <p role="alert" className="mb-2 rounded-lg bg-danger-soft px-3 py-2 text-danger-strong">{error}</p>
+                <p role="alert" className="mb-2 rounded-[var(--r-md)] bg-danger-soft px-3 py-2 text-danger-strong">{error}</p>
               )}
               <form onSubmit={sendText} className="flex items-end gap-2">
                 <input
@@ -468,7 +468,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                 />
                 <button
                   type="button"
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-low text-ink hover:text-accent"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-low text-accent transition-transform duration-100 hover:bg-surface-container enabled:active:scale-95"
                   onClick={() => fileInput.current?.click()}
                   aria-label="Adjuntar foto"
                 >
@@ -476,7 +476,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-low text-ink hover:text-accent disabled:opacity-55"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-low text-accent transition-transform duration-100 hover:bg-surface-container enabled:active:scale-95 disabled:opacity-45"
                   onClick={shareLocation}
                   disabled={locating || busy}
                   aria-label={locating ? "Obteniendo tu ubicación" : "Enviar mi ubicación"}
@@ -487,7 +487,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                 <textarea
                   ref={composer}
                   id="composer"
-                  className="field max-h-40 min-h-12 resize-none rounded-xl py-3"
+                  className="field ru-composer max-h-40 min-h-12 resize-none"
                   rows={1}
                   value={text}
                   maxLength={2000}
@@ -506,7 +506,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
                   }}
                 />
                 <button
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink hover:bg-primary disabled:opacity-55"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink transition-transform duration-100 hover:bg-primary enabled:active:scale-95 disabled:bg-surface-container disabled:text-ink-2"
                   disabled={!text.trim()}
                   aria-label="Enviar mensaje"
                 >
@@ -547,14 +547,14 @@ function statusOf(draft: DraftView, lastUi: MessageUi | null): Status {
 function StatusBand({ status, areaLabel, area, code }: { status: Status; areaLabel: string; area: string | null; code: string | null }) {
   const dot = { neutral: "bg-line", working: "bg-warn", action: "bg-accent", ready: "bg-success", done: "bg-success" }[status.tone];
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-surface-low px-4 py-2.5">
-      <p role="status" className="flex items-center gap-2 font-semibold text-primary">
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r-lg)] bg-surface px-4 py-2.5 shadow-[var(--shadow-1)]">
+      <p role="status" className="flex items-center gap-2 font-semibold text-ink">
         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} aria-hidden />
         {status.text}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         {code && <span className="badge badge-info">Código {code}</span>}
-        {area && <span className="badge badge-success">{areaLabel} · {area}</span>}
+        {area && <span className="badge badge-muted">{areaLabel} · {area}</span>}
       </div>
     </div>
   );
@@ -579,7 +579,7 @@ function lastIndexWithUi(messages: MessageView[]): number {
 
 function BotAvatar() {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink" aria-hidden>
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-low text-accent" aria-hidden>
       <IconChat className="h-[18px] w-[18px]" />
     </span>
   );
@@ -596,7 +596,7 @@ function Bubble({ message, draftId, emergencyText }: { message: MessageView; dra
         {message.attachmentId ? (
           <PhotoCard src={`/api/reportar/drafts/${encodeURIComponent(draftId)}/photos/${encodeURIComponent(message.attachmentId)}?size=thumb`} state="sent" />
         ) : (
-          <div className="rounded-2xl rounded-br-none bg-primary px-4 py-2.5 text-white shadow-sm">
+          <div className="rounded-[20px] rounded-br-[6px] bg-accent px-4 py-2.5 text-[17px] leading-[22px] text-accent-ink">
             <p className="whitespace-pre-wrap">{message.body}</p>
           </div>
         )}
@@ -615,7 +615,7 @@ function Bubble({ message, draftId, emergencyText }: { message: MessageView; dra
         <span className="sr-only">Radar Urbano:</span>
         <div
           role={hazard ? "alert" : undefined}
-          className={`rounded-2xl rounded-tl-none px-4 py-3 ${hazard ? "border-2 border-danger-line bg-danger-soft font-semibold text-danger-strong" : "bg-surface-low text-ink"}`}
+          className={`rounded-[20px] rounded-tl-[6px] px-4 py-2.5 text-[17px] leading-[22px] ${hazard ? "bg-danger-soft font-semibold text-danger-strong" : "bg-surface-low text-ink"}`}
         >
           {hazard && <IconAlert className="mb-1 h-5 w-5" />}
           <p className="whitespace-pre-wrap">{message.body}</p>
@@ -629,8 +629,8 @@ function Bubble({ message, draftId, emergencyText }: { message: MessageView; dra
 
 function PhotoCard({ src, name, state }: { src?: string; name?: string; state: "sent" | "sending" | "failed" }) {
   return (
-    <div className="flex w-64 max-w-full items-center gap-3 rounded-2xl rounded-br-none bg-surface-container p-2.5 shadow-sm">
-      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-surface-2">
+    <div className="flex w-64 max-w-full items-center gap-3 rounded-[20px] rounded-br-[6px] bg-surface-low p-2.5">
+      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[var(--r-md)] bg-surface-2">
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element -- foto privada servida por ruta autorizada
           <img src={src} alt="Foto adjunta" className="h-full w-full object-cover" />
@@ -639,7 +639,7 @@ function PhotoCard({ src, name, state }: { src?: string; name?: string; state: "
         )}
       </div>
       <div className="min-w-0">
-        <p className="truncate font-semibold text-primary">{name ?? "Foto"}</p>
+        <p className="truncate font-semibold text-ink">{name ?? "Foto"}</p>
         {state === "sent" && <span className="badge badge-success mt-1"><IconCheck className="h-3.5 w-3.5" /> Enviada</span>}
         {state === "sending" && <span className="text-sm text-ink-2">Subiendo…</span>}
         {state === "failed" && <span className="text-sm text-danger-strong">No se pudo subir</span>}
@@ -702,9 +702,9 @@ function UiControls({
       const p = { lon: ui.lon, lat: ui.lat, label: ui.label };
       return (
         <div className="flex flex-col gap-2">
-          <figure className="w-full max-w-sm overflow-hidden rounded-xl border border-line-soft bg-surface">
+          <figure className="w-full max-w-sm overflow-hidden rounded-[var(--r-lg)] bg-surface-low">
             <LeafletMap label={`Ubicación propuesta: ${ui.label}`} center={p} zoom={16} pin={p} height={150} />
-            <figcaption className="flex items-center gap-2 px-3 py-2 font-semibold text-primary">
+            <figcaption className="flex items-center gap-2 px-3 py-2.5 font-semibold text-ink [&_svg]:text-accent">
               <IconPin className="h-[18px] w-[18px] shrink-0" /> {ui.label}
             </figcaption>
           </figure>
@@ -745,9 +745,9 @@ function UiControls({
 
 function CodeBadge({ code }: { code: string }) {
   return (
-    <p className="card px-4 py-3 text-center">
-      <span className="block text-sm text-ink-2">Código de reporte</span>
-      <span className="font-mono text-2xl font-bold tracking-widest text-primary">{code}</span>
+    <p className="rounded-[var(--r-lg)] bg-surface-2 px-4 py-3 text-center">
+      <span className="block text-[13px] text-ink-2">Código de reporte</span>
+      <span className="font-mono text-[28px] font-bold tracking-[0.12em] text-ink tabular-nums">{code}</span>
     </p>
   );
 }
