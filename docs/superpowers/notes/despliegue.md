@@ -176,6 +176,14 @@ unset DATABASE_URL
 
 ## Seeds después de un merge
 
+`pnpm cli seed` también inserta ocho unidades especializadas de Montevideo: limpieza, vialidad y limpieza,
+fuego y limpieza, alumbrado (oficina por zona), arbolado, señalización, drenaje y limpieza, y accesibilidad.
+Para cargar solo esas unidades después de sembrar el catálogo y los barrios: `pnpm cli seed-units --territory montevideo`.
+Ambos comandos conservan las unidades existentes y sus capacidades, estado, cupo y posición; no crean usuarios
+ni cambian contraseñas. Las posiciones son simuladas y no se marcan vigentes: para una demo con despacho por distancia,
+ejecutar explícitamente `pnpm cli refresh-demo-positions --territory montevideo`.
+`seed-demo` sigue siendo el comando separado para crear cuentas de demo y la cuadrilla de la presentación en vivo.
+
 Las migraciones corren solas en el pre-deploy; los seeds no. Si el merge tocó `seeds/`, después del deploy, con
 `DATABASE_URL` de Supabase como en el paso 2:
 
