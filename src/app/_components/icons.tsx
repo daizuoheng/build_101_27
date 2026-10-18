@@ -105,11 +105,3 @@ export const IconRefresh = (p: P) => (
     <path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4" />
   </Svg>
 );
-export const IconLogo = ({ className = "h-9 w-9" }: P) => (
-  <svg viewBox="0 0 36 36" className={className} aria-hidden>
-    <rect width="36" height="36" rx="9" fill="#0f4c81" />
-    <path d="M18 28s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z" fill="#fff" />
-    <circle cx="18" cy="17" r="2.6" fill="#0f4c81" />
-    <path d="M9 9a13 13 0 0 1 18 0" stroke="#68dba9" strokeWidth="2" fill="none" strokeLinecap="round" />
-  </svg>
-);

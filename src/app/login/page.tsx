@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BrandMark } from "../operacion/_components/Icons";
+import { BrandMark } from "../_components/BrandMark";
 import { api, errorMessage } from "../_components/http";
 
 /**

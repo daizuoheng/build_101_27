@@ -85,17 +85,3 @@ export function Icon({ name, size = 20, className }: { name: IconName; size?: nu
 }
 
 export type { IconName };
-
-
-/** Marca de Radar Urbano (radar), compartida por la consola y el acceso. */
-export function BrandMark({ size = 36 }: { size?: number }) {
-  return (
-    <div aria-hidden style={{ width: size, height: size }} className="flex shrink-0 items-center justify-center rounded-[22.5%] bg-accent text-accent-ink">
-      <svg width={size * 0.66} height={size * 0.66} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="12" r="4.5" />
-        <path d="M12 12 18 6" />
-      </svg>
-    </div>
-  );
-}
