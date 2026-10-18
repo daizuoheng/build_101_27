@@ -1,5 +1,5 @@
 import type { Db } from "../db/pool";
-import type { IncidentListItem } from "@/shared/contracts/incident";
+import type { IncidentListItem, IncidentListResponse } from "@/shared/contracts/incident";
 
 export type ListFilters = { areaId?: string; problemType?: string; priorityBand?: string; status?: string; sort: "priority" | "recent" | "reports" };
 
@@ -38,4 +38,24 @@ export async function listIncidents(db: Db, territoryId: string, f: ListFilters)
     lon: r.lon, lat: r.lat, reportCount: r.report_count, sourceCount: r.source_count,
     createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString(),
   }));
+}
+
+/** Contadores del encabezado (ALCANCE §7: pendientes, por revisar y resueltos) sobre todo el territorio, agregados en la base. */
+export async function summarizeIncidents(
+  db: Db,
+  territoryId: string,
+  days: { today: string; yesterday: string },
+): Promise<NonNullable<IncidentListResponse["summary"]>> {
+  const { rows } = await db.query<NonNullable<IncidentListResponse["summary"]>>(
+    `select count(*) filter (where i.status in ('open', 'assigned', 'in_progress'))::int as "active",
+       count(*) filter (where i.status in ('open', 'assigned', 'in_progress') and i.priority_band = 'high')::int as "activeHigh",
+       count(*) filter (where i.status <> 'archived' and exists (select 1 from review_items ri
+          where ri.entity_type = 'incident' and ri.entity_id = i.id and ri.status = 'open'))::int as "review",
+       count(*) filter (where i.status = 'resolved' and i.resolved_at >= $2::timestamptz)::int as "resolvedToday",
+       count(*) filter (where i.status = 'resolved' and i.resolved_at >= $3::timestamptz and i.resolved_at < $2::timestamptz)::int as "resolvedYesterday"
+     from incidents i
+     where i.territory_id = $1`,
+    [territoryId, days.today, days.yesterday],
+  );
+  return rows[0];
 }

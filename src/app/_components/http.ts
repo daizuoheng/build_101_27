@@ -37,6 +37,10 @@ export async function api<T>(url: string, init?: RequestInit & { json?: unknown 
   return data as T;
 }
 
+/** Corta un pedido colgado: sin esto una carga periódica puede no terminar nunca y detener el polling. */
+const REQUEST_TIMEOUT_MS = 15000;
+export const withTimeout = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
+
 export function errorMessage(err: unknown): string {
   if (err instanceof HttpError) return err.message;
   return "Algo salió mal. Probá de nuevo.";

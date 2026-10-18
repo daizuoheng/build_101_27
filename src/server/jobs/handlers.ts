@@ -1,8 +1,11 @@
+import { applyPlan } from "../dispatch/apply-plan";
 import { getReport } from "../intake/drafts";
 import { evaluateRevision, respondToEvaluation } from "../intake/orchestrator";
 import { onProcessReportFailed, processReport } from "../pipeline/process-report";
 import { onAssessIncidentFailed, runAssessIncident } from "../pipeline/assess";
+import { planHandler } from "../pipeline/plan";
 import { runTextgen } from "../pipeline/textgen";
+import { buildPlan } from "../planning/build-plan";
 import { openReviewItem } from "../review/items";
 import type { JobKind } from "./queue";
 import type { Handler } from "./worker-loop";
@@ -33,6 +36,14 @@ export const handlers: Partial<Record<JobKind, Handler>> = {
   },
   process_report: { run: processReport, onFailed: onProcessReportFailed },
   assess_incident: { run: runAssessIncident, onFailed: onAssessIncidentFailed },
+  /** Recalcula y persiste el plan del territorio; si hay propuestas encola `dispatch`. Registrarlo activa también el recálculo periódico. */
+  plan: planHandler(buildPlan),
+  /** Convierte las propuestas del plan en órdenes, revalidando cada una bajo bloqueo. */
+  dispatch: {
+    async run(deps, job) {
+      await applyPlan(deps.pool, job.entity_id); // entity_type `plan_run`
+    },
+  },
   /** Textos del operador por revisión del incidente. Nunca bloquea otra etapa: sin LLM, plantilla. */
   textgen: {
     async run(deps, job) {
