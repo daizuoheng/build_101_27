@@ -4,6 +4,7 @@ import { seedSpecializedUnits, specializedUnits } from "../../seeds/specialized-
 import { capabilities, problemTypes } from "../../seeds/catalog";
 import { resetDb, testDb } from "./setup";
 import { locatePoint } from "@/server/geo/locate";
+import { demoUnits, DEMO_STAGE_UNIT } from "../../seeds/demo-units";
 
 describe("cuadrillas especializadas", () => {
   beforeEach(async () => {
@@ -32,9 +33,13 @@ describe("cuadrillas especializadas", () => {
       .toEqual({ capacity: 4, status: "out_of_service" });
     expect((await pool.query("select count(*)::int as n from events where kind='demo_seeded'")).rows[0].n).toBe(8);
     expect(specializedUnits.montevideo.map((u) => u.slug)).not.toContain("cuadrilla-demo");
-    const positions = await pool.query("select st_x(location::geometry) as lon, st_y(location::geometry) as lat from response_units");
-    expect(new Set(positions.rows.map((r) => `${r.lon},${r.lat}`)).size).toBe(8);
+    const positions = await pool.query("select st_x(location::geometry) as lon, st_y(location::geometry) as lat from response_units where unit_kind='mobile_crew'");
+    expect(positions.rows).toHaveLength(7);
+    expect(new Set(positions.rows.map((r) => `${r.lon},${r.lat}`)).size).toBe(7);
     for (const p of positions.rows) expect((await locatePoint(pool, p.lon, p.lat))?.territorySlug).toBe("montevideo");
+    for (const shared of demoUnits.montevideo.filter((u) => u.slug !== DEMO_STAGE_UNIT)) {
+      expect(specializedUnits.montevideo.find((u) => u.slug === shared.slug)).toEqual(shared);
+    }
   });
 
   it("revierte todo el lote si falta una capacidad", async () => {

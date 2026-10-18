@@ -1,32 +1,12 @@
 import type { Pool } from "pg";
 import { withTx } from "../src/server/db/tx";
 import { appendEvent } from "../src/server/events/append";
-import type { DemoUnit } from "./demo-units";
+import { DEMO_STAGE_UNIT, demoUnits, type DemoUnit } from "./demo-units";
 
 /** Posiciones simuladas: se mantienen sin fecha hasta un refresh explícito. No crea usuarios ni contraseñas. */
 export const specializedUnits: Record<string, DemoUnit[]> = {
   montevideo: [
-    {
-      slug: "cuadrilla-limpieza", name: "Cuadrilla Limpieza · Centro (demo)", unitKind: "mobile_crew",
-      capacity: 1, capabilities: ["limpieza"],
-      position: { lon: -56.1916, lat: -34.9035 }, serviceRadiusM: 3000,
-    },
-    {
-      slug: "cuadrilla-vial", name: "Cuadrilla Vialidad y Limpieza · Carrasco (demo)", unitKind: "mobile_crew",
-      capacity: 1, capabilities: ["vialidad", "limpieza"],
-      position: { lon: -56.055, lat: -34.883 }, serviceRadiusM: 3000,
-    },
-    {
-      slug: "cuadrilla-fuego", name: "Cuadrilla Fuego y Limpieza · Montevideo Shopping (demo)", unitKind: "mobile_crew",
-      capacity: 1, capabilities: ["fuego", "limpieza"],
-      position: { lon: -56.137, lat: -34.9017 }, serviceRadiusM: 3000,
-    },
-    {
-      slug: "oficina-alumbrado", name: "Oficina Alumbrado · Centro y Cordón (demo)", unitKind: "zone_office",
-      capacity: 5, capabilities: ["alumbrado"],
-      position: { lon: -56.1882, lat: -34.9058 },
-      zones: { areaExternalIds: ["51", "50"], problemTypes: ["alumbrado"], precedence: 1 },
-    },
+    ...demoUnits.montevideo.filter((u) => u.slug !== DEMO_STAGE_UNIT),
     {
       slug: "cuadrilla-arbolado", name: "Cuadrilla Arbolado · Prado (demo)", unitKind: "mobile_crew",
       capacity: 1, capabilities: ["poda"],
