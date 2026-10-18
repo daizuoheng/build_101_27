@@ -61,7 +61,9 @@ describe("recorrido de atención: reporte → incidente → plan → orden", () 
     const jev = jevSame();
     await confirmedReport(pool, t);
     await drain(pool, jev);
+    expect((await one(pool, "select count(*)::int as n from assignments where status = 'offered'")).n).toBe(1);
     const runsBefore = (await one(pool, "select count(*)::int as n from plan_runs")).n;
+    const dispatchBefore = (await one(pool, "select count(*)::int as n from jobs where kind = 'dispatch'")).n;
     const r2 = await confirmedReport(pool, t, "Sigue el pozo");
     await drain(pool, jev);
 
@@ -69,9 +71,12 @@ describe("recorrido de atención: reporte → incidente → plan → orden", () 
     expect((await one(pool, "select count(*)::int as n from incidents")).n).toBe(1);
     expect((await one(pool, "select count(*)::int as n from assignments")).n).toBe(1);
     expect((await pool.query("select 1 from jobs where kind = 'plan' and dedupe_key like $1", [`%:report:${r2}`])).rows).toHaveLength(1);
-    // Foco de revisión 1: el `plan` del reporte y el de la reevaluación no dan dos corridas con propuestas.
-    const withProposals = await one(pool, "select count(*)::int as n from (select * from plan_runs order by computed_at offset $1) r where (stats->>'proposals')::int > 0", [runsBefore]);
-    expect(withProposals.n).toBeLessThanOrEqual(1);
+    // Foco de revisión 1: el `plan` del reporte y el de la reevaluación corren (o se juntan), pero con la orden ya activa
+    // ninguna corrida propone de nuevo ni encola otro despacho.
+    const after = await pool.query("select (stats->>'proposals')::int as proposals from plan_runs order by computed_at offset $1", [runsBefore]);
+    expect(after.rows.length).toBeGreaterThanOrEqual(1);
+    expect(after.rows.every((r) => r.proposals === 0)).toBe(true);
+    expect((await one(pool, "select count(*)::int as n from jobs where kind = 'dispatch'")).n).toBe(dispatchBefore);
     expect((await one(pool, "select count(*)::int as n from jobs where status = 'failed'")).n).toBe(0);
   });
 });
