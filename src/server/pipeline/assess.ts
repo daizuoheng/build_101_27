@@ -34,7 +34,7 @@ async function loadIncident(db: Db, id: string, lock = false): Promise<IncidentR
 
 /**
  * Conteos del backend (Jev no cuenta): mensajes, fuentes distintas estimadas (sesiones), fuentes dentro de la ventana
- * del planificador y evidencia repetida (adjuntos idénticos por sha256). Reintentos y textos generados no suman.
+ * del planificador y evidencia repetida (adjuntos idénticos por sha256). Reintentos, textos generados y respuestas de control («sí», «enviar») no suman.
  */
 export async function sourceCounts(db: Db, incidentId: string, windowHours: number) {
   const { rows } = await db.query<{ reports: number; messages: number; sources: number; sources_in_window: number; repeated_evidence: number }>(
@@ -43,7 +43,7 @@ export async function sourceCounts(db: Db, incidentId: string, windowHours: numb
        where l.incident_id = $1 and l.active)
      select (select count(*) from r)::int as reports,
        (select count(*) from messages m join conversations c on c.id = m.conversation_id
-          where c.report_id in (select id from r) and m.role = 'citizen')::int as messages,
+          where c.report_id in (select id from r) and m.role = 'citizen' and not m.control_reply)::int as messages,
        (select count(distinct citizen_session_id) from r)::int as sources,
        (select count(distinct citizen_session_id) from r where confirmed_at >= now() - make_interval(hours => $2))::int as sources_in_window,
        (select coalesce(sum(n - 1), 0) from (select count(*) as n from attachments

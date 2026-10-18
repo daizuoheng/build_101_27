@@ -1,5 +1,6 @@
 import type { IntakePolicy } from "../config/policies";
 import { chosenProbability } from "../ai/jev/thresholds";
+import type { ClarifyReason } from "../ai/llm/clarify";
 import type { ChoiceAnswer, ReportEvaluation } from "@/shared/contracts/evaluation";
 
 export type Branch =
@@ -8,6 +9,7 @@ export type Branch =
   | { kind: "ask_location" }
   | { kind: "extract_address" }
   | { kind: "ask_evidence"; requestedField: "photo" | "description" }
+  | { kind: "interpret_correction" }
   | { kind: "ready"; needsReview: boolean };
 
 const p = (ev: ReportEvaluation, key: string) => chosenProbability(ev.answers[key] as ChoiceAnswer);
@@ -15,10 +17,15 @@ const p = (ev: ReportEvaluation, key: string) => chosenProbability(ev.answers[ke
 /**
  * Rama conversacional según la evaluación de Jev y la política de recepción. Pura.
  * El LLM no participa de esta decisión.
+ *
+ * `textAfterReady`: la persona escribió texto nuevo después de que se le mostró la ficha lista. Es una señal
+ * estructural de la conversación (no del LLM) de que puede estar corrigiendo el borrador.
+ * `answeringLocation`: la persona escribió después de que se le pidió (o propuso) la ubicación. Su texto se trata
+ * como dirección aunque Jev la considere vaga: el LLM la extrae (o devuelve null) y el geocodificador decide.
  */
 export function chooseBranch(
   ev: ReportEvaluation,
-  draft: { locationConfirmed: boolean },
+  draft: { locationConfirmed: boolean; textAfterReady?: boolean; answeringLocation?: boolean },
   policy: Pick<IntakePolicy, "thresholds" | "max_clarification_rounds">,
   rounds: number,
 ): Branch {
@@ -33,14 +40,25 @@ export function chooseBranch(
 
   if (!draft.locationConfirmed) {
     const precise = ev.locationInText === "precise" && p(ev, "location_in_text") >= (t.location_in_text ?? 0);
-    return precise ? { kind: "extract_address" } : { kind: "ask_location" };
+    return precise || draft.answeringLocation ? { kind: "extract_address" } : { kind: "ask_location" };
   }
+
+  if (draft.textAfterReady) return { kind: "interpret_correction" };
 
   const badPhoto = ev.photoQuality === "insufficient" && p(ev, "photo_quality") >= (t.photo_quality ?? 0);
   const contradiction = ev.contradiction === "contradiction" && p(ev, "text_photo_consistency") >= (t.contradiction ?? 0);
   if ((badPhoto || contradiction) && canAsk) return { kind: "ask_evidence", requestedField: "photo" };
 
   return { kind: "ready", needsReview: ev.needsReview || ev.applicability === "insufficient" };
+}
+
+/** Motivos de la repregunta, derivados de la evaluación. Pura: el LLM solo los redacta. */
+export function evidenceReasons(ev: ReportEvaluation, requestedField: "photo" | "description"): ClarifyReason[] {
+  if (requestedField === "description") return ["description_insufficient"];
+  const reasons: ClarifyReason[] = [];
+  if (ev.photoQuality === "insufficient") reasons.push("photo_insufficient");
+  if (ev.contradiction === "contradiction") reasons.push("text_photo_contradiction");
+  return reasons.length ? reasons : ["photo_insufficient"];
 }
 
 /** Peligro activo según la evaluación (Choice o Noul de la foto). */

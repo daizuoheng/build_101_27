@@ -24,8 +24,22 @@ export const IntakePolicy = z.object({
     query_suffix: z.string(),
     min_interval_ms: z.number().int().nonnegative(),
     timeout_ms: z.number().int().positive(),
+    /** Tiempo total para buscar una esquina: alcanza para las dos particiones a ritmo normal y corta si la cola está cargada. */
+    intersection_budget_ms: z.number().int().positive().default(7500),
   }),
   llm: LlmCallConfig,
+  /**
+   * Respuestas cortas que confirman o rechazan una pregunta del asistente sin botones (canales de solo texto).
+   * Opcional: sin léxico, los botones de la web siguen funcionando y el texto va al flujo normal.
+   */
+  replies: z.object({ yes: z.array(z.string()), no: z.array(z.string()), send: z.array(z.string()) }).optional(),
+  /**
+   * Consulta de estado por código: topes por hora para que no se puedan probar códigos al azar. El de sesión no
+   * alcanza solo (la sesión es una cookie anónima que se rota gratis); el de territorio acota a todos juntos.
+   */
+  status_lookup: z
+    .object({ max_per_hour: z.number().int().positive(), max_per_hour_territory: z.number().int().positive().default(300) })
+    .optional(),
 });
 
 export const EvaluationPolicy = z.object({

@@ -1,3 +1,4 @@
+import { isUuid } from "../ids";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import type { Db } from "../db/pool";
@@ -44,7 +45,7 @@ export async function getReport(db: Db, reportId: string, opts: { forUpdate?: bo
 
 /** Carga el reporte verificando que pertenezca a la sesión ciudadana (el id visible no autoriza). */
 export async function getOwnedReport(db: Db, reportId: string, sessionId: string, opts: { forUpdate?: boolean } = {}) {
-  if (!/^[0-9a-f-]{36}$/i.test(reportId)) throw notFound("Reporte inexistente.");
+  if (!isUuid(reportId)) throw notFound("Reporte inexistente.");
   const r = await getReport(db, reportId, opts);
   if (r.citizen_session_id !== sessionId) throw forbidden();
   return r;
@@ -102,6 +103,32 @@ export async function appendCitizenMessage(
   );
   const revision = await bumpRevision(db, r);
   return { messageId: rows[0].id, duplicate: false, revision };
+}
+
+/**
+ * Saca de la descripción un mensaje que no es relato del problema (una respuesta corta como «sí» o «enviar», una
+ * consulta de estado o una dirección escrita en respuesta a un pedido de ubicación). El mensaje queda en la
+ * conversación; solo deja de formar parte de la descripción que ven la ficha, Jev al procesar y la unidad.
+ * Solo quita la última línea si es exactamente ese texto (es lo que agregó `appendCitizenMessage`).
+ */
+export async function excludeFromDescription(db: Db, reportId: string, body: string): Promise<void> {
+  await db.query(
+    `update reports set description = nullif(case
+       when description = $2 then ''
+       when right(description, length($2) + 1) = E'\\n' || $2 then left(description, length(description) - length($2) - 1)
+       else description end, '')
+     where id = $1`,
+    [reportId, body],
+  );
+}
+
+/**
+ * Respuesta de control («sí», «no», «enviar», una consulta de estado): sale de la descripción y además se marca
+ * para que deje de ser evidencia de Jev y del LLM (si no, un «sí» llega como relato a la próxima evaluación).
+ */
+export async function consumeControlReply(db: Db, reportId: string, msg: { id: string; body: string }): Promise<void> {
+  await db.query("update messages set control_reply = true where id = $1", [msg.id]);
+  await excludeFromDescription(db, reportId, msg.body);
 }
 
 export async function appendAssistantMessage(
@@ -188,11 +215,11 @@ export function requireTerritory(r: ReportRow): string {
   return r.territory_id;
 }
 
-/** Evidencia que Jev recibe: mensajes ciudadanos originales y derivados de fotos (no paráfrasis del LLM). */
+/** Evidencia que Jev recibe: mensajes ciudadanos originales (sin respuestas de control) y derivados de fotos (no paráfrasis del LLM). */
 export async function loadEvidence(db: Db, storage: StorageAdapter, reportId: string) {
   const msgs = await db.query<{ id: string; body: string; created_at: Date }>(
     `select m.id, m.body, m.created_at from messages m join conversations c on c.id = m.conversation_id
-     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' order by m.seq`,
+     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' and not m.control_reply order by m.seq`,
     [reportId],
   );
   const atts = await db.query<{ id: string; storage_key: string }>(

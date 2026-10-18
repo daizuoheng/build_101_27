@@ -67,7 +67,7 @@ export const UnitAssignmentCard = z.object({
     areaName: z.string().nullable(),
     lon: z.number(),
     lat: z.number(),
-    /** Textos originales de los ciudadanos (evidencia), nunca paráfrasis del LLM. */
+    /** Relato original de cada reporte vinculado (evidencia), nunca paráfrasis del LLM. */
     citizenTexts: z.array(z.string()),
     /** Fotos: GET /api/files/[attachmentId] (autorizado por sesión interna). */
     photoIds: z.array(z.string()),

@@ -38,6 +38,8 @@ export type MessageView = z.infer<typeof MessageView>;
 
 export const DraftCard = z.object({
   typeName: z.string().nullable(),
+  /** Relato del problema con las palabras de la persona (sin respuestas cortas, consultas ni direcciones sueltas). */
+  description: z.string().nullable(),
   severity: z.enum(["low", "medium", "high", "undetermined"]).nullable(),
   place: z.string().nullable(),
   areaName: z.string().nullable(),

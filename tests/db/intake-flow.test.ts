@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
 import { withTx } from "@/server/db/tx";
-import { appendCitizenMessage, createDraft, getReport, setLocation } from "@/server/intake/drafts";
+import { appendCitizenMessage, createDraft, getOwnedReport, getReport, setLocation } from "@/server/intake/drafts";
 import { confirmReport } from "@/server/intake/confirm";
 import { runIntakeTurn } from "@/server/intake/orchestrator";
 import { getDraftView } from "@/server/intake/view";
@@ -35,6 +35,12 @@ describe("recepción → confirmación → job → incidente", () => {
     const again = await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000001", body: "otra vez" }), pool);
     expect(again.duplicate).toBe(true);
     expect((await getReport(pool, id)).revision).toBe(2);
+  });
+
+  it("un id con forma de UUID inválida da 404, no un error de la base", async () => {
+    const { pool, s } = await draftWithText();
+    await expect(getOwnedReport(pool, "-".repeat(36), s)).rejects.toMatchObject({ status: 404 });
+    await expect(getOwnedReport(pool, "cecfb3b355f4-47a9-90c4-9f4e932413c5-", s)).rejects.toMatchObject({ status: 404 });
   });
 
   it("otra sesión no puede escribir en el borrador", async () => {

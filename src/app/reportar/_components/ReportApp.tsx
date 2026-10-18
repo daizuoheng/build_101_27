@@ -1,52 +1,113 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DraftView, MessageView, MyReportItem as MyReportItemSchema } from "@/shared/contracts/intake";
 import type { z } from "zod";
+import type { DraftView, MessageUi, MessageView, MyReportItem as MyReportItemSchema } from "@/shared/contracts/intake";
 import { api, errorMessage } from "@/app/_components/http";
-import { LocationPanel, type LocationMode, type Proposed } from "./LocationPanel";
-import { DraftCardView } from "./DraftCardView";
+import { SiteHeader } from "@/app/_components/SiteHeader";
+import dynamic from "next/dynamic";
+import { IconAlert, IconCamera, IconChat, IconCheck, IconEdit, IconLocate, IconPin, IconSend } from "@/app/_components/icons";
+import { ReviewCard } from "./DraftCardView";
 
 type MyReportItem = z.infer<typeof MyReportItemSchema>;
-type Pending = { clientMessageId: string; body: string; kind: "text" | "photo"; file?: File; failed?: string };
+type Pending = { clientMessageId: string; body: string; kind: "text" | "photo"; file?: File; preview?: string; failed?: string };
+type Proposed = { lon: number; lat: number; label: string };
+
+// Vista previa del punto, como el mensaje de ubicación de WhatsApp: solo muestra, no se elige nada en el mapa.
+const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
+  ssr: false,
+  loading: () => <div className="h-[150px] animate-pulse rounded-xl bg-surface-2" aria-hidden />,
+});
 
 const POLL_MS = 4000;
+// Fotos: cualquier imagen; HEIC/HEIF por extensión porque algunos navegadores no informan su tipo MIME.
+const PHOTO_ACCEPT = "image/*,.heic,.heif";
 
-function newId() {
-  return crypto.randomUUID();
+const newId = () => crypto.randomUUID();
+
+/**
+ * ¿`next` es al menos tan nuevo como `cur`? Las respuestas pueden llegar desordenadas (un polling lanzado antes
+ * de una acción puede resolver después): se compara enviado > borrador, luego revisión y luego último mensaje.
+ */
+function notOlder(next: DraftView, cur: DraftView | null): boolean {
+  if (!cur || cur.id !== next.id) return true;
+  const key = (d: DraftView) => [d.status === "confirmed" ? 1 : 0, d.revision, d.messages.at(-1)?.seq ?? 0];
+  const [a, b] = [key(next), key(cur)];
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
 }
+const time = (iso: string) => new Date(iso).toLocaleTimeString("es-UY", { hour: "2-digit", minute: "2-digit" });
 
 export function ReportApp({ territorySlug }: { territorySlug: string }) {
   const [draft, setDraft] = useState<DraftView | null>(null);
-  const [history, setHistory] = useState<MyReportItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [pending, setPending] = useState<Pending[]>([]);
   const [busy, setBusy] = useState(false);
-  const [location, setLocation] = useState<{ mode: LocationMode; proposed?: Proposed | null } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [modifying, setModifying] = useState(false);
+  const [reviewEarly, setReviewEarly] = useState(false);
   const retryText = useRef<{ body: string; id: string } | null>(null);
   const confirmKey = useRef<{ revision: number; key: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const draftUrl = (id: string) => `/api/reportar/drafts/${encodeURIComponent(id)}`;
+
+  const draftRef = useRef<DraftView | null>(null);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  /**
+   * Aplica la respuesta de una acción. Solo si es del borrador activo (o `asNew`, al crear uno) y no es más vieja que
+   * lo que ya se muestra: la respuesta tardía de un borrador anterior no lo vuelve a poner. Los paneles de «Modificar
+   * datos» / «Enviar así» se cierran solo si el borrador cambió de verdad.
+   */
+  const applyDraft = useCallback((d: DraftView, opts: { asNew?: boolean } = {}) => {
+    const cur = draftRef.current;
+    const accept = opts.asNew || (cur !== null && cur.id === d.id && notOlder(d, cur));
+    if (!accept) return;
+    const changed = !cur || cur.id !== d.id || cur.revision !== d.revision || cur.status !== d.status || (cur.messages.at(-1)?.seq ?? 0) !== (d.messages.at(-1)?.seq ?? 0);
+    draftRef.current = d;
+    setDraft(d);
+    if (changed) {
+      setModifying(false);
+      setReviewEarly(false);
+    }
+  }, []);
+
+  // Vistas previas locales de fotos (object URLs): se liberan al descartar, al reintentar, al abrir otro reporte y al salir.
+  const previews = useRef(new Set<string>());
+  const releasePreview = (url?: string) => {
+    if (url && previews.current.delete(url)) URL.revokeObjectURL(url);
+  };
+  useEffect(() => {
+    const set = previews.current;
+    return () => {
+      for (const u of set) URL.revokeObjectURL(u);
+      set.clear();
+    };
+  }, []);
 
   const createDraft = useCallback(async () => {
     setError(null);
     setBusy(true);
     try {
-      const d = await api<DraftView>("/api/reportar/drafts", { method: "POST", json: { territorySlug } });
-      setDraft(d);
-      setPending([]);
-      setLocation(null);
+      applyDraft(await api<DraftView>("/api/reportar/drafts", { method: "POST", json: { territorySlug } }), { asNew: true });
+      setPending((p) => {
+        for (const x of p) releasePreview(x.preview);
+        return [];
+      });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
-  }, [territorySlug]);
+  }, [territorySlug, applyDraft]);
 
   // Al entrar: retomar el último borrador o crear uno si no hay reportes.
   useEffect(() => {
@@ -55,11 +116,9 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
       try {
         const list = await api<MyReportItem[]>(`/api/reportar/drafts?territory=${encodeURIComponent(territorySlug)}`);
         if (cancelled) return;
-        setHistory(list);
-        const latest = list[0];
-        if (latest) {
-          const d = await api<DraftView>(draftUrl(latest.id));
-          if (!cancelled) setDraft(d);
+        if (list[0]) {
+          const d = await api<DraftView>(draftUrl(list[0].id));
+          if (!cancelled) applyDraft(d, { asNew: true });
         } else {
           await createDraft();
         }
@@ -72,7 +131,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     return () => {
       cancelled = true;
     };
-  }, [territorySlug, createDraft]);
+  }, [territorySlug, createDraft, applyDraft]);
 
   // Polling mientras hay análisis pendiente o procesamiento posterior al envío.
   const shouldPoll =
@@ -81,8 +140,10 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     if (!shouldPoll || !draft) return;
     const id = draft.id;
     const t = setInterval(async () => {
+      if (document.hidden) return;
       try {
-        setDraft(await api<DraftView>(draftUrl(id)));
+        // Un polling del borrador anterior (después de «Nuevo reporte») o atrasado no pisa el estado actual.
+        applyDraft(await api<DraftView>(draftUrl(id)));
       } catch {
         /* se reintenta en el próximo ciclo */
       }
@@ -92,46 +153,93 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [draft?.messages.length, pending.length]);
+  }, [draft?.messages.length, pending.length, modifying, reviewEarly]);
 
-  async function sendText(e?: React.FormEvent) {
-    e?.preventDefault();
+  async function sendBody(body: string) {
     if (!draft) return;
-    const body = text.trim();
-    if (!body) return;
-    // Reintentar el mismo texto reutiliza su clientMessageId: el servidor no lo duplica.
+    // Reintentar después de un error el mismo texto reutiliza su clientMessageId (el servidor no lo duplica).
+    // Dos envíos seguidos del mismo texto («sí», «sí») son mensajes distintos: cada uno lleva su id.
     const id = retryText.current?.body === body ? retryText.current.id : newId();
-    retryText.current = { body, id };
-    setText("");
+    retryText.current = null;
     setError(null);
     setPending((p) => [...p, { clientMessageId: id, body, kind: "text" }]);
     try {
-      const d = await api<DraftView>(`${draftUrl(draft.id)}/messages`, { method: "POST", json: { clientMessageId: id, body } });
-      setDraft(d);
-      retryText.current = null;
+      applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/messages`, { method: "POST", json: { clientMessageId: id, body } }));
       setPending((p) => p.filter((x) => x.clientMessageId !== id));
     } catch (err) {
+      retryText.current = { body, id };
       setPending((p) => p.filter((x) => x.clientMessageId !== id));
       setText((t) => t || body);
       setError(errorMessage(err));
     }
   }
 
+  function sendText(e?: React.FormEvent) {
+    e?.preventDefault();
+    const body = text.trim();
+    if (!body) return;
+    setText("");
+    if (composer.current) composer.current.style.height = "auto";
+    void sendBody(body);
+  }
+
   async function sendPhoto(file: File, clientMessageId = newId()) {
     if (!draft) return;
     setError(null);
-    setPending((p) => [...p.filter((x) => x.clientMessageId !== clientMessageId), { clientMessageId, body: "Foto", kind: "photo", file }]);
+    // En un reintento se reutiliza la vista previa existente en vez de crear otra.
+    const prev = pending.find((x) => x.clientMessageId === clientMessageId)?.preview;
+    let preview = prev;
+    if (!preview && file.type.startsWith("image/") && !/hei[cf]/i.test(file.type)) {
+      preview = URL.createObjectURL(file);
+      previews.current.add(preview);
+    }
+    setPending((p) => [...p.filter((x) => x.clientMessageId !== clientMessageId), { clientMessageId, body: file.name, kind: "photo", file, preview }]);
     const form = new FormData();
     form.append("file", file);
     form.append("clientMessageId", clientMessageId);
     try {
-      const d = await api<DraftView>(`${draftUrl(draft.id)}/attachments`, { method: "POST", body: form });
-      setDraft(d);
+      applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/attachments`, { method: "POST", body: form }));
       setPending((p) => p.filter((x) => x.clientMessageId !== clientMessageId));
+      releasePreview(preview);
     } catch (err) {
       const msg = errorMessage(err);
       setPending((p) => p.map((x) => (x.clientMessageId === clientMessageId ? { ...x, failed: msg } : x)));
     }
+  }
+
+  /**
+   * «Enviar mi ubicación»: equivale a compartir la ubicación en WhatsApp. La persona la manda explícitamente, así
+   * que cuenta como ubicación confirmada. Sin permiso o sin GPS, se le pide que escriba la dirección.
+   */
+  function shareLocation() {
+    setError(null);
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      setError("Este navegador no puede compartir tu ubicación. Escribí la dirección o una esquina.");
+      focusComposer("Escribí la dirección o una esquina…");
+      return;
+    }
+    // El GPS puede tardar hasta 10 s. Si mientras tanto la persona escribió, confirmó otro punto o abrió otro
+    // reporte (cambia la revisión o el borrador), la posición que llegue tarde se descarta.
+    const asked = draftRef.current ? { id: draftRef.current.id, revision: draftRef.current.revision } : null;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        const cur = draftRef.current;
+        if (!asked || !cur || cur.id !== asked.id || cur.revision !== asked.revision || cur.status !== "draft") return;
+        void confirmLocation({ lon: pos.coords.longitude, lat: pos.coords.latitude, source: "gps" });
+      },
+      (err) => {
+        setLocating(false);
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? "No diste permiso para usar tu ubicación. Escribí la dirección o una esquina."
+            : "No pudimos obtener tu ubicación. Escribí la dirección o una esquina.",
+        );
+        focusComposer("Escribí la dirección o una esquina…");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+    );
   }
 
   async function confirmLocation(loc: { lon: number; lat: number; source: "gps" | "map" | "geocoded"; text?: string }) {
@@ -139,9 +247,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     setBusy(true);
     setError(null);
     try {
-      const d = await api<DraftView>(`${draftUrl(draft.id)}/location`, { method: "POST", json: loc });
-      setDraft(d);
-      setLocation(null);
+      applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/location`, { method: "POST", json: loc }));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -157,9 +263,7 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     setBusy(true);
     setError(null);
     try {
-      const d = await api<DraftView>(`${draftUrl(draft.id)}/confirm`, { method: "POST", json: { idempotencyKey: confirmKey.current.key } });
-      setDraft(d);
-      setLocation(null);
+      applyDraft(await api<DraftView>(`${draftUrl(draft.id)}/confirm`, { method: "POST", json: { idempotencyKey: confirmKey.current.key } }));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -167,236 +271,482 @@ export function ReportApp({ territorySlug }: { territorySlug: string }) {
     }
   }
 
-  if (loading) {
-    return <p role="status" className="p-4 text-ink-2">Cargando…</p>;
+  function focusComposer(placeholder?: string) {
+    if (composer.current) {
+      if (placeholder) composer.current.placeholder = placeholder;
+      composer.current.focus();
+    }
   }
-  if (fatal) {
+
+  if (loading) {
     return (
-      <div className="p-4">
-        <p role="alert" className="card border-danger p-3 text-danger">{fatal}</p>
-      </div>
+      <Shell territorySlug={territorySlug}>
+        <p role="status" className="p-6 text-ink-2">Cargando…</p>
+      </Shell>
+    );
+  }
+  if (fatal || !draft) {
+    return (
+      <Shell territorySlug={territorySlug}>
+        <p role="alert" className="card m-6 border-danger-line p-4 text-danger-strong">{fatal ?? "No pudimos abrir el chat."}</p>
+      </Shell>
     );
   }
 
-  const territory = draft?.territory;
-  const areaWord = territory?.areaLabel.toLowerCase();
-  const confirmed = draft?.status === "confirmed";
-  const lastUiIndex = draft ? lastIndexWithUi(draft.messages) : -1;
-  const showCard = !!draft && !confirmed && (draft.card.typeName !== null || draft.location !== null);
+  const territory = draft.territory;
+  const confirmed = draft.status === "confirmed";
+  const lastUiIndex = lastIndexWithUi(draft.messages);
+  const lastUi = lastUiIndex >= 0 ? draft.messages[lastUiIndex].ui : null;
+  const status = statusOf(draft, lastUi);
+  // Cada botón tiene su equivalente escrito (como en WhatsApp, donde no hay botones): el campo lo sugiere.
+  const hint =
+    lastUi?.kind === "propose_location" && actionable(lastUi, draft)
+      ? "«sí» u otra dirección…"
+      : lastUi?.kind === "ready" && draft.card.ready
+        ? "«enviar» o qué cambiar…"
+        : lastUi?.kind === "ask_location" && !draft.location?.confirmed
+          ? "Dirección o esquina…"
+          : "Escribí un mensaje…";
+  const area = draft.location?.confirmed ? draft.location.areaName : null;
 
-  return (
-    <div className="mx-auto flex w-full max-w-xl flex-1 flex-col">
-      <header className="sticky top-0 z-[500] border-b border-line bg-bg/95 px-4 py-3 backdrop-blur">
-        <h1 className="text-xl font-bold">{areaWord ? `Reportá un problema en tu ${areaWord}` : "Reportá un problema"}</h1>
-        {territory && <p className="text-sm text-ink-2">{territory.name} · piloto con unidades de prueba</p>}
-      </header>
-
-      <main className="flex flex-1 flex-col gap-3 px-4 py-4" aria-live="polite">
-        {history.length > 1 && <PastReports items={history} currentId={draft?.id} />}
-
-        {draft?.messages.map((m, i) => (
-          <Bubble key={m.id} message={m}>
-            {m.ui && !confirmed && i === lastUiIndex && (
-              <UiControls
-                message={m}
-                draft={draft}
-                onLocation={(mode, proposed) => setLocation({ mode, proposed })}
-                onPhoto={() => fileInput.current?.click()}
-                onFocusText={() => document.getElementById("composer")?.focus()}
-              />
-            )}
-            {m.ui?.kind === "active_hazard" && territory?.emergencyText && <EmergencyNotice text={territory.emergencyText} />}
-            {m.ui?.kind === "confirmed" && <CodeBadge code={m.ui.publicCode} />}
-          </Bubble>
-        ))}
-
-        {pending.map((p) => (
-          <div key={p.clientMessageId} className="ml-auto max-w-[85%] rounded-[var(--radius)] bg-accent-soft px-3 py-2 opacity-80">
-            <p>{p.kind === "photo" ? "📷 Enviando foto…" : p.body}</p>
-            {p.failed && (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span role="alert" className="text-danger">{p.failed}</span>
-                {p.file && (
-                  <button type="button" className="btn" onClick={() => sendPhoto(p.file!, p.clientMessageId)}>
-                    Reintentar
-                  </button>
-                )}
-                <button type="button" className="btn" onClick={() => setPending((x) => x.filter((y) => y.clientMessageId !== p.clientMessageId))}>
-                  Descartar
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {draft?.analysisPending && (
-          <p role="status" className="text-ink-2">Analizando tu mensaje…</p>
-        )}
-
-        {draft && territory && location && !confirmed && (
-          <LocationPanel
-            key={`${location.mode}-${location.proposed?.lon ?? ""}`}
-            draftId={draft.id}
-            territory={territory}
-            initialMode={location.mode}
-            proposed={location.proposed}
-            busy={busy}
-            onConfirm={confirmLocation}
-            onClose={() => setLocation(null)}
-          />
-        )}
-
-        {confirmed && draft && <Tracking draft={draft} onNew={createDraft} busy={busy} />}
-
-        <div ref={bottom} />
-      </main>
-
-      {draft && !confirmed && (
-        <footer className="sticky bottom-0 z-[500] flex flex-col gap-2 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur">
-          {showCard && (
-            <DraftCardView
-              card={draft.card}
-              location={draft.location}
-              areaLabel={draft.territory.areaLabel}
-              busy={busy}
-              onConfirm={confirmReport}
-              onChangeLocation={() => setLocation({ mode: "map" })}
-            />
-          )}
-          {error && (
-            <p role="alert" className="rounded-[var(--radius)] bg-danger-soft px-3 py-2 text-danger">
-              {error}
-            </p>
-          )}
-          <form onSubmit={sendText} className="flex items-end gap-2">
-            <input
-              ref={fileInput}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="sr-only"
-              tabIndex={-1}
-              aria-hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) sendPhoto(f);
-              }}
-            />
-            <button type="button" className="btn" onClick={() => fileInput.current?.click()} aria-label="Adjuntar foto">
-              📷
+  const review = (
+    <div className="flex w-full flex-col gap-3">
+      <ReviewCard
+        draft={draft}
+        busy={busy}
+        onConfirm={confirmReport}
+        onModify={() => {
+          setModifying(true);
+          focusComposer("Escribí qué querés cambiar…");
+        }}
+      />
+      {modifying && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[15px] text-ink-2">Escribime qué querés cambiar (por ejemplo, la dirección correcta), o elegí:</p>
+          <QuickReplies>
+            <button type="button" className="chip" disabled={locating || busy} onClick={shareLocation}>
+              <IconLocate className="h-[18px] w-[18px]" /> {locating ? "Obteniendo ubicación…" : "Enviar mi ubicación"}
             </button>
-            <label htmlFor="composer" className="sr-only">Mensaje</label>
-            <textarea
-              id="composer"
-              className="field resize-none"
-              rows={1}
-              value={text}
-              maxLength={2000}
-              placeholder="Contá qué pasa y dónde…"
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  sendText();
-                }
-              }}
-            />
-            <button className="btn btn-primary" disabled={!text.trim()}>
-              Enviar
+            <button type="button" className="chip" onClick={() => fileInput.current?.click()}>
+              <IconCamera className="h-[18px] w-[18px]" /> Agregar foto
             </button>
-          </form>
-        </footer>
+          </QuickReplies>
+        </div>
       )}
     </div>
   );
-}
+  const reviewInline = lastUi?.kind === "ready" || reviewEarly;
+  // Se puede enviar aunque no haya mensaje "ready" (p. ej. Jev tarda y el worker evalúa después): la ficha
+  // aparece igual, salvo que el asistente esté pidiendo algo concreto.
+  const fallbackReview = !confirmed && draft.card.ready && !reviewInline && !(lastUi && actionable(lastUi, draft));
 
-function lastIndexWithUi(messages: MessageView[]): number {
-  for (let i = messages.length - 1; i >= 0; i--) if (messages[i].ui) return i;
-  return -1;
-}
+  const controls = (m: MessageView) => {
+    const ui = m.ui!;
+    if (reviewInline) return review;
+    return (
+      <UiControls
+        ui={ui}
+        draft={draft}
+        busy={busy}
+        locating={locating}
+        onShareLocation={shareLocation}
+        onWriteAddress={(again) => focusComposer(again ? "Escribí la dirección correcta…" : "Escribí la dirección o una esquina…")}
+        onConfirmProposed={(p) => confirmLocation({ lon: p.lon, lat: p.lat, source: "geocoded", text: p.label })}
+        onPhoto={() => fileInput.current?.click()}
+        onFocusText={() => focusComposer("Contá un poco más qué pasa…")}
+        onReview={() => setReviewEarly(true)}
+      />
+    );
+  };
 
-function Bubble({ message, children }: { message: MessageView; children?: React.ReactNode }) {
-  const mine = message.role === "citizen";
-  if (message.role === "system") {
-    return <p className="text-center text-sm text-ink-2">{message.body}</p>;
-  }
   return (
-    <div className={`flex max-w-[85%] flex-col gap-2 ${mine ? "ml-auto items-end" : "mr-auto items-start"}`}>
-      <div className={`rounded-[var(--radius)] px-3 py-2 ${mine ? "bg-accent-soft" : "card"}`}>
-        <span className="sr-only">{mine ? "Vos: " : "Radar Urbano: "}</span>
-        {message.attachmentId && <p className="font-semibold">📷 Foto adjunta</p>}
-        {message.body && <p className="whitespace-pre-wrap">{message.body}</p>}
-      </div>
+    <Shell territorySlug={territorySlug} territoryName={territory.name} emergencyText={territory.emergencyText}>
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 px-0 pb-0 pt-3 sm:px-4 sm:pb-4">
+        <h1 className="sr-only">{`Reportá un problema en tu ${territory.areaLabel.toLowerCase()}`}</h1>
+        <div className="px-3 sm:px-0">
+          <StatusBand status={status} areaLabel={territory.areaLabel} area={area} code={draft.publicCode} />
+        </div>
+
+        <section aria-label="Chat" className="flex flex-1 flex-col border-line-soft bg-surface sm:rounded-2xl sm:border sm:shadow-sm">
+          <div className="flex-1 px-3 py-4 sm:px-6 sm:py-6">
+          <ol aria-label="Conversación" aria-live="polite" className="flex flex-col gap-5">
+            <li className="flex justify-center">
+              <span className="badge badge-muted">Hoy · {territory.name}</span>
+            </li>
+            {draft.messages.map((m, i) => (
+              <li key={m.id} className="flex flex-col gap-2">
+                <Bubble message={m} draftId={draft.id} emergencyText={territory.emergencyText} />
+                {m.ui && !confirmed && i === lastUiIndex && <div className="flex flex-col gap-2 pl-0 sm:pl-11">{controls(m)}</div>}
+              </li>
+            ))}
+
+            {pending.map((p) => (
+              <li key={p.clientMessageId} className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
+                {p.kind === "photo" ? (
+                  <PhotoCard src={p.preview} name={p.body} state={p.failed ? "failed" : "sending"} />
+                ) : (
+                  <div className="rounded-2xl rounded-br-none bg-primary px-4 py-2.5 text-white opacity-80">
+                    <p className="whitespace-pre-wrap">{p.body}</p>
+                  </div>
+                )}
+                {p.failed ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span role="alert" className="text-[15px] text-danger-strong">{p.failed}</span>
+                    {p.file && (
+                      <button type="button" className="btn" onClick={() => sendPhoto(p.file!, p.clientMessageId)}>Reintentar</button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        releasePreview(p.preview);
+                        setPending((x) => x.filter((y) => y.clientMessageId !== p.clientMessageId));
+                      }}
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-ink-2">Enviando…</span>
+                )}
+              </li>
+            ))}
+
+
+            {fallbackReview && (
+              <li className="flex flex-col gap-2">
+                <div className="flex max-w-[92%] items-start gap-3">
+                  <BotAvatar />
+                  <p className="rounded-2xl rounded-tl-none bg-surface-low px-4 py-3">Revisá tu reporte antes de mandarlo:</p>
+                </div>
+                <div className="sm:pl-11">{review}</div>
+              </li>
+            )}
+
+            {(draft.analysisPending || pending.some((p) => !p.failed)) && (
+              <li className="flex items-center gap-3" role="status">
+                <BotAvatar />
+                <span className="rounded-2xl rounded-tl-none bg-surface-low px-4 py-3 text-ink-2">
+                  <span className="sr-only">Radar Urbano está analizando tu mensaje</span>
+                  <span aria-hidden className="inline-flex gap-1">
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-ink-2 [animation-delay:-0.2s]" />
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-ink-2 [animation-delay:-0.1s]" />
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-ink-2" />
+                  </span>
+                </span>
+              </li>
+            )}
+
+            {confirmed && (
+              <li>
+                <Tracking draft={draft} onNew={createDraft} busy={busy} />
+              </li>
+            )}
+          </ol>
+            <div ref={bottom} className="scroll-mb-40" />
+          </div>
+
+          {!confirmed && (
+            <div className="sticky bottom-0 z-[500] border-t border-line-soft bg-surface/95 px-3 pb-2 pt-3 backdrop-blur sm:px-4">
+              {error && (
+                <p role="alert" className="mb-2 rounded-lg bg-danger-soft px-3 py-2 text-danger-strong">{error}</p>
+              )}
+              <form onSubmit={sendText} className="flex items-end gap-2">
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept={PHOTO_ACCEPT}
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-hidden
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) sendPhoto(f);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-low text-ink hover:text-accent"
+                  onClick={() => fileInput.current?.click()}
+                  aria-label="Adjuntar foto"
+                >
+                  <IconCamera />
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-low text-ink hover:text-accent disabled:opacity-55"
+                  onClick={shareLocation}
+                  disabled={locating || busy}
+                  aria-label={locating ? "Obteniendo tu ubicación" : "Enviar mi ubicación"}
+                >
+                  <IconLocate />
+                </button>
+                <label htmlFor="composer" className="sr-only">Mensaje</label>
+                <textarea
+                  ref={composer}
+                  id="composer"
+                  className="field max-h-40 min-h-12 resize-none rounded-xl py-3"
+                  rows={1}
+                  value={text}
+                  maxLength={2000}
+                  placeholder={hint}
+                  enterKeyHint="send"
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    e.target.style.height = "auto";
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      sendText();
+                    }
+                  }}
+                />
+                <button
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink hover:bg-primary disabled:opacity-55"
+                  disabled={!text.trim()}
+                  aria-label="Enviar mensaje"
+                >
+                  <IconSend />
+                </button>
+              </form>
+              <p className="mt-2 text-center text-xs text-ink-2">Te responde un asistente automático.</p>
+            </div>
+          )}
+        </section>
+      </main>
+    </Shell>
+  );
+}
+
+function Shell({ territorySlug, territoryName, emergencyText, children }: { territorySlug: string; territoryName?: string; emergencyText?: string | null; children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-full flex-1 flex-col">
+      <SiteHeader active="reportar" territorySlug={territorySlug} territoryName={territoryName} emergencyText={emergencyText} />
       {children}
     </div>
   );
 }
 
+type Status = { text: string; tone: "neutral" | "working" | "action" | "ready" | "done" };
+
+/** Estado real del borrador (nada de pasos fijos): lo que falta o lo que está pasando. */
+function statusOf(draft: DraftView, lastUi: MessageUi | null): Status {
+  if (draft.status === "confirmed") return { text: `Enviado · ${draft.tracking?.statusLabel ?? "recibido"}`, tone: "done" };
+  if (draft.analysisPending) return { text: "Analizando tu mensaje…", tone: "working" };
+  if (lastUi?.kind === "propose_location" && draft.location?.confirmed) return { text: "Confirmá la nueva ubicación", tone: "action" };
+  if (draft.card.missing.includes("description")) return { text: "Contanos qué pasa", tone: "action" };
+  if (draft.card.missing.includes("location")) return { text: "Falta indicar dónde es", tone: "action" };
+  if (draft.card.ready) return { text: "Listo para enviar", tone: "ready" };
+  return { text: "Revisando tu reporte", tone: "neutral" };
+}
+
+function StatusBand({ status, areaLabel, area, code }: { status: Status; areaLabel: string; area: string | null; code: string | null }) {
+  const dot = { neutral: "bg-line", working: "bg-warn", action: "bg-accent", ready: "bg-success", done: "bg-success" }[status.tone];
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-surface-low px-4 py-2.5">
+      <p role="status" className="flex items-center gap-2 font-semibold text-primary">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} aria-hidden />
+        {status.text}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        {code && <span className="badge badge-info">Código {code}</span>}
+        {area && <span className="badge badge-success">{areaLabel} · {area}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** El asistente está pidiendo algo concreto que la persona todavía puede responder. */
+function actionable(ui: MessageUi, draft: DraftView): boolean {
+  const loc = draft.location;
+  if (ui.kind === "ask_evidence") return true;
+  if (ui.kind === "ask_location") return !loc?.confirmed;
+  if (ui.kind === "propose_location") return !(loc?.confirmed && Math.abs(loc.lon - ui.lon) < 1e-6 && Math.abs(loc.lat - ui.lat) < 1e-6);
+  return false;
+}
+
+function lastIndexWithUi(messages: MessageView[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const k = messages[i].ui?.kind;
+    if (k && k !== "active_hazard" && k !== "status") return i;
+  }
+  return -1;
+}
+
+function BotAvatar() {
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink" aria-hidden>
+      <IconChat className="h-[18px] w-[18px]" />
+    </span>
+  );
+}
+
+function Bubble({ message, draftId, emergencyText }: { message: MessageView; draftId: string; emergencyText: string | null }) {
+  const at = time(message.createdAt);
+  if (message.role === "system") return <p className="text-center text-sm text-ink-2">{message.body}</p>;
+
+  if (message.role === "citizen") {
+    return (
+      <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1">
+        <span className="sr-only">Vos:</span>
+        {message.attachmentId ? (
+          <PhotoCard src={`/api/reportar/drafts/${encodeURIComponent(draftId)}/photos/${encodeURIComponent(message.attachmentId)}?size=thumb`} state="sent" />
+        ) : (
+          <div className="rounded-2xl rounded-br-none bg-primary px-4 py-2.5 text-white shadow-sm">
+            <p className="whitespace-pre-wrap">{message.body}</p>
+          </div>
+        )}
+        <span className="flex items-center gap-1 pr-1 text-xs text-ink-2">
+          {at} <IconCheck className="h-3.5 w-3.5 text-success" />
+        </span>
+      </div>
+    );
+  }
+
+  const hazard = message.ui?.kind === "active_hazard";
+  return (
+    <div className="flex max-w-[92%] items-start gap-3">
+      <BotAvatar />
+      <div className="flex min-w-0 flex-col items-start gap-1">
+        <span className="sr-only">Radar Urbano:</span>
+        <div
+          role={hazard ? "alert" : undefined}
+          className={`rounded-2xl rounded-tl-none px-4 py-3 ${hazard ? "border-2 border-danger-line bg-danger-soft font-semibold text-danger-strong" : "bg-surface-low text-ink"}`}
+        >
+          {hazard && <IconAlert className="mb-1 h-5 w-5" />}
+          <p className="whitespace-pre-wrap">{message.body}</p>
+          {hazard && emergencyText && !message.body.includes(emergencyText) && <p className="mt-1">{emergencyText}</p>}
+        </div>
+        <span className="pl-1 text-xs text-ink-2">Radar Urbano · {at}</span>
+      </div>
+    </div>
+  );
+}
+
+function PhotoCard({ src, name, state }: { src?: string; name?: string; state: "sent" | "sending" | "failed" }) {
+  return (
+    <div className="flex w-64 max-w-full items-center gap-3 rounded-2xl rounded-br-none bg-surface-container p-2.5 shadow-sm">
+      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-surface-2">
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element -- foto privada servida por ruta autorizada
+          <img src={src} alt="Foto adjunta" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center text-ink-2"><IconCamera /></span>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="truncate font-semibold text-primary">{name ?? "Foto"}</p>
+        {state === "sent" && <span className="badge badge-success mt-1"><IconCheck className="h-3.5 w-3.5" /> Enviada</span>}
+        {state === "sending" && <span className="text-sm text-ink-2">Subiendo…</span>}
+        {state === "failed" && <span className="text-sm text-danger-strong">No se pudo subir</span>}
+      </div>
+    </div>
+  );
+}
+
+function QuickReplies({ children }: { children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label="Respuestas sugeridas" className="flex flex-wrap gap-2">
+      {children}
+    </div>
+  );
+}
+
+/** Respuestas sugeridas según lo que pidió el asistente (equivalen a botones de respuesta en WhatsApp). */
 function UiControls({
-  message,
+  ui,
   draft,
-  onLocation,
+  busy,
+  locating,
+  onShareLocation,
+  onWriteAddress,
+  onConfirmProposed,
   onPhoto,
   onFocusText,
+  onReview,
 }: {
-  message: MessageView;
+  ui: MessageUi;
   draft: DraftView;
-  onLocation: (mode: LocationMode, proposed?: Proposed | null) => void;
+  busy: boolean;
+  locating: boolean;
+  onShareLocation: () => void;
+  onWriteAddress: (again: boolean) => void;
+  onConfirmProposed: (p: Proposed) => void;
   onPhoto: () => void;
   onFocusText: () => void;
+  onReview: () => void;
 }) {
-  const ui = message.ui!;
-  if (draft.location?.confirmed && (ui.kind === "ask_location" || ui.kind === "propose_location")) return null;
+  const loc = draft.location;
+  // Ubicación ya confirmada: no volver a pedirla. Un pin propuesto se oculta solo si es el punto ya confirmado;
+  // un pin de corrección (posterior a la ficha lista) apunta a otro lugar y tiene que poder aceptarse.
+  if (loc?.confirmed && ui.kind === "ask_location") return null;
+  if (loc?.confirmed && ui.kind === "propose_location" && Math.abs(loc.lon - ui.lon) < 1e-6 && Math.abs(loc.lat - ui.lat) < 1e-6) return null;
+
   switch (ui.kind) {
     case "ask_location":
       return (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn" onClick={() => onLocation("gps")}>Usar mi ubicación</button>
-          <button type="button" className="btn" onClick={() => onLocation("map")}>Elegir en el mapa</button>
-          <button type="button" className="btn" onClick={() => onLocation("address")}>Escribir dirección</button>
-        </div>
-      );
-    case "propose_location":
-      return (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn btn-primary" onClick={() => onLocation("proposed", { lon: ui.lon, lat: ui.lat, label: ui.label })}>
-            Ver en el mapa y confirmar
+        <QuickReplies>
+          <button type="button" className="chip chip-primary" disabled={locating || busy} onClick={onShareLocation}>
+            <IconLocate className="h-[18px] w-[18px]" /> {locating ? "Obteniendo ubicación…" : "Enviar mi ubicación"}
           </button>
-          <button type="button" className="btn" onClick={() => onLocation("map")}>Elegir otro punto</button>
+          <button type="button" className="chip" onClick={() => onWriteAddress(false)}>
+            <IconEdit className="h-[18px] w-[18px]" /> Escribir la dirección
+          </button>
+        </QuickReplies>
+      );
+    case "propose_location": {
+      const p = { lon: ui.lon, lat: ui.lat, label: ui.label };
+      return (
+        <div className="flex flex-col gap-2">
+          <figure className="w-full max-w-sm overflow-hidden rounded-xl border border-line-soft bg-surface">
+            <LeafletMap label={`Ubicación propuesta: ${ui.label}`} center={p} zoom={16} pin={p} height={150} />
+            <figcaption className="flex items-center gap-2 px-3 py-2 font-semibold text-primary">
+              <IconPin className="h-[18px] w-[18px] shrink-0" /> {ui.label}
+            </figcaption>
+          </figure>
+          <QuickReplies>
+            <button type="button" className="chip chip-primary" disabled={busy} onClick={() => onConfirmProposed(p)}>
+              <IconCheck className="h-[18px] w-[18px]" /> Sí, es ahí
+            </button>
+            <button type="button" className="chip" onClick={() => onWriteAddress(true)}>
+              <IconEdit className="h-[18px] w-[18px]" /> No, es otro lugar
+            </button>
+            <button type="button" className="chip" disabled={locating || busy} onClick={onShareLocation}>
+              <IconLocate className="h-[18px] w-[18px]" /> {locating ? "Obteniendo…" : "Enviar mi ubicación"}
+            </button>
+          </QuickReplies>
         </div>
       );
+    }
     case "ask_evidence":
       return (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={`btn ${ui.requestedField === "photo" ? "btn-primary" : ""}`} onClick={onPhoto}>
-            Sacar otra foto
+        <QuickReplies>
+          <button type="button" className={`chip ${ui.requestedField === "photo" ? "chip-primary" : ""}`} onClick={onPhoto}>
+            <IconCamera className="h-[18px] w-[18px]" /> Mandar una foto
           </button>
-          <button type="button" className={`btn ${ui.requestedField === "description" ? "btn-primary" : ""}`} onClick={onFocusText}>
-            Contar más
+          <button type="button" className={`chip ${ui.requestedField === "description" ? "chip-primary" : ""}`} onClick={onFocusText}>
+            <IconEdit className="h-[18px] w-[18px]" /> Contar más
           </button>
-        </div>
+          {draft.card.ready && (
+            <button type="button" className="chip" onClick={onReview}>
+              <IconSend className="h-[18px] w-[18px]" /> Enviar así
+            </button>
+          )}
+        </QuickReplies>
       );
     default:
       return null;
   }
 }
 
-function EmergencyNotice({ text }: { text: string }) {
-  return (
-    <div role="alert" className="flex gap-2 rounded-[var(--radius)] border-2 border-danger bg-danger-soft p-3 text-danger">
-      <span aria-hidden className="text-xl">⚠</span>
-      <p className="font-semibold">Si hay fuego o riesgo para personas ahora: {text}</p>
-    </div>
-  );
-}
-
 function CodeBadge({ code }: { code: string }) {
   return (
     <p className="card px-4 py-3 text-center">
       <span className="block text-sm text-ink-2">Código de reporte</span>
-      <span className="font-mono text-2xl font-bold tracking-widest">{code}</span>
+      <span className="font-mono text-2xl font-bold tracking-widest text-primary">{code}</span>
     </p>
   );
 }
@@ -413,30 +763,12 @@ function Tracking({ draft, onNew, busy }: { draft: DraftView; onNew: () => void;
           {working && <span className="text-ink-2"> (actualizando…)</span>}
         </p>
       )}
-      <p className="text-sm text-ink-2">
+      <p className="text-[15px] text-ink-2">
         Podés volver a ver este estado desde este mismo navegador. Recibir el reporte no significa que ya esté resuelto.
       </p>
       <button type="button" className="btn btn-primary" onClick={onNew} disabled={busy}>
         Nuevo reporte
       </button>
     </section>
-  );
-}
-
-function PastReports({ items, currentId }: { items: MyReportItem[]; currentId?: string }) {
-  const others = items.filter((i) => i.id !== currentId && i.status === "confirmed");
-  if (!others.length) return null;
-  return (
-    <details className="card p-3">
-      <summary className="min-h-[44px] cursor-pointer content-center font-semibold">Mis reportes anteriores ({others.length})</summary>
-      <ul className="mt-2 flex flex-col gap-1">
-        {others.map((r) => (
-          <li key={r.id} className="text-ink-2">
-            <span className="font-mono font-semibold text-ink">{r.publicCode}</span> · {new Date(r.createdAt).toLocaleString("es-UY")}
-            {r.preview && <> · {r.preview}</>}
-          </li>
-        ))}
-      </ul>
-    </details>
   );
 }

@@ -101,6 +101,7 @@ export const policies = {
       query_suffix: "Montevideo, Uruguay",
       min_interval_ms: 1100,
       timeout_ms: 5000,
+      intersection_budget_ms: 7500,
     },
     llm: {
       model: "deepseek-flash",
@@ -109,6 +110,12 @@ export const policies = {
       timeout_ms: 8000,
       extra_body: { thinking: { type: "disabled" } },
     },
+    replies: {
+      yes: ["sí", "si", "sí es ahí", "si es ahi", "es ahí", "ahí es", "dale", "ok", "okey", "correcto", "exacto", "eso", "confirmo", "sí confirmo", "perfecto", "listo", "👍", "👌", "✅"],
+      no: ["no", "no es ahí", "no es ahi", "no es ese", "no es acá", "otro lugar", "incorrecto", "está mal", "no, otro lugar"],
+      send: ["enviar", "enviá", "envialo", "enviarlo", "mandar", "mandalo", "mandá", "enviar reporte", "sí enviar", "si enviar", "confirmar y enviar"],
+    },
+    status_lookup: { max_per_hour: 10, max_per_hour_territory: 300 },
   },
   evaluation: {
     provider: "jev",

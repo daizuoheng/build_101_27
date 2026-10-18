@@ -8,8 +8,13 @@ import { appendAssistantMessage, getOwnedReport } from "./drafts";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin 0/O/1/I
 
-function newCode(): string {
-  return Array.from({ length: 6 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
+const DIGITS = "23456789";
+
+/** 6 caracteres con al menos un dígito: así un código no se confunde con una palabra en mayúsculas («CALLES»). */
+export function newCode(): string {
+  const chars = Array.from({ length: 6 }, () => ALPHABET[randomInt(ALPHABET.length)]);
+  if (!chars.some((c) => DIGITS.includes(c))) chars[randomInt(6)] = DIGITS[randomInt(DIGITS.length)];
+  return chars.join("");
 }
 
 /**
