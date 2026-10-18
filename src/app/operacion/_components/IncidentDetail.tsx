@@ -8,7 +8,7 @@ import type { OverrideField, OverrideValue, SetOverrideBody } from "@/shared/con
 import type { IncidentDetailResponse, OverrideResult } from "@/shared/contracts/incident-detail";
 import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import { Icon } from "./Icons";
-import { AttemptKeys } from "./idempotency";
+import { AttemptKeys, outcomeOf } from "./idempotency";
 import { ASSIGNMENT_STATUS, PRIORITY, REVIEW_KIND, STATUS, areaDisplay, shortCode } from "./labels";
 import { OpsHeader, PriorityBadge } from "./OpsShell";
 
@@ -78,9 +78,7 @@ function useAttemptKeys() {
       keys.current.settle(signature, "applied");
       return r;
     } catch (err) {
-      // Solo una respuesta del servidor dice que el pedido no se aplicó. Un error de red, o un corte mientras se leía
-      // el cuerpo (llega como AbortError, no como HttpError), deja el resultado incierto: el pedido pudo haberse aplicado.
-      keys.current.settle(signature, err instanceof HttpError && err.status !== 0 ? "rejected" : "uncertain");
+      keys.current.settle(signature, outcomeOf(err));
       throw err;
     }
   }, []);

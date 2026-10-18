@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { AttemptKeys, RETRY_WINDOW_MS } from "@/app/operacion/_components/idempotency";
+import { HttpError } from "@/app/_components/http";
+import { AttemptKeys, RETRY_WINDOW_MS, outcomeOf } from "@/app/operacion/_components/idempotency";
+
+describe("resultado de un pedido fallido", () => {
+  it("solo un 4xx dice que no se aplicó; red, corte y 5xx quedan inciertos", () => {
+    expect(outcomeOf(new HttpError(409, "revision_conflict", "x"))).toBe("rejected");
+    expect(outcomeOf(new HttpError(400, "bad", "x"))).toBe("rejected");
+    for (const status of [0, 500, 502, 503, 504]) expect(outcomeOf(new HttpError(status, "e", "x"))).toBe("uncertain");
+    expect(outcomeOf(new DOMException("aborted", "AbortError"))).toBe("uncertain");
+    expect(outcomeOf(new TypeError("Failed to fetch"))).toBe("uncertain");
+  });
+});
 
 const seq = () => {
   let n = 0;
