@@ -1,31 +1,42 @@
 # Radar Urbano — guion del pitch
 
-**Posicionamiento:** un sistema de triage para intendencias y entes públicos. Entra cualquier aviso ciudadano, como lo cuente el vecino; sale una lista de incidentes únicos, ordenados por riesgo, con la cuadrilla que corresponde. El vecino es la entrada de datos, no el producto.
+**Posicionamiento:** un sistema de triage para intendencias y entes públicos. Entra cualquier aviso ciudadano, como lo cuente el vecino; sale un incidente único, priorizado por riesgo, y la orden a la cuadrilla que corresponde. Sin intervención humana en el camino feliz. El vecino es la entrada de datos, no el producto.
 
-**Tesis:** el triage de avisos ciudadanos no escala con personas (miles por día) y no se resuelve con reglas fijas (texto libre, fotos, el mismo problema contado de diez maneras). La IA interpreta; las reglas, explícitas y auditables, ordenan y asignan.
+**Tesis:** el triage de avisos ciudadanos no escala con personas (miles por día) y no se resuelve con reglas fijas (texto libre, fotos, el mismo problema contado de diez maneras). La IA interpreta y agrupa; las reglas, explícitas y auditables, ordenan y asignan.
 
-Formato build 101: **3:00 en total para pitch y demo** + 3 min de preguntas. Habla una persona; otra maneja la demo.
+Formato build 101: **3:00 en total para pitch y demo** + 3 min de preguntas.
 Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee.
+
+## La demo: tres pantallas, nadie toca la del medio
+
+| Rol | Pantalla | Quién |
+|---|---|---|
+| Vecino | `/reportar/montevideo` en un celular, proyectado | Alguien del equipo |
+| Intendencia | `/operacion` (consola), proyectada | **Nadie.** Se actualiza sola cada 3 s |
+| Cuadrilla | `/unidad` en otro celular, logueado como `unidad.cuadrilla-demo` | Alguien del equipo |
+| Narrador | — | Vos |
+
+Que nadie toque la consola **es** el mensaje: el triage pasa solo, delante del jurado. Tiempos medidos por el equipo en local: el incidente aparece en la consola ~2 s después de enviar, y la orden llega a la cuadrilla ~3 s después.
 
 ## Presupuesto de tiempo
 
-Ritmo de referencia: 150 palabras por minuto (2,5 por segundo). Las esperas son momentos sin hablar: respuesta de Jev, toques en el celular, cambio de pantalla.
+Ritmo de referencia: 150 palabras por minuto (2,5 por segundo). Las esperas son momentos sin hablar.
 
 | Bloque | Hablado | Esperas | Acumulado |
 |---|---|---|---|
 | 1. El problema | ~31 s | — | 0:31 |
-| 2. Qué es | ~13 s | — | 0:44 |
-| 3. Entender | ~10 s | ~10 s | 1:04 |
-| 4. Agrupar | ~12 s | ~10 s | 1:26 |
-| 5. Priorizar y asignar | ~14 s | ~5 s | 1:45 |
-| 6. Por qué IA | ~22 s | — | 2:07 |
-| 7. Cierre | ~11 s | — | **~2:18** |
+| 2. Qué es | ~16 s | — | 0:47 |
+| 3. Acto 1 · El vecino avisa | ~10 s | ~20 s | 1:17 |
+| 4. Acto 2 · La Intendencia lo ve | ~12 s | ~3 s | 1:32 |
+| 5. Acto 3 · La cuadrilla recibe la orden | ~9 s | ~4 s | 1:45 |
+| 6. Por qué IA | ~26 s | — | 2:11 |
+| 7. Cierre | ~7 s | — | **~2:18** |
 
-Hablado medido: 288 palabras (~1:55). Quedan ~40 s de colchón. **Regla de corte en vivo:** si a las 2:15 no empezaste el bloque 6, decís solo la última frase del bloque 6 ("Lo medimos…") y vas al cierre.
+Hablado medido: 284 palabras (~1:53). Quedan ~40 s de colchón, que el acto 1 puede comerse si la geocodificación o la red tardan. **Regla de corte en vivo:** si a las 2:15 no empezaste el bloque 6, decís solo "Lo medimos…" y vas al cierre.
 
 ---
 
-## 1. El problema, como proceso · ~30 s
+## 1. El problema, como proceso · ~31 s
 
 > Once de la noche. Un contenedor se prende fuego en una esquina. Lo ven diez vecinos, y llegan diez avisos, cada uno contado distinto.
 > Solo por contenedores quemados, Bomberos recibió unos cuarenta mil llamados en 2025. Y en Montevideo hay dos mil reclamos de basura por día.
@@ -35,123 +46,128 @@ Hablado medido: 288 palabras (~1:55). Quedan ~40 s de colchón. **Regla de corte
 
 ## 2. Qué es · ~15 s
 
-> Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale una lista de incidentes únicos, ordenados por riesgo.
+> Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale un incidente priorizado y la orden a la cuadrilla correcta, sin que nadie toque nada.
 > Lo vemos en vivo.
 
-## 3. Entender · ~10 s + ~10 s de espera
+## 3. Acto 1 · El vecino avisa · ~13 s + ~20 s de espera
 
-*[Celular 1 proyectado. El compañero manda la foto del contenedor en llamas y pega: "se está prendiendo fuego el contenedor de la esquina"]*
+*[Celular del vecino proyectado. Manda la foto del contenedor en llamas y pega: "se está prendiendo fuego el contenedor de la esquina"]*
 
-> Llega un aviso: una foto y una frase, sin formulario.
+> Un vecino manda una foto y una frase. Sin formulario, sin elegir categoría.
 
-*[Espera la respuesta]*
+*[Llega la respuesta: aviso de emergencia y pedido de ubicación]*
 
-> Ya entendió: contenedor con fuego, fuego activo, severidad alta. Falta el lugar, y lo pide.
+> Entendió que hay fuego: le dice que llame a emergencias, y le pregunta dónde.
 
-*[Toca "usar mi ubicación" y confirma — sin narrar]*
+*[Escribe "18 de Julio y Ejido", confirma el pin con «Sí, es ahí» y toca Enviar — sin narrar]*
 
-## 4. Agrupar · ~14 s + ~10 s de espera
+## 4. Acto 2 · La Intendencia lo ve, sin tocar nada · ~13 s + ~3 s de espera
 
-*[Celular 2. Pega: "hay mucho humo en la esquina, huele a plástico quemado"]*
+*[Consola proyectada. Nadie la toca. El incidente aparece resaltado a los ~2 s]*
 
-> Otro vecino. No dice "contenedor", dice "humo".
+> Esta es la consola de la Intendencia. Nadie la está tocando.
+> Ahí apareció: contenedor con fuego, peligro activo, prioridad alta. Con la foto y el relato del vecino como evidencia.
 
-*[Confirma. Cambio a la pantalla del operador; toca "Actualizar"]*
+*[Opcional, si sobra tiempo: un toque en el incidente para abrir el detalle con la foto. Es mirar, no decidir]*
 
-> El operador no ve dos reclamos: ve un incidente con dos reportes. La IA comparó los relatos y decidió que es el mismo.
+## 5. Acto 3 · La cuadrilla recibe la orden · ~11 s + ~4 s de espera
 
-## 5. Priorizar y asignar · ~15 s + ~5 s de espera
+*[Celular de la cuadrilla. Suena, vibra y aparece "Llegó una orden nueva"]*
 
-*[Lista del operador: el fuego arriba del contenedor desbordado que se cargó antes con tres reportes]*
+> Y a los segundos, a la cuadrilla le llega la orden. La que puede atender fuego, no la de limpieza. Nadie la asignó.
 
-> Y va primero, arriba del contenedor desbordado que cargamos antes con tres vecinos. Ordena por riesgo, no por cantidad de quejas.
+*[La cuadrilla toca Aceptar]*
 
-*[SOLO SI `operacion/t11` está mergeado y probado: vista `/operacion/plan`]*
+## 6. Por qué IA, y cómo sabemos que funciona · ~26 s
 
-> Y propone quién va: la cuadrilla más cercana que puede atender fuego, no la de limpieza.
+> Con personas, esto no escala. Con reglas fijas, no se entiende, porque cada vecino lo cuenta distinto.
+> La IA interpreta y agrupa: si otros nueve vecinos avisan del mismo fuego, se suman a este incidente, y la cuadrilla no recibe diez órdenes.
+> Lo medimos con la API real: acertó las cinco decisiones de agrupación de nuestra prueba. Y cuando duda, lo manda a revisión humana.
 
-## 6. Por qué IA, y cómo sabemos que funciona · ~24 s
+## 7. Cierre · ~8 s
 
-> Con personas, esto no escala. Con reglas fijas, no se entiende: la gente escribe como quiere y cuenta lo mismo de diez maneras.
-> Por eso la IA interpreta, y reglas auditables ordenan y asignan.
-> Lo medimos con la API real: acertó las cinco decisiones de agrupación de nuestra prueba. Y cuando duda, no adivina: lo manda a revisión humana.
+> Del aviso a la orden, de punta a punta. Diez avisos, un incidente, una cuadrilla. Eso es Radar Urbano.
 
-## 7. Cierre · ~10 s
-
-> Hoy funciona el triage completo. Lo que sigue es despachar la orden al celular de la cuadrilla.
-> Diez avisos, un incidente, lo urgente primero. Eso es Radar Urbano.
-
-*Si el planificador no llegó: se saltea el pedazo de "propone quién va" (−6 s), en el bloque 6 queda "reglas auditables ordenan", y el cierre dice "Lo que sigue es asignar y despachar cuadrillas".*
+**Si hay que cortar tiempo, en este orden:** (1) "Y en Montevideo hay dos mil reclamos de basura por día" junto con la frase de las 33 horas, que depende de esa; (2) "Con la foto y el relato del vecino como evidencia"; (3) "Con personas, esto no escala…" (pasa a las preguntas).
 
 ---
 
-## Notas para quien maneja la demo
+## Notas para la demo
 
-- **El reloj lo marca la demo:** tener todo a un toque. Foto ya en la galería del celular 1, textos copiados para pegar, celular 2 con la sesión abierta, pantalla del operador ya logueada en otra pestaña o pantalla.
-- **Antes de subir:** `reset-demo`, y después cargar el contexto (abajo).
-- **Contexto para el triage:** cargar con el flujo real (no por base de datos) un contenedor desbordado con tres reportes de sesiones distintas, en otro punto de la ciudad. Así el fuego entra arriba en la lista. En el pitch se dice que se cargó antes.
-- **Refresco:** la lista del operador se actualiza sola cada 10 s; para no esperar, tocar "Actualizar".
-- **Ubicación con GPS:** los dos celulares van a estar juntos en el LATU, así que quedan dentro del radio de 30 m y se agrupan solos. Probarlo en el lugar antes del pitch.
-- **Riesgo con el vecino 2:** la frase "humo, huele a plástico" sin foto puede salir como evidencia insuficiente. Si en el ensayo pasa eso, que el texto diga "el contenedor está largando mucho humo" (y en el bloque 4 se dice "lo cuenta distinto" en lugar de "no dice contenedor").
-- **Proyección:** tener resuelto cómo se espejan los celulares en la pantalla, y un video de respaldo grabado por si falla internet.
-- **Aviso de emergencia:** con fuego activo el chat muestra el texto de `emergency_channel` del seed de Montevideo (`seeds/territory-montevideo.ts`). Hoy dice "consultá el canal de emergencias local de tu zona"; para la demo conviene que diga algo concreto, como "llamá a Bomberos al 104".
-- **Ensayo:** al menos dos pasadas completas con cronómetro, con los dos roles. Anotar el tiempo de cada bloque contra la tabla de arriba.
+Procedimiento completo y comandos: `docs/superpowers/notes/demo-en-vivo.md` (en `main`). Lo que importa para el escenario:
+
+- **Dónde corre.** No hay despliegue con https (Railway está preparado, no desplegado). Se corre en una máquina del equipo con el **plan B por red local**: `ALLOWED_DEV_ORIGINS=<ip> next dev` + `pnpm worker`, y los celulares entran por `http://<ip>:3000`. Con plan B:
+  - **No hay GPS** (el navegador lo bloquea por http): el vecino **escribe la dirección**. Usar una que ya se probó y geocodifica bien, como "18 de Julio y Ejido". Probarla en el ensayo.
+  - La primera carga de cada pantalla tarda: **abrir las tres pantallas antes de empezar**.
+  - Se ve el indicador de Next abajo a la izquierda.
+- **`--near` cerca de la dirección.** `refresh-demo-positions --near <lat>,<lon> --watch 10` en una terminal abierta. La cuadrilla atiende en un radio de 3 km: el punto tiene que estar cerca de "18 de Julio y Ejido" (el `-34.9058,-56.1882` del doc lo está).
+- **Cuadrilla:** tocar la pantalla de `/unidad` una vez después de abrirla; si no, el navegador bloquea el tono y la vibración. Con la pestaña visible y el celular desbloqueado.
+- **No precargar otros incidentes.** Con `--near` solo `cuadrilla-demo` queda vigente: si ya tiene una orden, la del fuego podría no llegarle. Arrancar con `reset-demo --yes`.
+- **No usar alumbrado** para la demo: va por zona a la oficina, no a la cuadrilla.
+- **`SESSION_SECRET` de 32 caracteres o más**, si no el login da 500.
+- **Antes de subir:** correr `scripts/e2e-demo.mjs` para verificar, y después `reset-demo --yes` (el script deja el incidente resuelto).
+- **Aviso de emergencia:** con fuego activo el chat muestra el texto de `emergencyChannel` (`seeds/territory-montevideo.ts`), que hoy dice "consultá el canal de emergencias local de tu zona". Para la demo conviene algo concreto, como "llamá a Bomberos al 104 o al 911".
+- **Todo a un toque:** la foto en la galería del celular del vecino, los textos copiados para pegar.
+- **Video de respaldo** grabado de los tres actos, por si falla la red.
+- **Ensayo:** dos pasadas completas con cronómetro y los tres roles.
 
 ## Preguntas del jurado
 
-Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta en una frase, después un dato o un ejemplo, y cortar (~20 s). Si no sabés, decilo y decí cómo lo medirían. Las técnicas profundas (código, umbrales, queries) las toma quien manejó la demo.
+Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta en una frase, después un dato o un ejemplo, y cortar (~20 s). Si no sabés, decilo y decí cómo lo medirían. Las técnicas profundas las toma alguien del equipo.
 
 **Alcance declarado** (decirlo si el jurado quiere probar un caso propio): Montevideo, avisos de espacio público de los 10 tipos del catálogo — bache, basura acumulada, accesibilidad obstruida, contenedor dañado, contenedor con fuego, vereda rota, cartelería, alumbrado, árbol o rama caída, desagüe obstruido. Lo que queda afuera no se inventa: va a revisión.
 
 ### Las seis más probables
 
 **1. "Si le sacás la IA, ¿qué queda?"** *(es la pregunta de la consigna)*
-> Queda un formulario: el vecino elige una categoría de una lista, y al municipio le llegan diez reclamos del mismo fuego que alguien tiene que leer y juntar a mano. Sin IA no hay triage: nadie entiende el texto libre ni la foto, y nadie decide si dos relatos distintos son el mismo incidente.
+> Queda un formulario: el vecino elige una categoría de una lista, y a la Intendencia le llegan diez reclamos del mismo fuego que alguien tiene que leer, juntar y asignar a mano. Sin IA no hay triage: nadie entiende el texto libre ni la foto, y nadie decide si dos relatos distintos son el mismo incidente.
 
-*Respaldo:* sin Jev, no hay tipo, severidad, fuego activo ni agrupación; las reglas de prioridad no tienen hechos sobre los que operar.
+*Respaldo:* sin Jev no hay tipo, severidad, fuego activo ni agrupación; las reglas de prioridad y asignación no tienen hechos sobre los que operar.
 
-**2. "¿Cómo saben que funciona? Es una muestra muy chica."**
+**2. "Probemos con un caso nuestro."** *(la rúbrica dice que pueden variar un caso — es la mejor oportunidad)*
+> Dale: contale el mismo fuego con tus palabras. *(Pasarle el celular del vecino con una sesión nueva.)*
+
+Lo que debería pasar, y conviene narrarlo: el reporte se suma al incidente que ya existe (la consola muestra 2 reportes) y **la cuadrilla no recibe una segunda orden**. Si prefieren otro problema (un bache, basura), se crea otro incidente y la orden va a la cuadrilla con esa capacidad. Si dicen algo vago ("hay un problema en mi barrio"), lo esperado es que repregunte: es correcto, decirlo. *Preparar:* sesión nueva lista en el celular del vecino; la dirección escrita (sin GPS en plan B).
+
+**3. "¿Cómo saben que funciona? Es una muestra muy chica."**
 > Es chica, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno ya quemado. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y si alguien reporta fuego donde ayer hubo un contenedor quemado, no los junta: lo manda a revisión. En total, cinco de cinco decisiones de agrupación y dieciocho de dieciocho respuestas de clasificación, iguales en dos corridas.
 
-*Respaldo:* cada llamada queda registrada (entrada, respuesta, latencia), así que el siguiente paso es un set etiquetado con avisos reales y medir precisión por tipo. **Límite a declarar si preguntan por las fotos:** son de Wikimedia Commons, no de reportes reales, y el caso "mismo bache" usa dos recortes de una misma foto; falta probar con dos fotos reales distintas del mismo problema (`docs/superpowers/notes/jev-smoke.md`).
-
-**3. "Probemos con un caso nuestro."** *(la rúbrica dice que pueden variar un caso)*
-> Dale. *(Pasarle el celular o tipear lo que diga.)* Si está en el catálogo lo clasifica; si es ambiguo o no alcanza la evidencia, lo pide o lo manda a revisión, no inventa.
-
-*Preparar:* el celular 2 listo con una sesión nueva. Si dicen algo vago ("hay un problema en mi barrio"), el resultado esperado es evidencia insuficiente y repregunta: eso es correcto, decirlo.
+*Respaldo:* además, el equipo corrió la demo completa con seis relatos distintos (fuego con y sin dirección, bache, basura, rama caída, foto de contenedor quemado) y en todos la orden llegó a la cuadrilla (`demo-en-vivo.md`). Cada llamada queda registrada, así que el siguiente paso es un set etiquetado con avisos reales. **Límite a declarar si preguntan por las fotos:** son de Wikimedia Commons, no de reportes reales, y el "mismo bache" usa dos recortes de una misma foto (`jev-smoke.md`).
 
 **4. "¿Qué pasa cuando la IA se equivoca?"**
-> No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión humana y ese incidente queda bloqueado para despacho.
+> No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión y ese incidente queda bloqueado para despacho. El operador lo resuelve ahí, y si corrige el tipo o la severidad, una reevaluación de la IA no pisa su corrección.
 
-*Respaldo:* umbrales de agrupación: 0,90 para "mismo incidente", 0,80 para "distinto" (`seeds/policies.ts`). Hoy la cola existe en datos y el operador la ve como aviso; la pantalla para resolverla no está. Las correcciones humanas (tipo, severidad, prioridad, ubicación) están en el backend y una reevaluación no las pisa (`incidents/overrides.ts`), pero **todavía no hay pantalla para corregir**: decirlo así si preguntan.
+*Respaldo:* umbrales de agrupación 0,90 "mismo" y 0,80 "distinto" (`seeds/policies.ts`). Cola de revisión en `/operacion/revision`; correcciones desde el detalle del incidente (`incidents/overrides.ts`).
 
 **5. "¿Qué es Jev? ¿Por qué no un LLM para todo?"**
-> Jev es un clasificador: le hacemos preguntas cerradas — ¿hay fuego activo?, ¿es el mismo incidente? — y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Además es rápido: menos de medio segundo sin foto, alrededor de un segundo con foto. El LLM lo usamos solo para extraer la dirección del texto, y no decide nada.
+> Jev es un clasificador: le hacemos preguntas cerradas — ¿hay fuego activo?, ¿es el mismo incidente? — y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Además es rápido: menos de medio segundo sin foto, alrededor de un segundo con foto. El LLM redacta: la repregunta al vecino, la dirección y el resumen para el operador. Pero nunca decide el tipo, la gravedad ni a quién se manda.
 
-*Respaldo:* latencia medida por evaluación completa: 230–400 ms solo texto, 640–1.100 ms con una foto; la comparación para agrupar, 0,5–1,4 s. Costo por aviso: no lo medimos todavía; decirlo así.
+*Respaldo:* latencia por evaluación completa 230–400 ms solo texto, 640–1.100 ms con una foto; la comparación para agrupar 0,5–1,4 s. Costo por aviso: no lo medimos todavía; decirlo así.
 
 **6. "¿Qué está simulado?"** *(la rúbrica pide declarar las simulaciones)*
-> La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, que están marcadas como demo. Y el contenedor desbordado del principio lo cargamos antes, pero por el mismo flujo, no a mano en la base.
+> La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, que están marcadas como demo. Y hoy corre en una máquina nuestra por la red local, no en un servidor público.
 
 ### Otras que pueden salir
 
-**"¿No es un chat?"** La conversación es solo la entrada. El producto es el triage: clasificar, agrupar, priorizar y asignar. El LLM ni siquiera decide. Es lo opuesto al chat genérico que la consigna descalifica.
+**"¿No es un chat?"** La conversación es solo la entrada. El producto es el triage: clasificar, agrupar, priorizar, asignar y despachar. Es lo opuesto al chat genérico que la consigna descalifica.
 
-**"¿Cómo priorizan? ¿Por qué no por cantidad de quejas?"** Jev extrae los hechos (fuego activo, paso bloqueado, accesibilidad, severidad) y una regla explícita calcula la banda (`pipeline/priority.ts`). Que se quejen más no hace más grave el problema; si no, el barrio que más se queja gana siempre. La cantidad suma, como mucho, un bonus acotado dentro de la banda en el planificador, nunca por encima de un peligro activo. Es auditable y la intendencia lo ajusta por política sin tocar el modelo.
+**"¿Cómo le llega la orden a la cuadrilla?"** La página de la cuadrilla consulta cada 3 segundos; cuando llega una orden, la resalta, suena y vibra. La cuadrilla la acepta, la inicia y la completa, y todo queda registrado. Límite: hoy necesita la página abierta; una notificación con el celular bloqueado, o por WhatsApp, es lo siguiente.
 
-**"¿Cómo asignan cuadrillas?"** *(si t11 está mergeado)* En el orden de la cola, solo cuadrillas con la capacidad requerida (fuego no es limpieza), por distancia si es móvil o por zona, descontando capacidad, y evitando dejar sin unidad a otro incidente que solo esa podría atender. Determinista: misma entrada, mismo plan.
+**"¿Cómo priorizan? ¿Por qué no por cantidad de quejas?"** Jev extrae los hechos (fuego activo, paso bloqueado, accesibilidad, severidad) y una regla explícita calcula la banda (`pipeline/priority.ts`). Que se quejen más no hace más grave el problema; si no, el barrio que más se queja gana siempre. La cantidad suma, como mucho, un bonus acotado dentro de la banda, nunca por encima de un peligro activo. Es auditable y la intendencia lo ajusta por política sin tocar el modelo.
 
-**"¿Y si dos contenedores distintos están en la misma esquina?"** La cercanía solo elige candidatos (30 m); la decisión la toma Jev comparando texto y foto. En la prueba, un bache y basura a 12 m quedaron separados, y con dos candidatos eligió el correcto aunque era el más lejano. Si duda, revisión.
+**"¿Cómo asignan cuadrillas?"** En el orden de la cola, solo cuadrillas con la capacidad requerida (fuego no es limpieza), por distancia si es móvil o por zona, descontando capacidad, y evitando dejar sin unidad a otro incidente que solo esa podría atender. Determinista: misma entrada, mismo plan. Un segundo reporte del mismo incidente no genera otra orden (hay un test para eso).
 
-**"¿Quién lo usa? ¿Por qué lo adoptaría una intendencia?"** El usuario es el operador del ente público. Cambia leer y juntar avisos uno por uno por una lista de incidentes únicos ya ordenados. No pretendemos reemplazar los canales actuales; el triage es lo que viene después de recibir el aviso. *(No afirmar integraciones con sistemas de la IM: no existen.)*
+**"¿Y si dos contenedores distintos están en la misma esquina?"** La cercanía solo elige candidatos (30 m); decide Jev comparando texto y foto. En la prueba, un bache y basura a 12 m quedaron separados, y con dos candidatos eligió el correcto aunque era el más lejano. Si duda, revisión.
 
-**"¿Esto ya existe?"** *(originalidad)* Hay plataformas de reporte ciudadano, pero en general piden elegir una categoría y dejan los duplicados al vecino o a un operador. Lo nuestro es el triage automático: entender texto y foto, agrupar relatos distintos y priorizar por riesgo. *(No nombrar productos concretos si no los conocen bien.)*
+**"¿Quién lo usa? ¿Por qué lo adoptaría una intendencia?"** El operador del ente público, y las cuadrillas. Cambia leer, juntar y asignar avisos uno por uno por incidentes únicos que llegan ya ordenados y asignados; el operador solo mira lo que el sistema no pudo decidir. No reemplaza los canales actuales: el triage es lo que viene después de recibir el aviso. *(No afirmar integraciones con sistemas de la IM: no existen.)*
 
-**"¿Escala a otra ciudad?"** Montevideo es configuración: barrios, catálogo, umbrales y textos viven en la base, no en el código. *(Si `feat/territorio-b` está mergeado: "lo probamos con un segundo territorio".)*
+**"¿Esto ya existe?"** *(originalidad)* Hay plataformas de reporte ciudadano, pero en general piden elegir una categoría y dejan los duplicados y la asignación a una persona. Lo nuestro es el triage automático de punta a punta. *(No nombrar productos concretos si no los conocen bien.)*
 
-**"¿Y si se cae el proveedor de IA?"** El aviso se guarda antes de cualquier llamada. Si Jev no responde a tiempo, el vecino ve "recibido, analizando", la evaluación sigue como tarea en segundo plano con reintentos, y si falla queda en revisión. No se pierde ningún aviso.
+**"¿Escala a otra ciudad?"** Montevideo es configuración: barrios, catálogo, umbrales y textos viven en la base, no en el código. Lo probamos con un segundo territorio sintético.
 
-**"¿Y avisos falsos o alguien que intenta manipular el sistema?"** El texto del vecino es evidencia, no instrucciones. Probamos meterle una instrucción oculta al extractor de direcciones y no la siguió. Una foto que no coincide con el texto se marca como contradicción. Y como la cantidad no sube la prioridad, inundar de reportes no adelanta nada.
+**"¿Y si se cae el proveedor de IA?"** El aviso se guarda antes de cualquier llamada. Si Jev no responde a tiempo, el vecino ve "recibido, analizando", la evaluación sigue en segundo plano con reintentos, y si falla queda en revisión. Si el LLM falla, se usa una plantilla. No se pierde ningún aviso.
+
+**"¿Y avisos falsos o manipulación?"** El texto del vecino es evidencia, no instrucciones: probamos meterle una instrucción oculta al extractor de direcciones y no la siguió. Una foto que no coincide se marca como contradicción. Y como la cantidad no sube la prioridad, inundar de reportes no adelanta nada.
 
 **"¿Cómo es hoy?"** Hay muchos canales (teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial). Del lado del proceso, con los datos abiertos del Sistema Único de Reclamos, calculado por nosotros: un reclamo tarda en cerrarse una mediana de 13 días, y uno de cada cinco tarda más de 90 (cerrados entre 2024 y septiembre de 2026). Dato de proceso, no crítica. No afirmar cómo se hace hoy el triage por dentro.
 
@@ -161,19 +177,20 @@ Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta
 
 **"¿Por qué importa?"** Solo si preguntan, sin tono político: La Cachimba del Piojo asfaltó su calle principal en septiembre de 2026, después de años de reclamo, cuando el caso se hizo viral.
 
-**"¿Privacidad?"** No se piden datos de identidad (sesión con token opaco), solo se guarda el hash del token; fotos en storage privado, nunca con URL pública; el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap (diseño §7b).
+**"¿Privacidad?"** No se piden datos de identidad (sesión con token opaco; solo se guarda su hash), fotos en storage privado, nunca con URL pública: solo las ve un operador logueado de ese territorio. El operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap (diseño §7b).
 
 ### Qué no decir
 
 - "Es un chat", "es como ChatGPT para reclamos".
 - Un costo por aviso, un porcentaje de precisión o un ahorro en dinero: no los medimos.
 - Que está integrado con la Intendencia o con el SUR.
-- Que despacha órdenes o que la cuadrilla recibe la orden en el celular (hasta que exista).
+- Que está desplegado o que se puede usar desde cualquier lado: hoy corre en la red local.
+- Que la cuadrilla recibe una notificación con el celular bloqueado, o por WhatsApp.
 - Críticas a la gestión de la Intendencia.
 
 ## Qué no prometer como hecho
 
-Al momento de escribir esto no existen: el despacho de órdenes y la bandeja de la cuadrilla (`/unidad`), la pantalla para resolver la cola de revisión (el operador solo ve los avisos), la pantalla para que el operador corrija un incidente (la lógica está en el backend), y la geocodificación de esquinas tipo "Rivera y Comercio" (hay que poner un pin). El planificador está en `operacion/t11`, sin mergear: solo mostrarlo si está mergeado y probado. **Revisar esta lista contra el estado del sistema antes del pitch.**
+Al 18 de octubre (`main` en `45c15f5`) no existen o no están probados: el despliegue con https (Railway está preparado, no desplegado), las notificaciones a un celular bloqueado o por WhatsApp (la cuadrilla necesita `/unidad` abierta), el «Seguimiento con código» del vecino, y la prueba en celulares reales (Safari, fotos HEIC, permisos). Algunas esquinas no geocodifican (p. ej. "Rivera y Comercio" cae al mapa) y las que no están en caché tardan 2,5–6 s. **Revisar esta lista contra el estado del sistema antes del pitch.**
 
 ## Datos y fuentes
 
@@ -184,9 +201,11 @@ Al momento de escribir esto no existen: el despacho de órdenes y la bandeja de 
 | 33 horas/día de triage | Cuenta ilustrativa: 2.000 avisos × 1 min. No es un dato medido. |
 | Cierre de reclamos del SUR: mediana 13 días; 21,4% tarda más de 90 (315.782 finalizados entre 2024 y sep. 2026) | Calculado por nosotros con los [datos abiertos del SUR](https://catalogodatos.gub.uy/dataset/reclamos-registrados-en-el-sistema-unico-de-reclamos-de-la-intendencia-de-montevideo) (archivo del 11/10/2026). Script: `docs/pitch/datos/sur_tiempos.py`. |
 | Canales actuales: teléfono 1950, WhatsApp, formulario web del SUR, chatbot, Buzón Ciudadano, presencial | [Trámites IM](https://tramites.montevideo.gub.uy/tramite/contenedor-lleno-o-residuos-fuera-de-el) |
-| Agrupación: 5/5 decisiones (5 pares) y 11/11 respuestas por candidato, iguales en dos corridas | `docs/superpowers/notes/jev-smoke.md` (rama `epic/nucleo`) |
+| Agrupación: 5/5 decisiones (5 pares) y 11/11 respuestas por candidato, iguales en dos corridas | `docs/superpowers/notes/jev-smoke.md` |
 | Clasificación: 18/18 respuestas esperadas en 9 casos | Ídem. Fotos de Wikimedia Commons, no de reportes reales. |
 | Latencia: 230–400 ms solo texto, 640–1.100 ms con foto; agrupación 0,5–1,4 s | Ídem. |
+| Demo: incidente en consola ~2 s después de enviar, orden a la cuadrilla ~3 s después; seis relatos distintos probados | `docs/superpowers/notes/demo-en-vivo.md` (verificado en local el 18/10) |
+| Un segundo reporte del mismo incidente no crea otra orden | `tests/db/attention-flow.test.ts` |
 
 **Descartado:** la "mediana de 8 días y 11,8% más de 90" de un repositorio de GitHub sin revisión ([EmilianoGonLas/reclamos-montevideo](https://github.com/EmilianoGonLas/reclamos-montevideo)). Usa la misma fuente oficial, pero recalculado sobre los cerrados 2024–2026 da 13 días y 21,4%. Su 8 se parece a la mediana por año de ingreso 2025 (8 días), que subestima porque 19.650 reclamos de ese año siguen abiertos.
 

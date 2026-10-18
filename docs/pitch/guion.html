@@ -132,7 +132,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
   <header>
     <span class="eyebrow">build 101 · FIUM / LATU · guion del pitch</span>
     <h1>Radar Urbano</h1>
-    <p class="lede">Un sistema de triage para intendencias y entes públicos. Entra cualquier aviso ciudadano, como lo cuente el vecino, y sale una lista de incidentes únicos, ordenados por riesgo. El vecino es la entrada de datos; el cliente es el ente público.</p>
+    <p class="lede">Un sistema de triage para intendencias y entes públicos. Entra cualquier aviso ciudadano, como lo cuente el vecino, y sale un incidente único, priorizado por riesgo, y la orden a la cuadrilla que corresponde. Sin intervención humana en el camino feliz.</p>
     <div class="thesis">
       <div><b>Con personas no escala</b><p>Miles de avisos por día. A un minuto cada uno, son horas de trabajo diarias solo para ordenar.</p></div>
       <div><b>Con reglas fijas no se entiende</b><p>Texto libre, fotos, y el mismo problema contado de diez maneras.</p></div>
@@ -141,30 +141,39 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
     <div class="meta">
       <span><span class="mono">3:00</span> pitch + demo, todo junto</span>
       <span><span class="mono">3:00</span> preguntas del jurado</span>
-      <span>Habla una persona, otra maneja la demo</span>
     </div>
     <nav aria-label="Secciones">
+      <a href="#demo3">La demo</a>
       <a href="#tiempo">Tiempo</a>
       <a href="#guion">Guion</a>
-      <a href="#demo">Notas de demo</a>
+      <a href="#notas">Notas de demo</a>
       <a href="#preguntas">Preguntas</a>
       <a href="#limites">Qué no prometer</a>
       <a href="#fuentes">Fuentes</a>
     </nav>
   </header>
 
+  <section id="demo3" aria-labelledby="t-demo3">
+    <h2 id="t-demo3">La demo: tres pantallas, nadie toca la del medio</h2>
+    <div class="thesis">
+      <div><span class="eyebrow">Acto 1 · Vecino</span><b>Celular, proyectado</b><p><code>/reportar/montevideo</code>. Lo maneja alguien del equipo.</p></div>
+      <div><span class="eyebrow">Acto 2 · Intendencia</span><b>Consola, proyectada</b><p><code>/operacion</code>. <strong>Nadie la toca:</strong> se actualiza sola cada 3 s.</p></div>
+      <div><span class="eyebrow">Acto 3 · Cuadrilla</span><b>Otro celular</b><p><code>/unidad</code> como <code>unidad.cuadrilla-demo</code>. Suena y vibra cuando llega la orden.</p></div>
+    </div>
+    <p class="note" style="max-width:72ch">Que nadie toque la consola <b>es</b> el mensaje. Medido por el equipo en local: el incidente aparece ~2 s después de enviar y la orden llega a la cuadrilla ~3 s después.</p>
+  </section>
+
   <section id="tiempo" class="timeline" aria-labelledby="t-tiempo">
     <h2 id="t-tiempo">Presupuesto de tiempo</h2>
-    <p class="note">A escala sobre los 3:00. Hablado medido: 288 palabras a 150 por minuto (~1:55). Las esperas son momentos sin hablar: respuesta de Jev, toques en el celular, cambio de pantalla.</p>
-    <!-- 180 s = 100%. Cada segmento: hablado + espera. -->
-    <div class="bar" role="img" aria-label="Bloques: 1 problema 31 s, 2 qué es 13 s, 3 entender 10 s más 10 de espera, 4 agrupar 12 s más 10, 5 priorizar 14 s más 5, 6 por qué IA 22 s, 7 cierre 11 s. Total 2:18, colchón 42 s.">
+    <p class="note">A escala sobre los 3:00. Hablado medido: 284 palabras a 150 por minuto (~1:53). Las esperas son momentos sin hablar.</p>
+    <div class="bar" role="img" aria-label="Bloques: 1 problema 31 s, 2 qué es 16 s, 3 vecino 10 s más 20 de espera, 4 Intendencia 12 s más 3, 5 cuadrilla 9 s más 4, 6 por qué IA 26 s, 7 cierre 7 s. Total 2:18, colchón 42 s.">
       <div class="seg" style="width:17.22%"><span class="talk" style="width:100%">1</span></div>
-      <div class="seg" style="width:7.22%"><span class="talk" style="width:100%">2</span></div>
-      <div class="seg" style="width:11.11%"><span class="talk" style="width:50%">3</span><span class="pause" style="width:50%"></span></div>
-      <div class="seg" style="width:12.22%"><span class="talk" style="width:54.5%">4</span><span class="pause" style="width:45.5%"></span></div>
-      <div class="seg cond" style="width:10.56%"><span class="talk" style="width:73.7%">5</span><span class="pause" style="width:26.3%"></span></div>
-      <div class="seg" style="width:12.22%"><span class="talk" style="width:100%">6</span></div>
-      <div class="seg" style="width:6.11%"><span class="talk" style="width:100%">7</span></div>
+      <div class="seg" style="width:8.89%"><span class="talk" style="width:100%">2</span></div>
+      <div class="seg" style="width:16.67%"><span class="talk" style="width:33.3%">3</span><span class="pause" style="width:66.7%"></span></div>
+      <div class="seg" style="width:8.33%"><span class="talk" style="width:80%">4</span><span class="pause" style="width:20%"></span></div>
+      <div class="seg" style="width:7.22%"><span class="talk" style="width:69.2%">5</span><span class="pause" style="width:30.8%"></span></div>
+      <div class="seg" style="width:14.44%"><span class="talk" style="width:100%">6</span></div>
+      <div class="seg" style="width:3.89%"><span class="talk" style="width:100%">7</span></div>
     </div>
     <div class="ticks" aria-hidden="true">
       <span style="left:0">0:00</span><span style="left:33.33%">1:00</span><span style="left:76.67%">fin 2:18</span><span style="left:100%">3:00</span>
@@ -172,10 +181,9 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
     <div class="legend">
       <span><i style="background:var(--fg)"></i>Hablado</span>
       <span><i style="background:var(--wait);opacity:.75"></i>Espera de demo</span>
-      <span><i style="background:var(--fire)"></i>Incluye la parte condicional del planificador</span>
       <span><i style="background:repeating-linear-gradient(135deg,transparent 0 3px,var(--muted) 3px 4px)"></i>Colchón (~42 s)</span>
     </div>
-    <p class="cutrule"><b>Regla de corte en vivo:</b> si a las <span class="mono">2:15</span> no empezaste el bloque 6, decís solo "Lo medimos…" y vas al cierre.</p>
+    <p class="cutrule"><b>Regla de corte en vivo:</b> si a las <span class="mono">2:15</span> no empezaste el bloque 6, decís solo "Lo medimos…" y vas al cierre. El acto 1 es el que más puede estirarse (geocodificación, red).</p>
   </section>
 
   <section id="guion" aria-labelledby="t-guion">
@@ -196,133 +204,133 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       </article>
 
       <article class="block">
-        <div class="tc"><span class="start">0:31</span><span class="dur">~13 s</span></div>
+        <div class="tc"><span class="start">0:31</span><span class="dur">~16 s</span></div>
         <div class="body">
           <h3><span class="n">2</span>Qué es</h3>
           <div class="say">
-            <p>Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale una lista de incidentes únicos, ordenados por riesgo.</p>
+            <p>Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale un incidente priorizado y la orden a la cuadrilla correcta, sin que nadie toque nada.</p>
             <p>Lo vemos en vivo.</p>
           </div>
         </div>
       </article>
 
       <article class="block">
-        <div class="tc"><span class="start">0:44</span><span class="dur">~10 s + 10 espera</span></div>
+        <div class="tc"><span class="start">0:47</span><span class="dur">~10 s + 20 espera</span></div>
         <div class="body">
-          <h3><span class="n">3</span>Entender</h3>
-          <p class="cue">Celular 1 proyectado. Se manda la foto del contenedor en llamas y se pega: "se está prendiendo fuego el contenedor de la esquina".</p>
-          <div class="say"><p>Llega un aviso: una foto y una frase, sin formulario.</p></div>
-          <p class="cue">Espera la respuesta.</p>
-          <div class="say"><p>Ya entendió: contenedor con fuego, fuego activo, severidad alta. Falta el lugar, y lo pide.</p></div>
-          <p class="cue">Toca "usar mi ubicación" y confirma, sin narrar.</p>
+          <h3><span class="n">3</span>Acto 1 · El vecino avisa</h3>
+          <p class="cue">Celular del vecino proyectado. Manda la foto del contenedor en llamas y pega: "se está prendiendo fuego el contenedor de la esquina".</p>
+          <div class="say"><p>Un vecino manda una foto y una frase. Sin formulario, sin elegir categoría.</p></div>
+          <p class="cue">Llega la respuesta: aviso de emergencia y pedido de ubicación.</p>
+          <div class="say"><p>Entendió que hay fuego: le dice que llame a emergencias, y le pregunta dónde.</p></div>
+          <p class="cue">Escribe "18 de Julio y Ejido", confirma el pin con «Sí, es ahí» y toca Enviar, sin narrar.</p>
         </div>
       </article>
 
       <article class="block">
-        <div class="tc"><span class="start">1:04</span><span class="dur">~12 s + 10 espera</span></div>
+        <div class="tc"><span class="start">1:17</span><span class="dur">~12 s + 3 espera</span></div>
         <div class="body">
-          <h3><span class="n">4</span>Agrupar</h3>
-          <p class="cue">Celular 2. Se pega: "hay mucho humo en la esquina, huele a plástico quemado".</p>
-          <div class="say"><p>Otro vecino. No dice "contenedor", dice "humo".</p></div>
-          <p class="cue">Confirma. Cambio a la pantalla del operador; tocar "Actualizar".</p>
-          <div class="say"><p>El operador no ve dos reclamos: ve un incidente con dos reportes. La IA comparó los relatos y decidió que es el mismo.</p></div>
-        </div>
-      </article>
-
-      <article class="block">
-        <div class="tc"><span class="start">1:26</span><span class="dur">~14 s + 5 espera</span></div>
-        <div class="body">
-          <h3><span class="n">5</span>Priorizar y asignar</h3>
-          <p class="cue">Lista del operador: el fuego queda arriba del contenedor desbordado que se cargó antes con tres reportes.</p>
-          <div class="say"><p>Y va primero, arriba del contenedor desbordado que cargamos antes con tres vecinos. Ordena por riesgo, no por cantidad de quejas.</p></div>
-          <div class="cond">
-            <span class="flag">Solo si operacion/t11 está mergeado y probado</span>
-            <p class="cue">Vista /operacion/plan.</p>
-            <div class="say"><p>Y propone quién va: la cuadrilla más cercana que puede atender fuego, no la de limpieza.</p></div>
+          <h3><span class="n">4</span>Acto 2 · La Intendencia lo ve, sin tocar nada</h3>
+          <p class="cue">Consola proyectada. Nadie la toca. El incidente aparece resaltado a los ~2 s.</p>
+          <div class="say">
+            <p>Esta es la consola de la Intendencia. Nadie la está tocando.</p>
+            <p>Ahí apareció: contenedor con fuego, peligro activo, prioridad alta. Con la foto y el relato del vecino como evidencia.</p>
           </div>
+          <p class="note">Opcional, si sobra tiempo: un toque en el incidente para abrir el detalle con la foto. Es mirar, no decidir.</p>
         </div>
       </article>
 
       <article class="block">
-        <div class="tc"><span class="start">1:45</span><span class="dur">~22 s</span></div>
+        <div class="tc"><span class="start">1:32</span><span class="dur">~9 s + 4 espera</span></div>
+        <div class="body">
+          <h3><span class="n">5</span>Acto 3 · La cuadrilla recibe la orden</h3>
+          <p class="cue">Celular de la cuadrilla. Suena, vibra y aparece "Llegó una orden nueva".</p>
+          <div class="say"><p>Y a los segundos, a la cuadrilla le llega la orden. La que puede atender fuego, no la de limpieza. Nadie la asignó.</p></div>
+          <p class="cue">La cuadrilla toca Aceptar.</p>
+        </div>
+      </article>
+
+      <article class="block">
+        <div class="tc"><span class="start">1:45</span><span class="dur">~26 s</span></div>
         <div class="body">
           <h3><span class="n">6</span>Por qué IA, y cómo sabemos que funciona</h3>
           <div class="say">
-            <p>Con personas, esto no escala. Con reglas fijas, no se entiende: la gente escribe como quiere y cuenta lo mismo de diez maneras.</p>
-            <p>Por eso la IA interpreta, y reglas auditables ordenan y asignan.</p>
-            <p>Lo medimos con la API real: acertó las cinco decisiones de agrupación de nuestra prueba. Y cuando duda, no adivina: lo manda a revisión humana.</p>
+            <p>Con personas, esto no escala. Con reglas fijas, no se entiende, porque cada vecino lo cuenta distinto.</p>
+            <p>La IA interpreta y agrupa: si otros nueve vecinos avisan del mismo fuego, se suman a este incidente, y la cuadrilla no recibe diez órdenes.</p>
+            <p>Lo medimos con la API real: acertó las cinco decisiones de agrupación de nuestra prueba. Y cuando duda, lo manda a revisión humana.</p>
           </div>
         </div>
       </article>
 
       <article class="block">
-        <div class="tc"><span class="start">2:07</span><span class="dur">~11 s</span></div>
+        <div class="tc"><span class="start">2:11</span><span class="dur">~7 s</span></div>
         <div class="body">
           <h3><span class="n">7</span>Cierre</h3>
           <div class="say">
-            <p>Hoy funciona el triage completo. Lo que sigue es despachar la orden al celular de la cuadrilla.</p>
-            <p class="closing">Diez avisos, un incidente, lo urgente primero. Eso es Radar Urbano.</p>
+            <p class="closing">Del aviso a la orden, de punta a punta. Diez avisos, un incidente, una cuadrilla. Eso es Radar Urbano.</p>
           </div>
-          <p class="note">Si el planificador no llegó: se saltea "propone quién va" (−6 s), en el bloque 6 queda "reglas auditables ordenan", y el cierre dice "Lo que sigue es asignar y despachar cuadrillas".</p>
+          <p class="note">Si hay que cortar, en este orden: (1) los dos mil reclamos por día junto con las 33 horas, que dependen de ese dato; (2) "Con la foto y el relato del vecino como evidencia"; (3) "Con personas, esto no escala…".</p>
         </div>
       </article>
 
     </div>
   </section>
 
-  <section id="demo" aria-labelledby="t-demo">
-    <h2 id="t-demo">Notas para quien maneja la demo</h2>
+  <section id="notas" aria-labelledby="t-notas">
+    <h2 id="t-notas">Notas para la demo</h2>
+    <p class="note" style="max-width:72ch">Procedimiento completo y comandos: <code>docs/superpowers/notes/demo-en-vivo.md</code> en <code>main</code>.</p>
     <ul class="checklist">
-      <li><span><b>Todo a un toque.</b> Foto ya en la galería del celular 1, textos copiados para pegar, celular 2 con la sesión abierta, operador ya logueado.</span></li>
-      <li><span><b>Antes de subir:</b> <code>reset-demo</code>, y después cargar el contexto del triage.</span></li>
-      <li><span><b>Contexto del triage:</b> cargar con el flujo real (no por base de datos) un contenedor desbordado con tres reportes de sesiones distintas, en otro punto de la ciudad. En el pitch se dice que se cargó antes.</span></li>
-      <li><span><b>Refresco:</b> la lista del operador se actualiza sola cada 10 s; tocar "Actualizar" para no esperar.</span></li>
-      <li><span><b>GPS:</b> los dos celulares juntos en el LATU quedan dentro del radio de 30 m y se agrupan solos. Probarlo en el lugar.</span></li>
-      <li><span><b>Riesgo con el vecino 2:</b> "humo, huele a plástico" sin foto puede salir como evidencia insuficiente. Si pasa en el ensayo, usar "el contenedor está largando mucho humo" y decir "lo cuenta distinto".</span></li>
-      <li><span><b>Proyección:</b> resolver cómo se espejan los celulares, y tener un video de respaldo grabado por si falla internet.</span></li>
-      <li><span><b>Aviso de emergencia:</b> con fuego activo el chat muestra el texto de <code>seeds/territory-montevideo.ts</code>, que hoy dice "consultá el canal de emergencias local de tu zona". Cambiarlo a algo concreto, como "llamá a Bomberos al 104".</span></li>
-      <li><span><b>Ensayo:</b> dos pasadas completas con cronómetro y los dos roles, anotando cada bloque contra el presupuesto.</span></li>
+      <li><span><b>Corre en la red local (plan B), no desplegada.</b> <code>ALLOWED_DEV_ORIGINS=&lt;ip&gt; next dev</code> + <code>pnpm worker</code>; los celulares entran por <code>http://&lt;ip&gt;:3000</code>.</span></li>
+      <li><span><b>Sin GPS por http:</b> el vecino escribe la dirección. Usar una ya probada, como "18 de Julio y Ejido", y probarla en el ensayo.</span></li>
+      <li><span><b>Abrir las tres pantallas antes de empezar:</b> la primera carga tarda.</span></li>
+      <li><span><b><code>--near</code> cerca de la dirección:</b> <code>refresh-demo-positions --near -34.9058,-56.1882 --watch 10</code> en una terminal abierta (la cuadrilla atiende en 3 km).</span></li>
+      <li><span><b>Cuadrilla:</b> tocar la pantalla de <code>/unidad</code> una vez después de abrirla, si no no suena ni vibra. Pestaña visible y celular desbloqueado.</span></li>
+      <li><span><b>No precargar otros incidentes:</b> solo <code>cuadrilla-demo</code> queda vigente; si ya tiene una orden, la del fuego podría no llegarle. Arrancar con <code>reset-demo --yes</code>.</span></li>
+      <li><span><b>No usar alumbrado:</b> va por zona a la oficina, no a la cuadrilla.</span></li>
+      <li><span><b><code>SESSION_SECRET</code> de 32 caracteres o más</b>, si no el login da 500.</span></li>
+      <li><span><b>Antes de subir:</b> <code>scripts/e2e-demo.mjs</code> para verificar, y después <code>reset-demo --yes</code>.</span></li>
+      <li><span><b>Aviso de emergencia:</b> hoy dice "consultá el canal de emergencias local de tu zona" (<code>seeds/territory-montevideo.ts</code>). Cambiarlo a "llamá a Bomberos al 104 o al 911".</span></li>
+      <li><span><b>Todo a un toque:</b> foto en la galería, textos copiados para pegar. Video de respaldo grabado de los tres actos.</span></li>
+      <li><span><b>Ensayo:</b> dos pasadas completas con cronómetro y los tres roles.</span></li>
     </ul>
   </section>
 
   <section id="preguntas" aria-labelledby="t-preguntas">
     <h2 id="t-preguntas">Preguntas del jurado</h2>
-    <p class="note" style="max-width:72ch">Son 3 minutos: entran 4 a 6 preguntas. <b>Cómo responder:</b> primero la respuesta en una frase, después un dato o un ejemplo, y cortar (~20 s). Si no sabés, decilo y decí cómo lo medirían. Las técnicas profundas las toma quien manejó la demo.</p>
-    <p class="cutrule"><b>Alcance declarado</b> (decirlo si quieren probar un caso propio): Montevideo, avisos de espacio público de los 10 tipos del catálogo: bache, basura acumulada, accesibilidad obstruida, contenedor dañado, contenedor con fuego, vereda rota, cartelería, alumbrado, árbol o rama caída, desagüe obstruido. Lo que queda afuera no se inventa: va a revisión.</p>
+    <p class="note" style="max-width:72ch">Son 3 minutos: entran 4 a 6 preguntas. <b>Cómo responder:</b> primero la respuesta en una frase, después un dato o un ejemplo, y cortar (~20 s). Si no sabés, decilo y decí cómo lo medirían.</p>
+    <p class="cutrule"><b>Alcance declarado:</b> Montevideo, avisos de espacio público de los 10 tipos del catálogo: bache, basura acumulada, accesibilidad obstruida, contenedor dañado, contenedor con fuego, vereda rota, cartelería, alumbrado, árbol o rama caída, desagüe obstruido. Lo que queda afuera no se inventa: va a revisión.</p>
 
     <h3 class="eyebrow" style="margin-top:8px">Las seis más probables</h3>
     <div class="qa">
       <div>
         <span class="tag">La pregunta de la consigna</span>
         <h3>1. "Si le sacás la IA, ¿qué queda?"</h3>
-        <p><strong>Queda un formulario: el vecino elige una categoría de una lista, y al municipio le llegan diez reclamos del mismo fuego que alguien tiene que leer y juntar a mano. Sin IA no hay triage: nadie entiende el texto libre ni la foto, y nadie decide si dos relatos distintos son el mismo incidente.</strong></p>
-        <p>Respaldo: sin Jev no hay tipo, severidad, fuego activo ni agrupación; las reglas de prioridad no tienen hechos sobre los que operar.</p>
+        <p><strong>Queda un formulario: el vecino elige una categoría de una lista, y a la Intendencia le llegan diez reclamos del mismo fuego que alguien tiene que leer, juntar y asignar a mano. Sin IA no hay triage: nadie entiende el texto libre ni la foto, y nadie decide si dos relatos distintos son el mismo incidente.</strong></p>
       </div>
       <div>
-        <h3>2. "¿Cómo saben que funciona? Es una muestra muy chica."</h3>
-        <p><strong>Es chica, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno ya quemado. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y si alguien reporta fuego donde ayer hubo un contenedor quemado, no los junta: lo manda a revisión. En total, cinco de cinco decisiones de agrupación y dieciocho de dieciocho respuestas de clasificación, iguales en dos corridas.</strong></p>
-        <p>Respaldo: cada llamada queda registrada, así que el siguiente paso es un set etiquetado con avisos reales y medir precisión por tipo. <strong>Límite a declarar si preguntan por las fotos:</strong> son de Wikimedia Commons, no de reportes reales, y el "mismo bache" usa dos recortes de una misma foto.</p>
+        <span class="tag">La mejor oportunidad</span>
+        <h3>2. "Probemos con un caso nuestro."</h3>
+        <p><strong>Dale: contale el mismo fuego con tus palabras.</strong> Pasarle el celular del vecino con una sesión nueva.</p>
+        <p>Lo esperado, y conviene narrarlo: se suma al incidente (la consola muestra 2 reportes) y <strong>la cuadrilla no recibe una segunda orden</strong>. Otro problema (bache, basura) crea otro incidente con su orden. Algo vago ("hay un problema en mi barrio") repregunta: es correcto.</p>
       </div>
       <div>
-        <span class="tag">La rúbrica dice que pueden variar un caso</span>
-        <h3>3. "Probemos con un caso nuestro."</h3>
-        <p><strong>Dale. Si está en el catálogo lo clasifica; si es ambiguo o no alcanza la evidencia, lo pide o lo manda a revisión, no inventa.</strong></p>
-        <p>Preparar: celular 2 con una sesión nueva. Si dicen algo vago ("hay un problema en mi barrio"), lo esperado es evidencia insuficiente y repregunta: es correcto, decirlo.</p>
+        <h3>3. "¿Cómo saben que funciona? Es una muestra muy chica."</h3>
+        <p><strong>Es chica, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito: distingue fuego activo de un contenedor ya quemado, detecta cuando la foto contradice el texto, y no junta un fuego nuevo con uno de ayer. Cinco de cinco decisiones de agrupación y dieciocho de dieciocho respuestas de clasificación, iguales en dos corridas.</strong></p>
+        <p>Respaldo: la demo completa se probó con seis relatos distintos y en todos llegó la orden. Límite: las fotos son de Wikimedia Commons, no de reportes reales.</p>
       </div>
       <div>
         <h3>4. "¿Qué pasa cuando la IA se equivoca?"</h3>
-        <p><strong>No decide sola cuando duda. Cada respuesta de Jev viene con una probabilidad; si no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión humana y ese incidente queda bloqueado para despacho.</strong></p>
-        <p>Respaldo: umbrales de agrupación 0,90 "mismo" y 0,80 "distinto" (<code>seeds/policies.ts</code>). La cola existe en datos y el operador la ve como aviso; la pantalla para resolverla no está. Las correcciones humanas están en el backend y una reevaluación no las pisa, pero todavía no hay pantalla para corregir: decirlo así.</p>
+        <p><strong>No decide sola cuando duda. Si la probabilidad no supera el umbral, o hay contradicción, o el duplicado es dudoso, va a una cola de revisión y ese incidente queda bloqueado para despacho. El operador lo resuelve ahí, y si corrige el tipo o la severidad, una reevaluación no pisa su corrección.</strong></p>
+        <p>Respaldo: umbrales 0,90 "mismo" y 0,80 "distinto". Cola en <code>/operacion/revision</code>; correcciones desde el detalle del incidente.</p>
       </div>
       <div>
         <h3>5. "¿Qué es Jev? ¿Por qué no un LLM para todo?"</h3>
-        <p><strong>Jev es un clasificador: le hacemos preguntas cerradas, como ¿hay fuego activo? o ¿es el mismo incidente?, y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Es rápido: menos de medio segundo sin foto, alrededor de un segundo con foto. El LLM solo extrae la dirección, y no decide nada.</strong></p>
-        <p>Respaldo: latencia por evaluación completa 230–400 ms solo texto, 640–1.100 ms con foto; la comparación para agrupar 0,5–1,4 s. Costo por aviso: no lo medimos todavía; decirlo así.</p>
+        <p><strong>Jev es un clasificador: le hacemos preguntas cerradas y devuelve una opción con su probabilidad. No escribe texto, así que no puede inventar una categoría, y la probabilidad nos deja poner umbrales. Es rápido: menos de medio segundo sin foto, alrededor de un segundo con foto. El LLM redacta la repregunta, la dirección y el resumen, pero nunca decide el tipo, la gravedad ni a quién se manda.</strong></p>
+        <p>Respaldo: 230–400 ms solo texto, 640–1.100 ms con foto. Costo por aviso: no lo medimos todavía.</p>
       </div>
       <div>
         <span class="tag">La rúbrica pide declararlo</span>
         <h3>6. "¿Qué está simulado?"</h3>
-        <p><strong>La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, que están marcadas como demo. Y el contenedor desbordado del principio lo cargamos antes, pero por el mismo flujo, no a mano en la base.</strong></p>
+        <p><strong>La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, marcadas como demo. Y hoy corre en una máquina nuestra por la red local, no en un servidor público.</strong></p>
       </div>
     </div>
 
@@ -330,53 +338,56 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
     <div class="qa">
       <div>
         <h3>"¿No es un chat?"</h3>
-        <p>La conversación es solo la entrada. El producto es el triage: clasificar, agrupar, priorizar y asignar. El LLM ni siquiera decide. Es lo opuesto al chat genérico que la consigna descalifica.</p>
+        <p>La conversación es solo la entrada. El producto es el triage: clasificar, agrupar, priorizar, asignar y despachar. Lo opuesto al chat genérico que la consigna descalifica.</p>
+      </div>
+      <div>
+        <h3>"¿Cómo le llega la orden a la cuadrilla?"</h3>
+        <p>La página de la cuadrilla consulta cada 3 s; cuando llega una orden, la resalta, suena y vibra. Acepta, inicia y completa, y todo queda registrado. Límite: necesita la página abierta; avisar con el celular bloqueado o por WhatsApp es lo siguiente.</p>
       </div>
       <div>
         <h3>"¿Por qué no priorizan por cantidad de quejas?"</h3>
-        <p>Jev extrae los hechos y una regla explícita calcula la banda (<code>pipeline/priority.ts</code>). <strong>Que se quejen más no hace más grave el problema</strong>; si no, el barrio que más se queja gana siempre. La cantidad suma, como mucho, un bonus acotado dentro de la banda, nunca por encima de un peligro activo.</p>
+        <p>Jev extrae los hechos y una regla explícita calcula la banda. <strong>Que se quejen más no hace más grave el problema</strong>; si no, el barrio que más se queja gana siempre. La cantidad suma, como mucho, un bonus acotado dentro de la banda, nunca por encima de un peligro activo.</p>
       </div>
       <div>
-        <span class="tag">Si t11 está mergeado</span>
         <h3>"¿Cómo asignan cuadrillas?"</h3>
-        <p>En el orden de la cola, solo cuadrillas con la capacidad requerida (fuego no es limpieza), por distancia o por zona, descontando capacidad y sin dejar sin unidad a otro incidente que solo esa podría atender. Determinista: misma entrada, mismo plan.</p>
+        <p>En el orden de la cola, solo cuadrillas con la capacidad requerida (fuego no es limpieza), por distancia o por zona, descontando capacidad. Determinista. Un segundo reporte del mismo incidente no genera otra orden: hay un test para eso.</p>
       </div>
       <div>
         <h3>"¿Y dos contenedores distintos en la misma esquina?"</h3>
-        <p>La cercanía solo elige candidatos (30 m); decide Jev comparando texto y foto. En la prueba, un bache y basura a 12 m quedaron separados, y con dos candidatos eligió el correcto aunque era el más lejano. Si duda, revisión.</p>
+        <p>La cercanía solo elige candidatos (30 m); decide Jev comparando texto y foto. En la prueba, un bache y basura a 12 m quedaron separados. Si duda, revisión.</p>
       </div>
       <div>
         <h3>"¿Quién lo usa? ¿Por qué lo adoptaría una intendencia?"</h3>
-        <p>El operador del ente público. Cambia leer y juntar avisos uno por uno por una lista de incidentes únicos ya ordenados. No reemplaza los canales actuales: el triage es lo que viene después de recibir el aviso. No afirmar integraciones con sistemas de la IM.</p>
+        <p>El operador del ente público y las cuadrillas. Los avisos llegan como incidentes únicos, ya ordenados y asignados; el operador solo mira lo que el sistema no pudo decidir. No afirmar integraciones con sistemas de la IM.</p>
       </div>
       <div>
         <h3>"¿Esto ya existe?"</h3>
-        <p>Hay plataformas de reporte ciudadano, pero en general piden elegir una categoría y dejan los duplicados al vecino o a un operador. Lo nuestro es el triage automático. No nombrar productos concretos si no los conocen bien.</p>
+        <p>Hay plataformas de reporte ciudadano, pero en general piden elegir una categoría y dejan los duplicados y la asignación a una persona. Lo nuestro es el triage automático de punta a punta.</p>
       </div>
       <div>
         <h3>"¿Escala a otra ciudad?"</h3>
-        <p>Montevideo es configuración: barrios, catálogo, umbrales y textos viven en la base, no en el código. Si <code>feat/territorio-b</code> está mergeado: "lo probamos con un segundo territorio".</p>
+        <p>Montevideo es configuración: barrios, catálogo, umbrales y textos viven en la base, no en el código. Lo probamos con un segundo territorio sintético.</p>
       </div>
       <div>
         <h3>"¿Y si se cae el proveedor de IA?"</h3>
-        <p>El aviso se guarda antes de cualquier llamada. Si Jev no responde a tiempo, el vecino ve "recibido, analizando", la evaluación sigue en segundo plano con reintentos, y si falla queda en revisión. No se pierde ningún aviso.</p>
+        <p>El aviso se guarda antes de cualquier llamada. Si Jev tarda, "recibido, analizando" y sigue en segundo plano con reintentos; si falla, revisión. Si falla el LLM, plantilla. No se pierde ningún aviso.</p>
       </div>
       <div>
         <h3>"¿Y avisos falsos o manipulación?"</h3>
-        <p>El texto del vecino es evidencia, no instrucciones: probamos meterle una instrucción oculta al extractor de direcciones y no la siguió. Una foto que no coincide se marca como contradicción. Y como la cantidad no sube la prioridad, inundar de reportes no adelanta nada.</p>
+        <p>El texto es evidencia, no instrucciones: una instrucción oculta al extractor de direcciones fue ignorada. Una foto que no coincide se marca como contradicción. Y la cantidad no sube la prioridad.</p>
       </div>
       <div>
         <h3>"¿Cómo es hoy?"</h3>
-        <p>Muchos canales: teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial. <strong>Con los datos abiertos del SUR, calculado por nosotros: un reclamo tarda en cerrarse una mediana de 13 días, y uno de cada cinco más de 90</strong> (cerrados 2024 a sep. 2026). Dato de proceso, no crítica.</p>
-        <p>Respaldo: arbolado 168 días de mediana, viales 58, contenedores 15, limpieza 3. Límite: no hay historial de estados, un reabierto se mide desde su último cierre.</p>
+        <p>Muchos canales: teléfono 1950, WhatsApp, formulario web, chatbot, Buzón Ciudadano, presencial. <strong>Con los datos abiertos del SUR, calculado por nosotros: mediana de 13 días para cerrar un reclamo, y uno de cada cinco más de 90.</strong> Dato de proceso, no crítica.</p>
+        <p>Respaldo: arbolado 168 días, viales 58, contenedores 15, limpieza 3.</p>
       </div>
       <div>
         <h3>"¿Por qué no coinciden los números de incendios?"</h3>
-        <p>Los números públicos de Bomberos y de la Intendencia no coinciden; por eso usamos el de Bomberos de 2025. Que no coincidan muestra que falta un registro único.</p>
+        <p>Los de Bomberos y la Intendencia no coinciden; por eso usamos el de Bomberos de 2025. Que no coincidan muestra que falta un registro único.</p>
       </div>
       <div>
         <h3>"¿Privacidad?"</h3>
-        <p>No se piden datos de identidad (sesión con token opaco; solo se guarda su hash), fotos en storage privado, nunca con URL pública, y el operador nunca ve quién reportó. Anonimizar rostros y matrículas es roadmap.</p>
+        <p>Sin datos de identidad (token opaco; solo su hash). Fotos en storage privado, nunca con URL pública: solo las ve un operador logueado de ese territorio. Anonimizar rostros y matrículas es roadmap.</p>
       </div>
     </div>
 
@@ -386,7 +397,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         <li>"Es un chat", "es como ChatGPT para reclamos".</li>
         <li>Un costo por aviso, un porcentaje de precisión o un ahorro en dinero: no los medimos.</li>
         <li>Que está integrado con la Intendencia o con el SUR.</li>
-        <li>Que despacha órdenes o que la cuadrilla recibe la orden en el celular, hasta que exista.</li>
+        <li>Que está desplegado: hoy corre en la red local.</li>
+        <li>Que la cuadrilla recibe la orden con el celular bloqueado, o por WhatsApp.</li>
         <li>Críticas a la gestión de la Intendencia.</li>
       </ul>
     </div>
@@ -395,13 +407,13 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
   <section id="limites" aria-labelledby="t-limites">
     <h2 id="t-limites">Qué no prometer como hecho</h2>
     <div class="nogo">
-      <p>Al momento de escribir esto no existen:</p>
+      <p>Al 18 de octubre (<code>main</code> en <code>45c15f5</code>) no existen o no están probados:</p>
       <ul>
-        <li>El despacho de órdenes y la bandeja de la cuadrilla (<code>/unidad</code>).</li>
-        <li>La pantalla para resolver la cola de revisión: el operador solo ve los avisos.</li>
-        <li>La pantalla para que el operador corrija un incidente: la lógica está en el backend.</li>
-        <li>La geocodificación de esquinas tipo "Rivera y Comercio": hay que poner un pin.</li>
-        <li>El planificador está en <code>operacion/t11</code>, sin mergear: mostrarlo solo si está mergeado y probado.</li>
+        <li>El despliegue con https: Railway está preparado, no desplegado.</li>
+        <li>Avisos a un celular bloqueado o por WhatsApp: la cuadrilla necesita <code>/unidad</code> abierta.</li>
+        <li>El «Seguimiento con código» del vecino.</li>
+        <li>La prueba en celulares reales: Safari, fotos HEIC, permisos.</li>
+        <li>Algunas esquinas no geocodifican ("Rivera y Comercio" cae al mapa) y las que no están en caché tardan 2,5–6 s.</li>
       </ul>
       <p><b>Revisar esta lista contra el estado del sistema antes del pitch.</b></p>
     </div>
@@ -421,6 +433,8 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
           <tr><td>Agrupación: 5/5 decisiones (5 pares) y 11/11 respuestas por candidato, iguales en dos corridas</td><td><code>docs/superpowers/notes/jev-smoke.md</code></td></tr>
           <tr><td>Clasificación: 18/18 respuestas esperadas en 9 casos</td><td>Ídem. Fotos de Wikimedia Commons, no de reportes reales.</td></tr>
           <tr><td>Latencia: 230–400 ms solo texto, 640–1.100 ms con foto; agrupación 0,5–1,4 s</td><td>Ídem.</td></tr>
+          <tr><td>Demo: incidente en consola ~2 s, orden a la cuadrilla ~3 s después; seis relatos probados</td><td><code>docs/superpowers/notes/demo-en-vivo.md</code> (local, 18/10)</td></tr>
+          <tr><td>Un segundo reporte del mismo incidente no crea otra orden</td><td><code>tests/db/attention-flow.test.ts</code></td></tr>
         </tbody>
       </table>
     </div>
