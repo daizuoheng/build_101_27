@@ -1,10 +1,9 @@
 import type { TransitionAssignment } from "../contracts";
+import { transitionAssignment as fromDispatch } from "../dispatch/transitions";
 
 /**
- * Punto de integración con Operación. Cuando `src/server/dispatch/transitions.ts` esté en la épica, reemplazar por:
- *
- *   export { transitionAssignment } from "../dispatch/transitions";
- *
- * Mientras tanto la ruta de acciones responde 503 `dispatch_unavailable` (no se simula el despacho).
+ * Punto de integración con Operación: la bandeja de unidad transiciona órdenes con `transitionAssignment`
+ * (`src/server/dispatch/transitions.ts`). Si vuelve a quedar en null, la ruta de acciones responde 503
+ * `dispatch_unavailable` en vez de simular el despacho.
  */
-export const transitionAssignment: TransitionAssignment | null = null;
+export const transitionAssignment: TransitionAssignment | null = fromDispatch;
