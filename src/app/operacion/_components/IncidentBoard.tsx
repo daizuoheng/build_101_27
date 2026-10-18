@@ -18,6 +18,8 @@ const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
 const REFRESH_MS = 3000;
 /** Cuánto queda resaltado un incidente que entró con la consola abierta. */
 const FRESH_MS = 15000;
+/** Margen sobre la carga anterior: cubre un incidente creado mientras corría la consulta y relojes desfasados. */
+const FRESH_SLACK_MS = 30000;
 
 type Filters = { areaId: string; problemType: string; priorityBand: string; status: string; sort: "priority" | "recent" | "reports" };
 const EMPTY: Filters = { areaId: "", problemType: "", priorityBand: "", status: "", sort: "priority" };
@@ -72,8 +74,9 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
   const router = useRouter();
   // Solo la última carga pedida escribe el estado: una respuesta lenta de un pedido anterior no pisa a una más nueva.
   const latest = useRef(0);
-  // Incidentes ya vistos con estos filtros (null tras cambiarlos: esa carga no resalta) y los que acaban de entrar.
-  const seen = useRef<{ key: string; ids: Set<string> } | null>(null);
+  // Carga anterior con este territorio y filtros (null tras cambiarlos: esa carga no resalta): ids vistos y hora del
+  // servidor. Nuevo = no visto y creado hace poco; un incidente viejo que entra al filtro porque cambió de estado no.
+  const seen = useRef<{ key: string; ids: Set<string>; at: number } | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
 
   const filtered = Object.entries(filters).some(([k, v]) => k !== "sort" && v);
@@ -86,10 +89,10 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     try {
       const d = await api<IncidentListResponse>(`/api/operacion/incidents?${qs}`, { signal: withTimeout(signal) });
       if (stale()) return;
-      const key = JSON.stringify(filters);
-      const prev = seen.current?.key === key ? seen.current.ids : null;
-      const arrived = prev ? d.incidents.filter((i) => !prev.has(i.id)).map((i) => i.id) : [];
-      seen.current = { key, ids: new Set([...(prev ?? []), ...d.incidents.map((i) => i.id)]) };
+      const key = JSON.stringify([territorySlug, filters]);
+      const prev = seen.current?.key === key ? seen.current : null;
+      const arrived = prev ? d.incidents.filter((i) => !prev.ids.has(i.id) && Date.parse(i.createdAt) > prev.at - FRESH_SLACK_MS).map((i) => i.id) : [];
+      seen.current = { key, ids: new Set([...(prev?.ids ?? []), ...d.incidents.map((i) => i.id)]), at: Date.parse(d.generatedAt) };
       if (arrived.length > 0) setFresh((f) => new Set([...f, ...arrived]));
       setData(d);
       setError(null);
@@ -110,7 +113,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     // y un pedido nuevo que falla rápido no tapa con el aviso de error al anterior que todavía puede responder bien.
     let inFlight = false;
     const run = () => {
-      if (inFlight) return;
+      if (inFlight || document.hidden) return;
       inFlight = true;
       void load(ctrl.signal).finally(() => {
         inFlight = false;
@@ -118,10 +121,13 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     };
     const first = setTimeout(run, 0);
     const t = setInterval(run, REFRESH_MS);
+    // Pestaña oculta: no se consulta; al volver a mostrarse se actualiza enseguida.
+    document.addEventListener("visibilitychange", run);
     return () => {
       ctrl.abort();
       clearTimeout(first);
       clearInterval(t);
+      document.removeEventListener("visibilitychange", run);
     };
   }, [load]);
 

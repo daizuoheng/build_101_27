@@ -1,7 +1,8 @@
 // La demo en vivo en un navegador real, tal como se ve en el escenario: tres ventanas (ciudadano en el celular,
 // consola de la Intendencia, celular de la cuadrilla). /operacion y /unidad se abren ANTES del reporte y no se
 // recargan nunca: el incidente y la orden tienen que aparecer solos. Guarda capturas de cada acto.
-// Requiere web + worker andando, la demo preparada (ver scripts/e2e-demo.mjs) y Chrome instalado.
+// Requiere web + worker andando, la demo recién reseteada (ver scripts/e2e-demo.mjs; un reporte que se agrupa con
+// un incidente anterior no suma a la bandeja y el acto 2 falla) y Chrome instalado.
 // Uso: NODE_PATH=<dir con playwright-core> node --env-file=.env.local scripts/e2e-demo-browser.mjs [baseUrl] [--out dir] [--headed]
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -17,6 +18,7 @@ const flag = (name) => {
 const headed = args.includes("--headed") ? (args.splice(args.indexOf("--headed"), 1), true) : false;
 const out = flag("--out") ?? "e2e-shots";
 const base = args[0] ?? "http://localhost:3100";
+if (!process.env.DEMO_OPERATOR_PASSWORD || !process.env.DEMO_UNIT_PASSWORD) throw new Error("faltan DEMO_OPERATOR_PASSWORD / DEMO_UNIT_PASSWORD");
 const text = "Hay un contenedor de basura prendido fuego en 18 de Julio y Ejido, sale mucho humo negro";
 await mkdir(out, { recursive: true });
 

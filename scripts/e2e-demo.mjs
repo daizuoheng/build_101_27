@@ -76,6 +76,8 @@ console.log(`\n[acto 1] ciudadano en ${base}/reportar/montevideo`);
 const citizen = client();
 let r = await citizen("/api/reportar/drafts", { method: "POST", json: { territorySlug: "montevideo" } });
 const draftId = r.body.id;
+// Reloj del servidor: el incidente de este reporte es el que se crea después de abrir el borrador.
+const serverStart = Date.parse(r.body.messages[0].createdAt);
 console.log(`  bienvenida: ${r.body.messages[0]?.body}`);
 
 const lastUi = (d) => d.messages.filter((m) => m.role === "assistant").at(-1)?.ui ?? null;
@@ -139,9 +141,11 @@ check(tracking.processing === "done", `worker procesó el reporte en ${((Date.no
 console.log(`\n[acto 2] operador en ${base}/operacion`);
 const operator = client();
 await operator("/api/auth/login", { method: "POST", json: { username: "operador.montevideo", password: operatorPassword } });
-const incident = await waitFor("incidente en /operacion", async () => {
+const incident = await waitFor("incidente nuevo en /operacion (si el reporte se agrupó con uno anterior, correr reset-demo)", async () => {
   const list = await operator("/api/operacion/incidents?territory=montevideo&sort=recent");
-  return list.body.incidents.find((i) => (i.publicCodes ?? []).includes(publicCode)) ?? list.body.incidents[0] ?? null;
+  const created = list.body.incidents.filter((i) => Date.parse(i.createdAt) >= serverStart);
+  if (created.length > 1) throw new Error(`hay ${created.length} incidentes nuevos: otro reporte entró durante el recorrido`);
+  return created[0] ?? null;
 });
 console.log(`  ${incident.title} · ${incident.problemType?.name ?? incident.problemType?.slug ?? incident.problemType ?? "?"} · prioridad ${incident.priorityBand} · ${incident.status} · ${incident.area?.name} · reportes ${incident.reportCount}`);
 check(!!incident.title && incident.title.length > 0, "el incidente tiene título");
@@ -161,29 +165,29 @@ const orderLatency = ((Date.now() - confirmedAt) / 1000).toFixed(1);
 console.log(`  orden ${order.id} · ${order.status} · ${order.incident.title} · ${order.distanceM ?? "?"} m · acciones ${order.allowedActions.join("/")}`);
 check(order.status === "offered", `la orden llegó a la cuadrilla ${orderLatency}s después de confirmar (sin tocar nada)`);
 check(order.allowedActions.includes("accept"), "la cuadrilla puede aceptarla");
+check(order.incident.citizenTexts.some((t) => t.includes(text)), "la orden trae el relato del ciudadano");
 
 let current = order;
 for (const action of ["accept", "start", "complete"]) {
-  if (current.reviewBlocked && action !== "accept") {
-    console.log(`  ⚠ orden bloqueada por revisión: no se puede ${action}`);
-    break;
-  }
+  check(current.allowedActions.includes(action), `la cuadrilla puede ${action} (estado ${current.status}${current.reviewBlocked ? ", bloqueada por revisión" : ""})`);
   const res = await unit(`/api/unidad/assignments/${current.id}`, {
     method: "POST",
     json: { action, expectedVersion: current.version, idempotencyKey: randomUUID() },
   });
+  const expected = { accept: "accepted", start: "in_progress", complete: "completed" }[action];
+  check(res.body.result?.status === expected, `${action} → ${res.body.result?.status} (${res.ms}ms)`);
   const next = res.body.inbox.assignments?.find((a) => a.id === current.id);
-  console.log(`  ${action} → ${next?.status ?? "(salió de la bandeja)"} (${res.ms}ms)`);
-  if (!next) break;
-  current = next;
+  if (action === "complete") check(!next, "la orden completada sale de la bandeja");
+  else check(!!next, `la orden sigue en la bandeja tras ${action}`);
+  if (next) current = next;
 }
-check(true, "acciones de la unidad sin 503");
 
-const after = await waitFor("estado del incidente en /operacion", async () => {
+const after = await waitFor("incidente resuelto en /operacion", async () => {
   const list = await operator("/api/operacion/incidents?territory=montevideo&sort=recent");
-  return list.body.incidents.find((i) => i.id === incident.id) ?? null;
-});
-console.log(`  /operacion ahora: ${after.status}`);
+  const i = list.body.incidents.find((x) => x.id === incident.id);
+  return i?.status === "resolved" ? i : null;
+}, { timeoutMs: 20_000 });
+check(after.status === "resolved", "el incidente quedó resuelto en /operacion");
 const track = await citizen(`/api/reportar/drafts/${draftId}`);
-console.log(`  seguimiento del ciudadano: ${track.body.tracking.statusLabel}`);
+check(track.body.tracking.incidentStatus === "resolved", `el ciudadano ve su reporte «${track.body.tracking.statusLabel}»`);
 console.log(`\n✓ demo completa en ${elapsed()}`);

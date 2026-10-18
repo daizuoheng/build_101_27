@@ -74,7 +74,6 @@ export function UnitInbox() {
       seen.current = new Set([...(seen.current ?? []), ...data.assignments.map((a) => a.id)]);
       if (arrived.length > 0) {
         setFresh((f) => new Set([...f, ...arrived.map((a) => a.id)]));
-        setNotice({ tone: "ok", text: arrived.length === 1 ? "Llegó una orden nueva." : `Llegaron ${arrived.length} órdenes nuevas.` });
         alertNewOrder();
       }
       setInbox(data);
@@ -123,6 +122,9 @@ export function UnitInbox() {
     };
   }, [fresh]);
 
+  // Recién llegadas que siguen en la bandeja (una cancelada en el medio no deja el aviso colgado).
+  const arrivedNow = inbox?.assignments.filter((a) => fresh.has(a.id)).length ?? 0;
+
   async function act(card: UnitAssignmentCard, action: UnitAction, reason?: string) {
     // Misma clave para reintentos de la misma acción sobre la misma versión: el servidor no la aplica dos veces.
     const k = `${card.id}:${action}:${card.version}`;
@@ -138,6 +140,7 @@ export function UnitInbox() {
         json: { action, expectedVersion: card.version, idempotencyKey: keys.current.get(k), reason: reason || undefined },
       });
       acting.current = false;
+      seen.current = new Set([...(seen.current ?? []), ...res.inbox.assignments.map((a) => a.id)]);
       setInbox(res.inbox);
       setNow(Date.now());
       setNotice({ tone: "ok", text: ACTION[action].done });
@@ -206,6 +209,12 @@ export function UnitInbox() {
             }`}
           >
             {notice.text}
+          </p>
+        )}
+
+        {arrivedNow > 0 && (
+          <p role="status" className="rounded-xl bg-success-soft px-4 py-3 font-semibold text-success">
+            {arrivedNow === 1 ? "Llegó una orden nueva." : `Llegaron ${arrivedNow} órdenes nuevas.`}
           </p>
         )}
 
