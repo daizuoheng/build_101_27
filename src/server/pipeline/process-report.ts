@@ -1,24 +1,20 @@
 import type { Db } from "../db/pool";
 import { withTx } from "../db/tx";
-import { getActivePolicy } from "../config/policies";
 import { appendEvent } from "../events/append";
 import { locatePoint } from "../geo/locate";
-import { insertLink } from "../incidents/links";
 import { getReport, type ReportRow } from "../intake/drafts";
 import { evaluateRevision, type IntakeDeps } from "../intake/orchestrator";
 import type { StoredEvaluation } from "../intake/evaluations";
-import { indicatesActiveHazard } from "../intake/branches";
 import { enqueue, type Job } from "../jobs/queue";
 import { openReviewItem, type ReviewKind } from "../review/items";
 import type { GroupingVerdict } from "../ai/jev/compare-candidates";
+import { createIncidentFromReport } from "./create-incident";
 import { applyGrouping, findCandidates, prepareGrouping, sameCandidates, type GroupingPlan } from "./group";
-import { computePriority } from "./priority";
-import { enqueueTextgen } from "./textgen";
 
 /** Si los candidatos cambian entre la comparación y la escritura, se compara de nuevo; a la última vuelta, revisión. */
 const GROUPING_ROUNDS = 2;
 
-const isApplicable = (ev: StoredEvaluation) => ev.intent !== "other" && ev.applicability === "applicable";
+export const isApplicable = (ev: StoredEvaluation) => ev.intent !== "other" && ev.applicability === "applicable";
 
 /** Agrupación preparada fuera de la transacción, solo si el reporte es aplicable y cae en su territorio. */
 async function planGrouping(deps: IntakeDeps, r: ReportRow, ev: StoredEvaluation): Promise<GroupingPlan | null> {
@@ -138,39 +134,10 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
     return finish("applicable", { grouping: "review", grouping_decision_id: grouped.decisionId });
   }
 
-  const priorityPolicy = await getActivePolicy(c, r.territory_id!, "priority");
-  const activeHazard = indicatesActiveHazard(ev);
-  const now = new Date();
-  const priority = computePriority(
-    { severity: ev.severity, activeHazard, passage: ev.passage, accessibility: ev.accessibility },
-    now, now, priorityPolicy.config,
-  );
-  const typeName = ev.problemTypeId
-    ? (await c.query<{ name: string }>("select name from problem_types where id = $1", [ev.problemTypeId])).rows[0]?.name
-    : null;
-  const title = [typeName ?? "Problema sin clasificar", located.areaName ? `— ${located.areaName}` : null].filter(Boolean).join(" ");
-
-  const inc = await c.query<{ id: string }>(
-    `insert into incidents (territory_id, area_id, problem_type_id, severity, active_hazard, passage, accessibility, location, location_text,
-       title, priority_band, priority_breakdown)
-     select $1, $2, $3, $4, $5, $6, $7, location, location_text, $8, $9, $10 from reports where id = $11
-     returning id`,
-    [r.territory_id, located.areaId, ev.problemTypeId, ev.severity, activeHazard, ev.passage, ev.accessibility, title, priority.band, priority.breakdown, r.id],
-  );
-  const incidentId = inc.rows[0].id;
-  await insertLink(c, { reportId: r.id, incidentId, origin: "auto", decisionId: grouped.decisionId });
-  // Textos del operador: una revisión nueva, un job. La revisión 1 se encola acá, no depende de assess_incident.
-  await enqueueTextgen(c, { incidentId, revision: 1, territoryId: r.territory_id! });
-  // Base de la IA (evaluación del reporte que lo creó): lo que vuelve a mandar al quitar una corrección humana.
-  const assessed = { problemTypeId: ev.problemTypeId, severity: ev.severity, activeHazard, passage: ev.passage, accessibility: ev.accessibility };
-  await c.query(
-    `insert into incident_assessments (incident_id, incident_revision, ai_run_id, reports_considered, problem_type_id, severity, active_hazard,
-       evidence_summary, changes, source_counts)
-     values ($1, 1, $2, $3, $4, $5, $6, $7, '[]', $8)`,
-    [incidentId, ev.aiRunId, [r.id], ev.problemTypeId, ev.severity, activeHazard,
-      JSON.stringify({ source: "report_evaluation", evaluation_id: ev.id, assessed }), JSON.stringify({ reports: 1, sources: 1 })],
-  );
-  await appendEvent(c, { entityType: "incident", entityId: incidentId, kind: "created", actorType: "system", data: { report_id: r.id, evaluation_id: ev.id, priority: priority.band, grouping_decision_id: grouped.decisionId } });
+  const { incidentId, priorityBand } = await createIncidentFromReport(c, {
+    reportId: r.id, evaluation: ev, areaId: located.areaId, areaName: located.areaName, groupingDecisionId: grouped.decisionId, origin: "auto",
+  });
+  await appendEvent(c, { entityType: "incident", entityId: incidentId, kind: "created", actorType: "system", data: { report_id: r.id, evaluation_id: ev.id, priority: priorityBand, grouping_decision_id: grouped.decisionId } });
   await openEvaluationReviews("incident", incidentId);
   return finish("applicable", { incident_id: incidentId, grouping: "created", grouping_decision_id: grouped.decisionId });
 }
