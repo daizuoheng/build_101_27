@@ -38,7 +38,7 @@ export async function listReviewQueue(db: Db, territoryId: string, opts: { statu
          select (array['high', 'medium', 'low', 'unknown'])[min(array_position(array['high', 'medium', 'low', 'unknown'], ci.priority_band))] as band,
                 bool_or(ci.active_hazard) as hazard
          from incidents ci
-         where ri.entity_type = 'report' and ci.id in (
+         where ri.entity_type = 'report' and ci.status in ('open', 'assigned', 'in_progress') and ci.id in (
            select jsonb_array_elements_text(ref->'candidate_incident_ids')::uuid
            from jsonb_array_elements(ri.evidence_refs) ref where jsonb_typeof(ref->'candidate_incident_ids') = 'array')
        ) cand on true

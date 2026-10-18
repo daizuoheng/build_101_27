@@ -14,7 +14,7 @@ import { applyGrouping, findCandidates, prepareGrouping, sameCandidates, type Gr
 /** Si los candidatos cambian entre la comparación y la escritura, se compara de nuevo; a la última vuelta, revisión. */
 const GROUPING_ROUNDS = 2;
 
-export const isApplicable = (ev: StoredEvaluation) => ev.intent !== "other" && ev.applicability === "applicable";
+const isApplicable = (ev: StoredEvaluation) => ev.intent !== "other" && ev.applicability === "applicable";
 
 /** Agrupación preparada fuera de la transacción, solo si el reporte es aplicable y cae en su territorio. */
 async function planGrouping(deps: IntakeDeps, r: ReportRow, ev: StoredEvaluation): Promise<GroupingPlan | null> {

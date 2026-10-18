@@ -14,7 +14,7 @@ import { getEvaluation } from "../intake/evaluations";
 import { enqueue } from "../jobs/queue";
 import { createIncidentFromReport } from "../pipeline/create-incident";
 import { actionsFor, type ReviewEntityType } from "./actions";
-import { incidentsAffectedByReviewItem, recomputeDispatchBlocked } from "./items";
+import { incidentsAffectedByReviewItem, openReviewItem, recomputeDispatchBlocked } from "./items";
 import type { ResolveAction, ResolveBody, ReviewKind } from "@/shared/contracts/review";
 
 type Item = {
@@ -59,18 +59,50 @@ async function createIncident(c: Db, item: Item, actor: Actor): Promise<Record<s
   if (!located || located.territoryId !== r.territory_id) {
     throw badRequest("report_not_promotable", "El reporte queda fuera de la cobertura del territorio.");
   }
-  const linked = await c.query("select 1 from report_incident_links where report_id = $1 and active", [r.id]);
-  if (linked.rows[0]) throw conflict("report_already_linked", "El reporte ya está asociado a un incidente.");
+  await requireUnlinked(c, r.id);
 
+  // `createIncidentFromReport` ya deja el reporte con `grouping = 'linked'` (vía `insertLink`).
   const { incidentId, priorityBand } = await createIncidentFromReport(c, {
     reportId: r.id, evaluation: ev, areaId: located.areaId, areaName: located.areaName, groupingDecisionId: null, origin: "manual",
   });
-  await c.query("update reports set grouping = 'linked', updated_at = now() where id = $1", [r.id]);
   await appendEvent(c, {
     entityType: "incident", entityId: incidentId, kind: "incident_created_manually", actorType: "operator", actorId: actor.id,
     data: { report_id: r.id, evaluation_id: ev.id, priority: priorityBand, review_item_id: item.id },
   });
+  await moveEvaluationReviews(c, item, incidentId, actor);
   return { incident_id: incidentId };
+}
+
+/**
+ * La cola decide la agrupación de un reporte: si ya quedó asociado por otro camino (detalle del incidente, otro
+ * operador), no se lo mueve desde acá; `linkReport` lo movería y podría archivar el incidente anterior.
+ */
+async function requireUnlinked(c: Db, reportId: string) {
+  const linked = await c.query("select 1 from report_incident_links where report_id = $1 and active", [reportId]);
+  if (linked.rows[0]) throw conflict("report_already_linked", "El reporte ya está asociado a un incidente.");
+}
+
+/** Dudas de la evaluación del reporte: mientras se decidía la agrupación quedaron sobre el reporte. */
+const EVALUATION_KINDS: ReviewKind[] = ["insufficient_evidence", "contradiction", "low_confidence", "unknown_type"];
+
+/**
+ * Al decidir la agrupación, las dudas de evaluación abiertas sobre el reporte pasan al incidente, como en el camino
+ * automático (`openEvaluationReviews("incident")` de process-report): ahí bloquean el despacho hasta revisarlas.
+ */
+async function moveEvaluationReviews(c: Db, item: Item, incidentId: string, actor: Actor) {
+  const { rows } = await c.query<{ id: string; kind: ReviewKind; reasons: unknown[]; evidence_refs: unknown[] }>(
+    `select id, kind, reasons, evidence_refs from review_items
+     where entity_type = 'report' and entity_id = $1 and status = 'open' and id <> $2 and kind = any($3) for update`,
+    [item.entity_id, item.id, EVALUATION_KINDS],
+  );
+  for (const r of rows) {
+    await openReviewItem(c, { territoryId: item.territory_id, kind: r.kind, entityType: "incident", entityId: incidentId, reasons: r.reasons, evidenceRefs: r.evidence_refs });
+    await c.query(
+      `update review_items set status = 'dismissed', resolution = jsonb_build_object('action', 'dismiss', 'reason', 'moved_to_incident', 'incident_id', $2::text),
+         resolved_by = $3, resolved_at = now(), updated_at = now() where id = $1`,
+      [r.id, incidentId, actor.id],
+    );
+  }
 }
 
 /** Corrección de tipo o severidad con la revisión vigente, leída bajo el lock: la cola no trae una revisión vieja. */
@@ -131,7 +163,9 @@ async function apply(c: Db, item: Item, actor: Actor, resolution: ResolveAction,
   switch (resolution.action) {
     case "link": {
       if (!candidatesOf(item).includes(resolution.incidentId)) throw badRequest("not_a_candidate", "Ese incidente no está entre los candidatos del reporte.");
+      await requireUnlinked(c, item.entity_id);
       const { linkId } = await linkReport(c, { reportId: item.entity_id, incidentId: resolution.incidentId, origin: "manual", actor });
+      await moveEvaluationReviews(c, item, resolution.incidentId, actor);
       return { link_id: linkId };
     }
     case "create_incident":
@@ -164,6 +198,14 @@ async function resolveItem(
   const territoryId = await reviewItemTerritory(c, reviewItemId);
   // El lock del pipeline: serializa contra la agrupación, las correcciones y otra resolución del mismo territorio.
   await c.query("select pg_advisory_xact_lock(hashtext($1))", [territoryId ?? `review_item:${reviewItemId}`]);
+  // Incidente antes que el ítem, como `transitionAssignment` (bloquea el incidente y después abre su ítem): sin ciclo.
+  await c.query(
+    `select 1 from incidents where id = (
+       select case when ri.entity_type = 'incident' then ri.entity_id else a.incident_id end
+       from review_items ri left join assignments a on ri.entity_type = 'assignment' and a.id = ri.entity_id where ri.id = $1)
+     for update`,
+    [reviewItemId],
+  );
   const item = (await c.query<Item>(
     "select id, territory_id, kind, entity_type, entity_id, status, evidence_refs from review_items where id = $1 for update",
     [reviewItemId],

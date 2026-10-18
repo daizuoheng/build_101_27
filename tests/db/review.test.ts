@@ -12,6 +12,7 @@ import { withTx } from "@/server/db/tx";
 import { transitionAssignment } from "@/server/dispatch/transitions";
 import { DomainError } from "@/server/errors";
 import { locatePoint } from "@/server/geo/locate";
+import { linkReport } from "@/server/incidents/links";
 import { getEvaluation } from "@/server/intake/evaluations";
 import { indicatesActiveHazard } from "@/server/intake/branches";
 import { handlers } from "@/server/jobs/handlers";
@@ -189,6 +190,34 @@ describe("resolución de ítems de revisión", () => {
     expect(await planJobs(itemId)).toBe(1);
   });
 
+  it("create_incident o link llevan al incidente las dudas de evaluación abiertas sobre el reporte, y lo bloquean", async () => {
+    for (const action of ["create_incident", "link"] as const) {
+      const { a, reportId, itemId } = await uncertainDuplicate();
+      const low = (await openReviewItem(pool, {
+        territoryId: t, kind: "low_confidence", entityType: "report", entityId: reportId,
+        reasons: [{ code: "low_confidence" }], evidenceRefs: [{ report_id: reportId }],
+      })).id;
+      await resolve(itemId, action === "link" ? { action, incidentId: a } : { action });
+      const target = (await one<{ incident_id: string }>("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).incident_id;
+      expect((await itemOf(low)).status).toBe("dismissed");
+      expect((await itemOf(low)).resolution).toMatchObject({ reason: "moved_to_incident", incident_id: target });
+      const moved = await pool.query("select kind, reasons from review_items where entity_type = 'incident' and entity_id = $1 and status = 'open'", [target]);
+      expect(moved.rows).toEqual([{ kind: "low_confidence", reasons: [{ code: "low_confidence" }] }]);
+      expect(await blocked(target)).toBe(true);
+      await resetDb(pool);
+      await seedAll(pool);
+      t = await territoryId(pool);
+    }
+  });
+
+  it("link de un reporte que ya quedó asociado ⇒ 409 report_already_linked, sin mover el vínculo", async () => {
+    const { a, b, reportId, itemId } = await uncertainDuplicate();
+    await withTx((c) => linkReport(c, { reportId, incidentId: b, origin: "manual", actor: OPERATOR }), pool);
+    await expectDomainError(resolve(itemId, { action: "link", incidentId: a }), 409, "report_already_linked");
+    expect((await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows).toEqual([{ incident_id: b }]);
+    expect((await itemOf(itemId)).status).toBe("open");
+  });
+
   it("create_incident de un reporte sin evaluación ⇒ 400 report_not_promotable", async () => {
     const reportId = await confirmedReport(pool, t);
     const { id } = await openReviewItem(pool, { territoryId: t, kind: "insufficient_evidence", entityType: "report", entityId: reportId });
@@ -348,6 +377,9 @@ describe("cola de revisión", () => {
     await openReviewItem(pool, { territoryId: t, kind: "uncertain_duplicate", entityType: "report", entityId: reportId, evidenceRefs: [{ report_id: reportId, candidate_incident_ids: [lo, hi] }] });
     const [item] = await listReviewQueue(pool, t);
     expect(item).toMatchObject({ entityType: "report", priorityBand: "high", actions: ["link", "create_incident", "dismiss"] });
+    // Un candidato ya cerrado no cuenta para la prioridad.
+    await pool.query("update incidents set status = 'archived', archived_at = now() where id = $1", [hi]);
+    expect((await listReviewQueue(pool, t))[0].priorityBand).toBe("low");
   });
 });
 
