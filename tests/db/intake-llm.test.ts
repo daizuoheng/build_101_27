@@ -353,7 +353,11 @@ describe("recepción con LLM bajo demanda", () => {
 
     // Aceptado el pin (botón de la web, sin mensaje nuevo del asistente), «enviar» ya envía con esa ubicación.
     await withTx((c) => setLocation(c, { reportId: id, sessionId: s, lon: -56.15, lat: -34.9, source: "geocoded", text: "Rivera y Soca" }), pool);
-    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000004", body: "enviar" }), pool);
+    // Un «sí» de más al pin ya aceptado tampoco es relato.
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000004", body: "dale" }), pool);
+    await runIntakeTurn(deps, id);
+    expect((await getReport(pool, id)).description).not.toMatch(/dale/);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000005", body: "enviar" }), pool);
     await runIntakeTurn(deps, id);
     expect(await getReport(pool, id)).toMatchObject({ status: "confirmed", location_text: "Rivera y Soca", description: "Hay un pozo enorme en la calle\nperdón, es en Rivera y Soca" });
     expect(deps.llm.calls).toBe(1);
@@ -379,5 +383,28 @@ describe("recepción con LLM bajo demanda", () => {
     await withTx((c) => appendCitizenMessage(c, { reportId: d2, sessionId: fresh, clientMessageId: "msg-q0000001", body: `estado de ${code}` }), pool);
     await runIntakeTurn(deps, d2);
     expect((await lastAssistant(pool, d2)).body).toMatch(/muchas consultas/);
+  });
+
+  it("consulta por código: una ráfaga concurrente de sesiones nuevas no pasa el tope por territorio", async () => {
+    const { pool, t } = await setup();
+    const deps = testDeps(pool, fakeJev());
+    // Queda lugar para una sola consulta más en la hora.
+    await pool.query(
+      `insert into events (entity_type, entity_id, kind, actor_type, actor_id, data)
+       select 'citizen_session', g, 'status_lookup', 'citizen', g, jsonb_build_object('found', false, 'territory_id', $1::text)
+       from (select gen_random_uuid() as g from generate_series(1, 299)) x`,
+      [t],
+    );
+    const drafts = await Promise.all(
+      [1, 2, 3, 4].map(async (i) => {
+        const fresh = await newSession(pool);
+        const d = await withTx((c) => createDraft(c, { sessionId: fresh, territoryId: t }), pool);
+        await withTx((c) => appendCitizenMessage(c, { reportId: d, sessionId: fresh, clientMessageId: `msg-q000000${i}`, body: "estado de ABC234" }), pool);
+        return d;
+      }),
+    );
+    await Promise.all(drafts.map((d) => runIntakeTurn(deps, d)));
+    const bodies = await Promise.all(drafts.map(async (d) => (await lastAssistant(pool, d)).body as string));
+    expect(bodies.filter((b) => /muchas consultas/.test(b))).toHaveLength(3);
   });
 });

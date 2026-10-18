@@ -171,6 +171,8 @@ async function handleShortReply(deps: IntakeDeps, r: ReportRow, intake: IntakeCo
         return "handled";
       }
     } else if (alreadyThere) {
+      // Un «sí» repetido a un pin ya aceptado no es relato; un «no» sí puede ser una corrección y sigue el flujo normal.
+      if (kind === "yes") await withTx((c) => consumeControlReply(c, r.id, ex.message), deps.pool);
       return null;
     } else if (kind === "no") {
       await withTx(async (c) => replyNow(c, r, { body: await t("ask_location_retry"), origin: "template", ui: { kind: "ask_location" } }, ex.message), deps.pool);
@@ -209,24 +211,29 @@ async function statusByCode(
   t: (key: string, vars?: Record<string, string>) => Promise<string>,
 ): Promise<string> {
   // Por sesión frena a quien consulta de más; por territorio, a quien rota la cookie (una sesión nueva por pedido)
-  // para probar códigos al azar.
-  const used = await db.query<{ session: number; territory: number }>(
-    `select count(*) filter (where actor_type = 'citizen' and actor_id = $1)::int as session,
-            count(*) filter (where data->>'territory_id' = $2::text)::int as territory
-     from events where kind = 'status_lookup' and created_at > now() - interval '1 hour'`,
-    [sessionId, territoryId],
-  );
-  if (used.rows[0].session >= limits.max_per_hour || used.rows[0].territory >= limits.max_per_hour_territory) return t("status_rate_limited");
-  const { rows } = await db.query<{ processing: string; outcome: string | null; incident_status: string | null }>(
-    `select r.processing, r.outcome, i.status as incident_status
-     from reports r
-     left join report_incident_links l on l.report_id = r.id and l.active
-     left join incidents i on i.id = l.incident_id
-     where r.public_code = $1 and r.territory_id = $2 and r.status = 'confirmed'`,
-    [code, territoryId],
-  );
-  await appendEvent(db, { entityType: "citizen_session", entityId: sessionId, kind: "status_lookup", actorType: "citizen", actorId: sessionId, data: { found: !!rows[0], territory_id: territoryId } });
-  const x = rows[0];
+  // para probar códigos al azar. Contar y registrar bajo el mismo lock del territorio: si no, una ráfaga
+  // concurrente lee el mismo conteo y entra entera.
+  const x = await withTx(async (c) => {
+    await c.query("select pg_advisory_xact_lock(hashtext('status_lookup:' || $1::text))", [territoryId]);
+    const used = await c.query<{ session: number; territory: number }>(
+      `select count(*) filter (where actor_type = 'citizen' and actor_id = $1)::int as session,
+              count(*) filter (where data->>'territory_id' = $2::text)::int as territory
+       from events where kind = 'status_lookup' and created_at > now() - interval '1 hour'`,
+      [sessionId, territoryId],
+    );
+    if (used.rows[0].session >= limits.max_per_hour || used.rows[0].territory >= limits.max_per_hour_territory) return "rate_limited" as const;
+    const { rows } = await c.query<{ processing: string; outcome: string | null; incident_status: string | null }>(
+      `select r.processing, r.outcome, i.status as incident_status
+       from reports r
+       left join report_incident_links l on l.report_id = r.id and l.active
+       left join incidents i on i.id = l.incident_id
+       where r.public_code = $1 and r.territory_id = $2 and r.status = 'confirmed'`,
+      [code, territoryId],
+    );
+    await appendEvent(c, { entityType: "citizen_session", entityId: sessionId, kind: "status_lookup", actorType: "citizen", actorId: sessionId, data: { found: !!rows[0], territory_id: territoryId } });
+    return rows[0] ?? null;
+  }, db);
+  if (x === "rate_limited") return t("status_rate_limited");
   if (!x) return t("status_not_found", { code });
   return t("status_card", { code, status: statusLabel(x.processing as never, x.outcome as never, x.incident_status as never) });
 }
