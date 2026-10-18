@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PriorityBand } from "@/shared/contracts/plan";
 import { BrandMark, Icon, type IconName } from "./Icons";
 import { ThemeToggle } from "./ThemeToggle";
@@ -17,6 +17,10 @@ type NavItem = { href: string; label: string; short: string; icon: IconName; mat
 export function OpsSidebar({ info }: { info: SidebarInfo }) {
   const pathname = usePathname();
   const territory = useSearchParams().get("territory");
+  // El tablero llena el lugar del mapa con un portal recién cuando esta barra hidrató: si lo llenara antes, React
+  // encontraría el mapa dentro del HTML del servidor al hidratar el Suspense y regeneraría todo (error #418).
+  const mapSlot = useRef<HTMLDivElement>(null);
+  useEffect(() => mapSlot.current?.setAttribute("data-ready", ""), []);
   const q = territory ? `?territory=${encodeURIComponent(territory)}` : "";
   const items: NavItem[] = [
     { href: `/operacion${q}`, label: "Centro de Operaciones", short: "Centro", icon: "dashboard", match: (p) => p === "/operacion" },
@@ -68,7 +72,7 @@ export function OpsSidebar({ info }: { info: SidebarInfo }) {
       </div>
 
       {/* Lugar del mapa de incidentes en escritorio: lo llena el tablero con un portal. */}
-      <div id="ops-sidebar-map" className="hidden min-h-0 flex-1 px-3 pt-4 pb-3 lg:flex lg:flex-col" />
+      <div id="ops-sidebar-map" ref={mapSlot} className="hidden min-h-0 flex-1 px-3 pt-4 pb-3 lg:flex lg:flex-col" />
     </aside>
   );
 }

@@ -33,8 +33,9 @@ function check(cond, msg) {
 const browser = await chromium.launch({ channel: "chrome", headless: !headed });
 const phone = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "es-UY" };
 const watch = (page, who) => {
-  page.on("pageerror", (e) => errors.push(`${who}: ${e.message}`));
-  page.on("console", (m) => m.type() === "error" && errors.push(`${who} console: ${m.text()}`));
+  const where = () => new URL(page.url()).pathname;
+  page.on("pageerror", (e) => errors.push(`${who} ${where()}: ${e.message}`));
+  page.on("console", (m) => m.type() === "error" && errors.push(`${who} ${where()} console: ${m.text()}`));
 };
 
 async function login(page, username, password) {

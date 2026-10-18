@@ -34,8 +34,11 @@ function localDays(): { dayStart: string; yesterdayStart: string } {
   return { dayStart: today.toISOString(), yesterdayStart: yesterday.toISOString() };
 }
 
-/** Lugar del mapa en la barra lateral. La barra se transmite dentro de un Suspense y puede montarse después del tablero. */
-const findMapSlot = () => document.getElementById("ops-sidebar-map");
+/**
+ * Lugar del mapa en la barra lateral. La barra se transmite dentro de un Suspense y puede montarse o hidratarse
+ * después del tablero: solo se usa cuando ya hidrató (`data-ready`), no el nodo que vino en el HTML del servidor.
+ */
+const findMapSlot = () => document.querySelector<HTMLElement>("#ops-sidebar-map[data-ready]");
 function subscribeMapSlot(cb: () => void) {
   if (findMapSlot()) return () => {};
   // Solo hasta que aparece: después no se sigue mirando cada cambio del DOM.
@@ -44,7 +47,7 @@ function subscribeMapSlot(cb: () => void) {
     obs.disconnect();
     cb();
   });
-  obs.observe(document.body, { childList: true, subtree: true });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-ready"] });
   return () => obs.disconnect();
 }
 function useSidebarMapSlot(): HTMLElement | null {
