@@ -58,7 +58,7 @@
 
 ### Task 2: Guion de demo y recorrido final
 
-**Precondición:** plan A y plan B en `main` (por uno o dos cortes `epic/nucleo → main`, en el orden en que terminen; ver plan A Task 4 Step 4 y plan B Task 4 Step 3) (con el despliegue continuo, mergear ya es desplegar); `epic/operacion` en `main` con T11 (#11), T12 (#17) y las vistas; `epic/recepcion` en `main` con la bandeja `/unidad` (#13 → #6). Después del último merge, `pnpm cli seed` contra Supabase si alguno tocó políticas.
+**Precondición:** plan D en `main` (plan inmediato y textos visibles); los planes A y B ya están desde #20 y #22. `epic/operacion` (#22) y `epic/recepcion` (#23) ya están en `main` desde el 17 oct, con T11, T12, las vistas y la bandeja `/unidad`. Con el despliegue continuo, mergear ya es desplegar. Después del último merge, `pnpm cli seed` contra Supabase si alguno tocó políticas (#22 y #23 pueden haberlo hecho: verificarlo con `/usr/bin/git log 18e645a..origin/main -- seeds/`).
 
 **Files:**
 - Create: `docs/superpowers/notes/recorrido-final.md`
