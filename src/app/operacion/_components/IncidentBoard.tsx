@@ -16,7 +16,11 @@ const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
   loading: () => <div className="h-[420px] animate-pulse rounded-[var(--radius)] bg-surface-2" aria-hidden />,
 });
 
-const REFRESH_MS = 10000;
+const REFRESH_MS = 3000;
+/** Cuánto queda resaltado un incidente que entró con la consola abierta. */
+const FRESH_MS = 15000;
+/** Margen sobre la carga anterior: cubre un incidente creado mientras corría la consulta y relojes desfasados. */
+const FRESH_SLACK_MS = 30000;
 
 type Filters = { areaId: string; problemType: string; priorityBand: string; status: string; sort: "priority" | "recent" | "reports" };
 const EMPTY: Filters = { areaId: "", problemType: "", priorityBand: "", status: "", sort: "priority" };
@@ -30,8 +34,11 @@ function localDays(): { dayStart: string; yesterdayStart: string } {
   return { dayStart: today.toISOString(), yesterdayStart: yesterday.toISOString() };
 }
 
-/** Lugar del mapa en la barra lateral. La barra se transmite dentro de un Suspense y puede montarse después del tablero. */
-const findMapSlot = () => document.getElementById("ops-sidebar-map");
+/**
+ * Lugar del mapa en la barra lateral. La barra se transmite dentro de un Suspense y puede montarse o hidratarse
+ * después del tablero: solo se usa cuando ya hidrató (`data-ready`), no el nodo que vino en el HTML del servidor.
+ */
+const findMapSlot = () => document.querySelector<HTMLElement>("#ops-sidebar-map[data-ready]");
 function subscribeMapSlot(cb: () => void) {
   if (findMapSlot()) return () => {};
   // Solo hasta que aparece: después no se sigue mirando cada cambio del DOM.
@@ -40,7 +47,7 @@ function subscribeMapSlot(cb: () => void) {
     obs.disconnect();
     cb();
   });
-  obs.observe(document.body, { childList: true, subtree: true });
+  obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-ready"] });
   return () => obs.disconnect();
 }
 function useSidebarMapSlot(): HTMLElement | null {
@@ -71,6 +78,10 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
   const router = useRouter();
   // Solo la última carga pedida escribe el estado: una respuesta lenta de un pedido anterior no pisa a una más nueva.
   const latest = useRef(0);
+  // Carga anterior con este territorio y filtros (null tras cambiarlos: esa carga no resalta): ids vistos y hora del
+  // servidor. Nuevo = no visto y creado hace poco; un incidente viejo que entra al filtro porque cambió de estado no.
+  const seen = useRef<{ key: string; ids: Set<string>; at: number } | null>(null);
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
 
   const filtered = Object.entries(filters).some(([k, v]) => k !== "sort" && v);
 
@@ -82,6 +93,11 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     try {
       const d = await api<IncidentListResponse>(`/api/operacion/incidents?${qs}`, { signal: withTimeout(signal) });
       if (stale()) return;
+      const key = JSON.stringify([territorySlug, filters]);
+      const prev = seen.current?.key === key ? seen.current : null;
+      const arrived = prev ? d.incidents.filter((i) => !prev.ids.has(i.id) && Date.parse(i.createdAt) > prev.at - FRESH_SLACK_MS).map((i) => i.id) : [];
+      seen.current = { key, ids: new Set([...(prev?.ids ?? []), ...d.incidents.map((i) => i.id)]), at: Date.parse(d.generatedAt) };
+      if (arrived.length > 0) setFresh((f) => new Set([...f, ...arrived]));
       setData(d);
       setError(null);
       setUpdatedAt(Date.now());
@@ -101,7 +117,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     // y un pedido nuevo que falla rápido no tapa con el aviso de error al anterior que todavía puede responder bien.
     let inFlight = false;
     const run = () => {
-      if (inFlight) return;
+      if (inFlight || document.hidden) return;
       inFlight = true;
       void load(ctrl.signal).finally(() => {
         inFlight = false;
@@ -109,12 +125,21 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     };
     const first = setTimeout(run, 0);
     const t = setInterval(run, REFRESH_MS);
+    // Pestaña oculta: no se consulta; al volver a mostrarse se actualiza enseguida.
+    document.addEventListener("visibilitychange", run);
     return () => {
       ctrl.abort();
       clearTimeout(first);
       clearInterval(t);
+      document.removeEventListener("visibilitychange", run);
     };
   }, [load]);
+
+  useEffect(() => {
+    if (fresh.size === 0) return;
+    const t = setTimeout(() => setFresh(new Set()), FRESH_MS);
+    return () => clearTimeout(t);
+  }, [fresh]);
 
   const set = (k: keyof Filters) => (e: React.ChangeEvent<HTMLSelectElement>) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const areaLabel = data?.territory.areaLabel ?? "Área";
@@ -217,7 +242,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
           {data && incidents.length === 0 && <p className="card p-4 text-ink-2">No hay incidentes con estos filtros.</p>}
           <ul className="flex flex-col gap-2.5">
             {incidents.map((i) => (
-              <IncidentRow key={i.id} item={i} now={updatedAt ?? 0} areaLabel={areaLabel} selected={selected === i.id} territorySlug={territorySlug} />
+              <IncidentRow key={i.id} item={i} now={updatedAt ?? 0} areaLabel={areaLabel} fresh={fresh.has(i.id)} selected={selected === i.id} territorySlug={territorySlug} />
             ))}
           </ul>
         </section>
@@ -246,11 +271,12 @@ function footerStatus(item: IncidentListItem): { text: string; icon: IconName; c
 }
 
 function IncidentRow({
-  item, now, areaLabel, selected, territorySlug,
+  item, now, areaLabel, fresh, selected, territorySlug,
 }: {
   item: IncidentListItem;
   now: number;
   areaLabel: string;
+  fresh: boolean;
   /** Marcado desde el mapa; el título lleva al detalle. */
   selected: boolean;
   territorySlug: string;
@@ -259,7 +285,7 @@ function IncidentRow({
   const area = areaDisplay(item.area?.name);
   const place = [area ? `${areaLabel} ${area}` : `${areaLabel} sin determinar`, item.locationText].filter(Boolean).join(" · ");
   return (
-    <li id={`inc-${item.id}`} className="ops-item px-4 py-3.5" data-selected={selected} aria-current={selected ? "true" : undefined}>
+    <li id={`inc-${item.id}`} className={`ops-item px-4 py-3.5 ${fresh ? "ru-fresh" : ""}`} data-selected={selected} aria-current={selected ? "true" : undefined}>
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <PriorityBadge band={item.priorityBand} />
