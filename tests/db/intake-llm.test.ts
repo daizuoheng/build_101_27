@@ -301,4 +301,83 @@ describe("recepción con LLM bajo demanda", () => {
     await runIntakeTurn(deps, id);
     expect(await lastAssistant(pool, id)).toMatchObject({ origin: "template", ui: { kind: "ready" } });
   });
+
+  it("«sí» a un pin de corrección no vuelve a la rama de corrección ni llega a Jev como evidencia", async () => {
+    const { pool, t, s, id } = await setup();
+    const jev = fakeJev();
+    const deps = { ...testDeps(pool, jev), llm: fakeLlm((u) => {
+      const news = u.new_messages as { id: string }[];
+      return { proposed_fields: { location_text: "Rivera y Soca" }, source_message_ids: [news[0].id] };
+    }) };
+    await runIntakeTurn(deps, id);
+    await cacheGeocode(pool, t, "Rivera y Soca", { lon: -56.15, lat: -34.9, label: "Rivera y Soca" });
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "perdón, es en Rivera y Soca" }), pool);
+    await runIntakeTurn(deps, id);
+    expect(deps.llm.calls).toBe(1);
+
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000003", body: "dale" }), pool);
+    await runIntakeTurn(deps, id);
+    expect(deps.llm.calls).toBe(1); // sin otra llamada de corrección por el «dale»
+    expect((await lastAssistant(pool, id)).ui).toEqual({ kind: "ready" });
+    expect(await getReport(pool, id)).toMatchObject({ location_text: "Rivera y Soca", description: "Hay un pozo enorme en la calle\nperdón, es en Rivera y Soca" });
+    expect(JSON.stringify(jev.calls.at(-1))).not.toMatch(/dale/);
+  });
+
+  it("«enviar» ante un pin propuesto no lo acepta: sin ubicación avisa que falta; ante una corrección lo vuelve a ofrecer", async () => {
+    const un = await setupUnlocated();
+    const llmAddr = fakeLlm((u) => ({ address: "18 de julio y ejido", source_message_ids: [(u.messages as { id: string }[]).at(-1)!.id] }));
+    const d1 = { ...testDeps(un.pool, fakeJev(() => fakeAnswers({ location_in_text: choice("precise") }))), llm: llmAddr };
+    await cacheGeocode(un.pool, un.t, "18 de julio y ejido", { lon: -56.1868, lat: -34.9056, label: "18 de julio y ejido" });
+    await runIntakeTurn(d1, un.id);
+    expect((await lastAssistant(un.pool, un.id)).ui).toMatchObject({ kind: "propose_location" });
+    await withTx((c) => appendCitizenMessage(c, { reportId: un.id, sessionId: un.s, clientMessageId: "msg-00000002", body: "enviar" }), un.pool);
+    await runIntakeTurn(d1, un.id);
+    expect(await getReport(un.pool, un.id)).toMatchObject({ status: "draft", location_confirmed: false, location_text: null, description: "Hay un pozo enorme en la calle" });
+    expect((await lastAssistant(un.pool, un.id)).body).toMatch(/Confirmá dónde está el problema/);
+
+    const { pool, t, s, id } = await setup();
+    const deps = { ...testDeps(pool, fakeJev()), llm: fakeLlm((u) => {
+      const news = u.new_messages as { id: string }[];
+      return { proposed_fields: { location_text: "Rivera y Soca" }, source_message_ids: [news[0].id] };
+    }) };
+    await runIntakeTurn(deps, id);
+    await cacheGeocode(pool, t, "Rivera y Soca", { lon: -56.15, lat: -34.9, label: "Rivera y Soca" });
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "perdón, es en Rivera y Soca" }), pool);
+    await runIntakeTurn(deps, id);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000003", body: "mandalo" }), pool);
+    await runIntakeTurn(deps, id);
+    // No se envía con la ubicación vieja: se vuelve a ofrecer el pin de la corrección.
+    expect(await getReport(pool, id)).toMatchObject({ status: "draft", location_text: "Rivera y Comercio", lon: POINT.lon });
+    expect(await lastAssistant(pool, id)).toMatchObject({ origin: "template", ui: { kind: "propose_location", label: "Rivera y Soca" } });
+    expect(deps.llm.calls).toBe(1);
+
+    // Aceptado el pin (botón de la web, sin mensaje nuevo del asistente), «enviar» ya envía con esa ubicación.
+    await withTx((c) => setLocation(c, { reportId: id, sessionId: s, lon: -56.15, lat: -34.9, source: "geocoded", text: "Rivera y Soca" }), pool);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000004", body: "enviar" }), pool);
+    await runIntakeTurn(deps, id);
+    expect(await getReport(pool, id)).toMatchObject({ status: "confirmed", location_text: "Rivera y Soca", description: "Hay un pozo enorme en la calle\nperdón, es en Rivera y Soca" });
+    expect(deps.llm.calls).toBe(1);
+  });
+
+  it("consulta por código: tope por territorio aunque cada consulta venga de una sesión nueva", async () => {
+    const { pool, t, s, id } = await setup();
+    const deps = testDeps(pool, fakeJev());
+    await runIntakeTurn(deps, id);
+    await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000002", body: "enviar" }), pool);
+    await runIntakeTurn(deps, id);
+    const code = (await getReport(pool, id)).public_code!;
+
+    // 300 consultas de 300 sesiones distintas en la última hora (cookie rotada en cada pedido).
+    await pool.query(
+      `insert into events (entity_type, entity_id, kind, actor_type, actor_id, data)
+       select 'citizen_session', g, 'status_lookup', 'citizen', g, jsonb_build_object('found', false, 'territory_id', $1::text)
+       from (select gen_random_uuid() as g from generate_series(1, 300)) x`,
+      [t],
+    );
+    const fresh = await newSession(pool);
+    const d2 = await withTx((c) => createDraft(c, { sessionId: fresh, territoryId: t }), pool);
+    await withTx((c) => appendCitizenMessage(c, { reportId: d2, sessionId: fresh, clientMessageId: "msg-q0000001", body: `estado de ${code}` }), pool);
+    await runIntakeTurn(deps, d2);
+    expect((await lastAssistant(pool, d2)).body).toMatch(/muchas consultas/);
+  });
 });

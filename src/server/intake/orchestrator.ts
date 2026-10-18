@@ -13,7 +13,7 @@ import { recordAiRun, recordLlmRun } from "../ai/runs";
 import { geocode } from "../geo/geocoder";
 import { enqueue } from "../jobs/queue";
 import type { StorageAdapter } from "../storage/adapter";
-import { appendAssistantMessage, areaName, excludeFromDescription, getReport, loadEvidence, setLocation, type ReportRow } from "./drafts";
+import { appendAssistantMessage, areaName, consumeControlReply, excludeFromDescription, getReport, loadEvidence, setLocation, type ReportRow } from "./drafts";
 import { confirmReport } from "./confirm";
 import { classifyReply, extractPublicCode, isOnlyAddress, isOnlyStatusQuery } from "./replies";
 import { appendEvent } from "../events/append";
@@ -99,13 +99,17 @@ export async function runIntakeTurn(deps: IntakeDeps, reportId: string): Promise
 }
 
 type Reply = { body: string; origin: "template" | "llm"; ui: MessageUi | null; llmRunId?: string | null };
+type CitizenText = { id: string; body: string };
 
-/** Responde ya, sin evaluación, a la revisión actual (bajo el lock del reporte). Devuelve false si llegó otra entrada. */
-async function replyNow(c: PoolClient, r: ReportRow, reply: Reply, strip?: string): Promise<boolean> {
+/**
+ * Responde ya, sin evaluación, a la revisión actual (bajo el lock del reporte). `control` es la respuesta de
+ * control que se está contestando, que deja de ser relato y evidencia. Devuelve false si llegó otra entrada.
+ */
+async function replyNow(c: PoolClient, r: ReportRow, reply: Reply, control?: CitizenText): Promise<boolean> {
   await c.query("select pg_advisory_xact_lock(hashtext($1))", [r.id]);
   const cur = await c.query<{ revision: number; status: string }>("select revision, status from reports where id = $1", [r.id]);
   if (cur.rows[0].status !== "draft" || cur.rows[0].revision !== r.revision) return false;
-  if (strip) await excludeFromDescription(c, r.id, strip);
+  if (control) await consumeControlReply(c, r.id, control);
   await appendAssistantMessage(c, { conversationId: r.conversation_id, ...reply });
   await c.query("update conversations set replied_revision = greatest(replied_revision, $2), updated_at = now() where id = $1", [r.conversation_id, r.revision]);
   return true;
@@ -127,14 +131,16 @@ async function lastExchange(db: Pool, conversationId: string) {
   );
   const m = rows[0];
   if (!m || m.role !== "citizen" || m.body === "[foto]") return null;
-  return { messageId: m.id, text: m.body, asked: m.asked_seq !== null && m.asked_seq < m.seq ? m.asked : null };
+  return { message: { id: m.id, body: m.body }, text: m.body, asked: m.asked_seq !== null && m.asked_seq < m.seq ? m.asked : null };
 }
 
 /**
  * Respuestas cortas por texto, equivalentes a los botones de la web, para canales que no los tienen:
  * - pin propuesto + «sí» ⇒ la persona confirma esa ubicación (sigue el turno normal con Jev sobre la nueva revisión);
  * - pin propuesto + «no» ⇒ se le pide otra dirección;
- * - ficha lista + «enviar»/«sí» ⇒ se envía el reporte (misma confirmación idempotente que el botón);
+ * - ficha lista + «enviar»/«sí», o pin propuesto + «enviar» ⇒ se envía el reporte (misma confirmación idempotente
+ *   que el botón; un pin de corrección sin aceptar se vuelve a ofrecer, para no enviar la ubicación vieja, y sin
+ *   ninguna ubicación confirmada llega el aviso de que falta);
  * - un código de reporte ⇒ estado de ese reporte, con tope de consultas por sesión.
  * Todo lo demás sigue el flujo normal. El LLM no interviene en ninguna de estas decisiones.
  */
@@ -146,8 +152,8 @@ async function handleShortReply(deps: IntakeDeps, r: ReportRow, intake: IntakeCo
   // Solo mensajes cortos: un código suelto dentro de un relato largo no es una consulta de estado.
   const code = intake.status_lookup && ex.text.length <= 80 ? extractPublicCode(ex.text) : null;
   if (code && intake.status_lookup) {
-    const body = await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId: r.territory_id!, code, max: intake.status_lookup.max_per_hour }, t);
-    await withTx((c) => replyNow(c, r, { body, origin: "template", ui: { kind: "status" } }, ex.text), deps.pool);
+    const body = await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId: r.territory_id!, code, limits: intake.status_lookup }, t);
+    await withTx((c) => replyNow(c, r, { body, origin: "template", ui: { kind: "status" } }, ex.message), deps.pool);
     return "handled";
   }
 
@@ -158,28 +164,38 @@ async function handleShortReply(deps: IntakeDeps, r: ReportRow, intake: IntakeCo
   if (ex.asked.kind === "propose_location") {
     const p = ex.asked;
     const alreadyThere = r.location_confirmed && r.lon !== null && Math.abs(r.lon - p.lon) < 1e-6 && Math.abs(r.lat! - p.lat) < 1e-6;
-    if (alreadyThere) return null;
-    if (kind === "no") {
-      await withTx(async (c) => replyNow(c, r, { body: await t("ask_location_retry"), origin: "template", ui: { kind: "ask_location" } }, ex.text), deps.pool);
+    if (kind === "send") {
+      // Con un pin de corrección sin aceptar, enviar mandaría la ubicación vieja: primero se acepta o rechaza el pin.
+      if (!alreadyThere && r.location_confirmed) {
+        await withTx(async (c) => replyNow(c, r, { body: await t("location_proposed", { label: p.label }), origin: "template", ui: p }, ex.message), deps.pool);
+        return "handled";
+      }
+    } else if (alreadyThere) {
+      return null;
+    } else if (kind === "no") {
+      await withTx(async (c) => replyNow(c, r, { body: await t("ask_location_retry"), origin: "template", ui: { kind: "ask_location" } }, ex.message), deps.pool);
       return "handled";
+    } else {
+      // Solo «sí» acepta el pin: «enviar» es otra orden (arriba y abajo), no una confirmación de la ubicación.
+      await withTx(async (c) => {
+        await consumeControlReply(c, r.id, ex.message);
+        await setLocation(c, { reportId: r.id, sessionId: r.citizen_session_id, lon: p.lon, lat: p.lat, source: "geocoded", text: p.label });
+      }, deps.pool);
+      return "continue";
     }
-    await withTx(async (c) => {
-      await excludeFromDescription(c, r.id, ex.text);
-      await setLocation(c, { reportId: r.id, sessionId: r.citizen_session_id, lon: p.lon, lat: p.lat, source: "geocoded", text: p.label });
-    }, deps.pool);
-    return "continue";
   }
 
-  if (ex.asked.kind === "ready" && (kind === "send" || kind === "yes")) {
+  const sends = kind === "send" ? ex.asked.kind === "ready" || ex.asked.kind === "propose_location" : kind === "yes" && ex.asked.kind === "ready";
+  if (sends) {
     try {
       await withTx(async (c) => {
         await c.query("select 1 from reports where id = $1 for update", [r.id]);
-        await excludeFromDescription(c, r.id, ex.text);
-        await confirmReport(c, { reportId: r.id, sessionId: r.citizen_session_id, idempotencyKey: `reply:${ex.messageId}` });
+        await consumeControlReply(c, r.id, ex.message);
+        await confirmReport(c, { reportId: r.id, sessionId: r.citizen_session_id, idempotencyKey: `reply:${ex.message.id}` });
       }, deps.pool);
     } catch (err) {
       if (!(err instanceof DomainError)) throw err;
-      await withTx((c) => replyNow(c, r, { body: err.message, origin: "template", ui: null }), deps.pool);
+      await withTx((c) => replyNow(c, r, { body: err.message, origin: "template", ui: null }, ex.message), deps.pool);
     }
     return "handled";
   }
@@ -189,15 +205,18 @@ async function handleShortReply(deps: IntakeDeps, r: ReportRow, intake: IntakeCo
 /** Estado de un reporte por su código público: solo el estado, nunca datos del reporte ni de quien lo envió. */
 async function statusByCode(
   db: Pool,
-  { sessionId, territoryId, code, max }: { sessionId: string; territoryId: string; code: string; max: number },
+  { sessionId, territoryId, code, limits }: { sessionId: string; territoryId: string; code: string; limits: StatusLookupLimits },
   t: (key: string, vars?: Record<string, string>) => Promise<string>,
 ): Promise<string> {
-  const used = await db.query<{ n: number }>(
-    `select count(*)::int as n from events where kind = 'status_lookup' and actor_type = 'citizen' and actor_id = $1
-       and created_at > now() - interval '1 hour'`,
-    [sessionId],
+  // Por sesión frena a quien consulta de más; por territorio, a quien rota la cookie (una sesión nueva por pedido)
+  // para probar códigos al azar.
+  const used = await db.query<{ session: number; territory: number }>(
+    `select count(*) filter (where actor_type = 'citizen' and actor_id = $1)::int as session,
+            count(*) filter (where data->>'territory_id' = $2::text)::int as territory
+     from events where kind = 'status_lookup' and created_at > now() - interval '1 hour'`,
+    [sessionId, territoryId],
   );
-  if (used.rows[0].n >= max) return t("status_rate_limited");
+  if (used.rows[0].session >= limits.max_per_hour || used.rows[0].territory >= limits.max_per_hour_territory) return t("status_rate_limited");
   const { rows } = await db.query<{ processing: string; outcome: string | null; incident_status: string | null }>(
     `select r.processing, r.outcome, i.status as incident_status
      from reports r
@@ -206,7 +225,7 @@ async function statusByCode(
      where r.public_code = $1 and r.territory_id = $2 and r.status = 'confirmed'`,
     [code, territoryId],
   );
-  await appendEvent(db, { entityType: "citizen_session", entityId: sessionId, kind: "status_lookup", actorType: "citizen", actorId: sessionId, data: { found: !!rows[0] } });
+  await appendEvent(db, { entityType: "citizen_session", entityId: sessionId, kind: "status_lookup", actorType: "citizen", actorId: sessionId, data: { found: !!rows[0], territory_id: territoryId } });
   const x = rows[0];
   if (!x) return t("status_not_found", { code });
   return t("status_card", { code, status: statusLabel(x.processing as never, x.outcome as never, x.incident_status as never) });
@@ -219,7 +238,8 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
   const territoryId = r.territory_id!;
   const intake = await getActivePolicy(deps.pool, territoryId, "intake");
   const answering = await answeringLocation(deps.pool, r.conversation_id);
-  let strip: string | null = null;
+  // Mensaje que sale de la descripción; si es de control, además deja de ser evidencia.
+  let strip: (CitizenText & { control: boolean }) | null = null;
   const branch = chooseBranch(
     ev,
     {
@@ -250,10 +270,10 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
       const ex = await lastExchange(deps.pool, r.conversation_id);
       const code = ex && intake.config.status_lookup ? extractPublicCode(ex.text, { requireQueryOnly: false }) : null;
       const body = code
-        ? await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId, code, max: intake.config.status_lookup!.max_per_hour }, t)
+        ? await statusByCode(deps.pool, { sessionId: r.citizen_session_id, territoryId, code, limits: intake.config.status_lookup! }, t)
         : await statusSummary(deps.pool, r.citizen_session_id, territoryId);
       reply = { body, origin: "template", ui: { kind: "status" } };
-      if (ex && isOnlyStatusQuery(ex.text)) strip = ex.text;
+      if (ex && isOnlyStatusQuery(ex.text)) strip = { ...ex.message, control: true };
       break;
     }
     case "ask_location":
@@ -264,7 +284,8 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
       reply = res.reply;
       // Una dirección escrita en respuesta al pedido de ubicación es dato de ubicación, no relato del problema.
       const ex = answering && res.address ? await lastExchange(deps.pool, r.conversation_id) : null;
-      if (ex && isOnlyAddress(ex.text, res.address!)) strip = ex.text;
+      // Sigue siendo evidencia: la dirección le sirve al LLM si la persona rechaza el pin y hay que volver a extraerla.
+      if (ex && isOnlyAddress(ex.text, res.address!)) strip = { ...ex.message, control: false };
       break;
     }
     case "ask_evidence":
@@ -304,7 +325,8 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
         });
       }
     }
-    if (strip) await excludeFromDescription(c, reportId, strip);
+    if (strip?.control) await consumeControlReply(c, reportId, strip);
+    else if (strip) await excludeFromDescription(c, reportId, strip.body);
     await appendAssistantMessage(c, { conversationId: row.conversation_id, ...reply });
     await c.query(
       `update conversations set replied_revision = $2, clarification_rounds = clarification_rounds + $3, updated_at = now() where id = $1`,
@@ -314,13 +336,14 @@ export async function respondToEvaluation(deps: IntakeDeps, reportId: string, re
 }
 
 type IntakeConfig = Awaited<ReturnType<typeof getActivePolicy<"intake">>>["config"];
+type StatusLookupLimits = NonNullable<IntakeConfig["status_lookup"]>;
 type Render = (key: string, vars?: Record<string, string>) => Promise<string>;
 
-/** Mensajes de texto del ciudadano (evidencia original), en orden. */
-async function citizenTexts(db: Pool, reportId: string): Promise<{ id: string; body: string }[]> {
-  const { rows } = await db.query<{ id: string; body: string }>(
+/** Mensajes de texto del ciudadano (evidencia original, sin respuestas de control), en orden. */
+async function citizenTexts(db: Pool, reportId: string): Promise<CitizenText[]> {
+  const { rows } = await db.query<CitizenText>(
     `select m.id, m.body from messages m join conversations c on c.id = m.conversation_id
-     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' order by m.seq`,
+     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' and not m.control_reply order by m.seq`,
     [reportId],
   );
   return rows;
@@ -328,12 +351,13 @@ async function citizenTexts(db: Pool, reportId: string): Promise<{ id: string; b
 
 /**
  * Textos del ciudadano posteriores a la última ficha lista (o al último pin propuesto después de ella):
- * candidatos a corrección. Antes de la primera ficha lista no hay nada que corregir.
+ * candidatos a corrección. Antes de la primera ficha lista no hay nada que corregir. Las respuestas de control
+ * («sí» a un pin) ya se atendieron y no son corrección.
  */
-async function textsAfterReady(db: Pool, conversationId: string): Promise<{ id: string; body: string }[]> {
-  const { rows } = await db.query<{ id: string; body: string }>(
+async function textsAfterReady(db: Pool, conversationId: string): Promise<CitizenText[]> {
+  const { rows } = await db.query<CitizenText>(
     `select m.id, m.body from messages m
-     where m.conversation_id = $1 and m.role = 'citizen' and m.body <> '[foto]'
+     where m.conversation_id = $1 and m.role = 'citizen' and m.body <> '[foto]' and not m.control_reply
        and exists (select 1 from messages where conversation_id = $1 and role = 'assistant' and ui->>'kind' = 'ready')
        and m.seq > (select max(seq) from messages where conversation_id = $1 and role = 'assistant' and ui->>'kind' in ('ready', 'propose_location'))
      order by m.seq`,

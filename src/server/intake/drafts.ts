@@ -122,6 +122,15 @@ export async function excludeFromDescription(db: Db, reportId: string, body: str
   );
 }
 
+/**
+ * Respuesta de control («sí», «no», «enviar», una consulta de estado): sale de la descripción y además se marca
+ * para que deje de ser evidencia de Jev y del LLM (si no, un «sí» llega como relato a la próxima evaluación).
+ */
+export async function consumeControlReply(db: Db, reportId: string, msg: { id: string; body: string }): Promise<void> {
+  await db.query("update messages set control_reply = true where id = $1", [msg.id]);
+  await excludeFromDescription(db, reportId, msg.body);
+}
+
 export async function appendAssistantMessage(
   db: Db,
   { conversationId, body, origin, ui, llmRunId }: { conversationId: string; body: string; origin: "template" | "llm"; ui?: MessageUi | null; llmRunId?: string | null },
@@ -206,11 +215,11 @@ export function requireTerritory(r: ReportRow): string {
   return r.territory_id;
 }
 
-/** Evidencia que Jev recibe: mensajes ciudadanos originales y derivados de fotos (no paráfrasis del LLM). */
+/** Evidencia que Jev recibe: mensajes ciudadanos originales (sin respuestas de control) y derivados de fotos (no paráfrasis del LLM). */
 export async function loadEvidence(db: Db, storage: StorageAdapter, reportId: string) {
   const msgs = await db.query<{ id: string; body: string; created_at: Date }>(
     `select m.id, m.body, m.created_at from messages m join conversations c on c.id = m.conversation_id
-     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' order by m.seq`,
+     where c.report_id = $1 and m.role = 'citizen' and m.body <> '[foto]' and not m.control_reply order by m.seq`,
     [reportId],
   );
   const atts = await db.query<{ id: string; storage_key: string }>(

@@ -64,8 +64,8 @@ describe("geocode de esquinas", () => {
     const t = await territoryId(pool);
     const nom = fakeNominatim({});
     expect(await geocode(pool, { query: "Alfa y Beta y Gamma y Delta", territoryId: t, policy, fetchImpl: nom.fetchImpl })).toBeNull();
-    // 1 búsqueda directa + 2 candidatos × 2 calles (sin tramos no hay tercera búsqueda).
-    expect(nom.calls.length).toBe(5);
+    // 1 búsqueda directa + 2 candidatos × 1 calle (si la primera no tiene tramos no se busca la segunda).
+    expect(nom.calls.length).toBe(3);
   });
 
   it("pedidos concurrentes respetan el intervalo mínimo entre llamadas", async () => {
@@ -80,5 +80,33 @@ describe("geocode de esquinas", () => {
     await Promise.all(["Calle Uno 100", "Calle Dos 200", "Calle Tres 300"].map((q) => geocode(pool, { query: q, territoryId: t, policy: slow, fetchImpl })));
     const gaps = at.slice(1).map((x, i) => x - at[i]);
     expect(gaps.every((g) => g >= 140)).toBe(true);
+  });
+
+  it("la búsqueda de una esquina tiene presupuesto: agotado, null sin cachear y sin más pedidos", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    // Calles que no se cruzan: sin presupuesto serían 1 directa + 3 por candidato.
+    const nom = fakeNominatim({
+      rivera: [line([[-56.16, -34.89], [-56.15, -34.89]])],
+      comercio: [line([[-56.14, -34.87], [-56.14, -34.88]])],
+    });
+    const tight = { ...policy, min_interval_ms: 500, intersection_budget_ms: 700 };
+    expect(await geocode(pool, { query: "Rivera y Comercio", territoryId: t, policy: tight, fetchImpl: nom.fetchImpl })).toBeNull();
+    expect(nom.calls.length).toBe(2); // directa + primera calle; la segunda ya no entra en el presupuesto
+    expect((await pool.query("select 1 from geocode_cache")).rows).toEqual([]);
+  });
+
+  it("una partición equivocada cuesta un solo pedido y se prueba la siguiente", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    // Particiones: (Batlle | Ordóñez y Rivera), que no existe, y (Batlle y Ordóñez | Rivera), que se cruzan.
+    const nom = fakeNominatim({
+      "batlle y ordóñez": [line([[-56.16, -34.885], [-56.16, -34.895]])],
+      rivera: [line([[-56.17, -34.89], [-56.15, -34.89]])],
+    });
+    const hit = await geocode(pool, { query: "Batlle y Ordóñez y Rivera", territoryId: t, policy, fetchImpl: nom.fetchImpl });
+    expect(hit).toMatchObject({ label: "Batlle y Ordóñez y Rivera" });
+    expect(hit!.lon).toBeCloseTo(-56.16, 4);
+    expect(nom.calls.length).toBe(4); // directa + «Batlle» (vacía) + las dos calles de la partición correcta
   });
 });
