@@ -1,6 +1,7 @@
 // Dobles para tests de base: Jev y storage en memoria, CLARAMENTE simulados. La integración real se prueba con smoke-jev.
 import type { Pool } from "pg";
-import type { JevClient } from "@/server/ai/jev/client";
+import type { JevCall, JevClient } from "@/server/ai/jev/client";
+import type { LlmClient } from "@/server/ai/llm/client";
 import type { IntakeDeps } from "@/server/intake/orchestrator";
 import type { StorageAdapter } from "@/server/storage/adapter";
 
@@ -24,12 +25,24 @@ export function fakeAnswers(over: Record<string, unknown> = {}) {
   };
 }
 
-export function fakeJev(answers: () => Record<string, unknown> = () => fakeAnswers()): JevClient & { calls: number } {
+/** Respuesta simulada de comparación: `match_<ref>` y los tres Noul de conflicto por candidato. */
+export function fakeComparison(byRef: Record<string, { match: string; p?: number; object?: number; place?: number; time?: number }>) {
+  const out: Record<string, unknown> = {};
+  for (const [ref, x] of Object.entries(byRef)) {
+    out[`match_${ref}`] = c(x.match, x.p ?? 0.95);
+    out[`object_conflict_${ref}`] = { type: "noul", noul: x.object ?? 0.05 };
+    out[`place_conflict_${ref}`] = { type: "noul", noul: x.place ?? 0.05 };
+    out[`time_conflict_${ref}`] = { type: "noul", noul: x.time ?? 0.05 };
+  }
+  return out;
+}
+
+export function fakeJev(answers: (call: JevCall) => Record<string, unknown> = () => fakeAnswers()): JevClient & { calls: JevCall[] } {
   const jev = {
-    calls: 0,
-    async systemOne() {
-      jev.calls++;
-      return { data: { model: "fake-jev", answers: answers(), usage: { input_tokens: 1, output_tokens: 1 } } as never, latencyMs: 1 };
+    calls: [] as JevCall[],
+    async systemOne(call: JevCall) {
+      jev.calls.push(call);
+      return { data: { model: "fake-jev", answers: answers(call), usage: { input_tokens: 1, output_tokens: 1 } } as never, latencyMs: 1 };
     },
   };
   return jev;
@@ -51,4 +64,17 @@ export async function territoryId(pool: Pool, slug = "montevideo"): Promise<stri
 export async function newSession(pool: Pool): Promise<string> {
   const { rows } = await pool.query<{ id: string }>("insert into citizen_sessions (token_hash) values (gen_random_uuid()::text) returning id");
   return rows[0].id;
+}
+
+/** LLM simulado: cada llamada recibe el system/user y devuelve el contenido crudo (o lanza). */
+export function fakeLlm(reply: (call: { system: string; user: string; n: number }) => string | Promise<string>): LlmClient & { calls: { system: string; user: string }[] } {
+  const llm = {
+    provider: "fake-llm",
+    calls: [] as { system: string; user: string }[],
+    async completeJson({ system, user }: { system: string; user: string }) {
+      llm.calls.push({ system, user });
+      return { content: await reply({ system, user, n: llm.calls.length }), inputTokens: 1, outputTokens: 1, latencyMs: 1 };
+    },
+  };
+  return llm;
 }

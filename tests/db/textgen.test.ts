@@ -1,0 +1,411 @@
+import type { Pool } from "pg";
+import { beforeEach, describe, expect, it } from "vitest";
+import { seedAll } from "../../seeds";
+import { policies } from "../../seeds/policies";
+import { generateText, type TextInput } from "@/server/ai/llm/generate-text";
+import { getActivePolicy } from "@/server/config/policies";
+import { withTx } from "@/server/db/tx";
+import { unlinkReport } from "@/server/incidents/links";
+import { setOverride } from "@/server/incidents/overrides";
+import { latestTexts, latestTextsMany } from "@/server/incidents/texts";
+import { claimNext } from "@/server/jobs/queue";
+import { enqueueTextgen, runTextgen, textInputs } from "@/server/pipeline/textgen";
+import { fakeLlm, newSession, territoryId } from "./fakes";
+import { resetDb, testDb } from "./setup";
+
+async function incidentWithReport(pool: Pool): Promise<{ incidentId: string; reportId: string; territory: string }> {
+  const territory = await territoryId(pool);
+  const session = await newSession(pool);
+  const rep = await pool.query<{ id: string }>(
+    `insert into reports (citizen_session_id, territory_id, status, public_code, confirmed_revision, description, location, confirmed_at)
+     values ($1, $2, 'confirmed', 'TXTGEN', 1, 'Pozo enorme frente al 2450 de Av. Italia', st_setsrid(st_makepoint(-56.15, -34.89), 4326)::geography, now())
+     returning id`,
+    [session, territory],
+  );
+  const inc = await pool.query<{ id: string }>(
+    `insert into incidents (territory_id, problem_type_id, severity, location, location_text, priority_band, priority_breakdown)
+     select $1, id, 'high', st_setsrid(st_makepoint(-56.15, -34.89), 4326)::geography, 'Av. Italia 2450', 'high', '{"rules": ["severity_high"]}'
+     from problem_types where slug = 'bache' returning id`,
+    [territory],
+  );
+  await pool.query("insert into report_incident_links (report_id, incident_id, origin) values ($1, $2, 'auto')", [rep.rows[0].id, inc.rows[0].id]);
+  return { incidentId: inc.rows[0].id, reportId: rep.rows[0].id, territory };
+}
+
+/** Respuesta válida que cita la primera referencia del input. */
+const citeFirst = ({ user }: { user: string }) => {
+  const refs = JSON.parse(user.split("<referencias>\n")[1].split("\n</referencias>")[0]) as { id: string }[];
+  return JSON.stringify({ body: "Bache en Av. Italia 2450", references: refs.slice(0, 1).map((r) => r.id) });
+};
+
+async function titleInput(pool: Pool, incidentId: string, revision = 1): Promise<TextInput> {
+  const territory = await territoryId(pool);
+  const reports = (await pool.query<{ id: string; description: string }>("select id, description from reports")).rows.map((r) => ({ id: r.id, text: r.description }));
+  return { purpose: "title", territoryId: territory, entity: { type: "incident", id: incidentId, revision }, facts: { problem_type: "Bache", place: "Av. Italia 2450" }, references: reports };
+}
+
+const textgenJobs = (pool: Pool, incidentId: string) =>
+  pool.query<{ entity_revision: number; dedupe_key: string }>(
+    "select entity_revision, dedupe_key from jobs where kind = 'textgen' and entity_id = $1 order by entity_revision",
+    [incidentId],
+  );
+
+/** `setOverride` exige un operador identificado. */
+const operator = { type: "operator" as const, id: "00000000-0000-4000-8000-0000000000aa" };
+
+const texts = (pool: Pool) =>
+  pool.query<{ purpose: string; entity_revision: number; body: string; references: string[]; llm_run_id: string | null }>(
+    `select purpose, entity_revision, body, "references", llm_run_id from generated_texts order by purpose, entity_revision`,
+  );
+
+describe("textos generados (textgen)", () => {
+  beforeEach(async () => {
+    const pool = await testDb();
+    await resetDb(pool);
+    await seedAll(pool, { importAreas: false });
+    // Estos tests ejercitan el camino del LLM; el seed lo deja apagado (todo determinista), ver el test de abajo.
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{llm_purposes}', '["title","summary","explain_priority"]') where kind = 'textgen'`);
+  });
+
+  it("cachea por (propósito, entidad, revisión): la misma revisión no vuelve a llamar al LLM, una nueva sí", async () => {
+    const pool = await testDb();
+    const { incidentId, reportId } = await incidentWithReport(pool);
+    const llm = fakeLlm(citeFirst);
+
+    const first = await generateText({ pool, llm }, await titleInput(pool, incidentId, 1));
+    expect(first).toMatchObject({ source: "llm", body: "Bache en Av. Italia 2450", references: [reportId], discarded: false });
+    const again = await generateText({ pool, llm }, await titleInput(pool, incidentId, 1));
+    expect(again.source).toBe("cache");
+    expect(llm.calls).toHaveLength(1);
+
+    await generateText({ pool, llm }, await titleInput(pool, incidentId, 2));
+    expect(llm.calls).toHaveLength(2);
+    expect((await texts(pool)).rows.map((r) => r.entity_revision)).toEqual([1, 2]);
+  });
+
+  it("el job sobre una revisión vieja no llama al LLM ni persiste", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    await pool.query("update incidents set revision = 2 where id = $1", [incidentId]);
+    const job = (await claimNext(pool, "w", 60))!;
+    expect(job).toMatchObject({ kind: "textgen", entity_id: incidentId, entity_revision: 1 });
+
+    const llm = fakeLlm(citeFirst);
+    expect(await runTextgen({ pool, llm }, job)).toEqual({ discarded: true, sources: {}, fallbacks: {} });
+    expect(llm.calls).toHaveLength(0);
+    expect((await texts(pool)).rows).toEqual([]);
+  });
+
+  it("si la revisión cambia mientras el LLM redacta, el texto se descarta", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const job = (await claimNext(pool, "w", 60))!;
+    const llm = fakeLlm(async (call) => {
+      await pool.query("update incidents set revision = 2 where id = $1", [incidentId]);
+      return citeFirst(call);
+    });
+    const res = await runTextgen({ pool, llm }, job);
+    expect(res.discarded).toBe(true);
+    expect((await texts(pool)).rows).toEqual([]);
+  });
+
+  it("si plan promueve la banda mientras el LLM redacta (misma revisión), la explicación vieja no se guarda", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query("update incidents set severity = 'low', priority_band = 'low', priority_breakdown = '{\"rules\": []}' where id = $1", [incidentId]);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const job = (await claimNext(pool, "w", 60))!;
+    // Lo que hace planInTx al promover por antigüedad: banda nueva sin revisión nueva, explicación invalidada.
+    // Una sola vez, y todas las redacciones esperan a que termine (corren en paralelo).
+    let promoted: Promise<unknown> | null = null;
+    const promote = async () => {
+      await pool.query(`update incidents set priority_band = 'medium', priority_breakdown = '{"rules": [], "promoted_by_age": true, "computed_band": "medium"}' where id = $1`, [incidentId]);
+      await pool.query("delete from generated_texts where purpose = 'explain_priority' and entity_id = $1", [incidentId]);
+    };
+    const llm = fakeLlm(async (call) => {
+      await (promoted ??= promote());
+      return citeFirst(call);
+    });
+    const res = await runTextgen({ pool, llm }, job);
+    expect(res.discarded).toBe(true);
+    expect((await pool.query("select 1 from generated_texts where purpose = 'explain_priority' and entity_id = $1", [incidentId])).rows).toHaveLength(0);
+  });
+
+  it("salida inválida dos veces ⇒ plantilla de respaldo, sin llm_run_id y con los dos intentos registrados", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const llm = fakeLlm(() => "esto no es json");
+    const res = await generateText({ pool, llm }, await titleInput(pool, incidentId));
+    expect(res).toMatchObject({ source: "template", body: "Bache — Av. Italia 2450", references: [], llmRunId: null });
+    expect(llm.calls).toHaveLength(2);
+    const runs = await pool.query("select purpose, status from llm_runs");
+    expect(runs.rows).toEqual([{ purpose: "title", status: "invalid" }, { purpose: "title", status: "invalid" }]);
+    expect((await texts(pool)).rows[0]).toMatchObject({ body: "Bache — Av. Italia 2450", llm_run_id: null });
+  });
+
+  it("una referencia que no está en el input se rechaza (reintento y después plantilla)", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const llm = fakeLlm(() => JSON.stringify({ body: "Bache en Av. Italia", references: ["00000000-0000-4000-8000-00000000dead"] }));
+    const res = await generateText({ pool, llm }, await titleInput(pool, incidentId));
+    expect(res.source).toBe("template");
+    expect(res.error).toMatch(/referencias fuera del input/);
+    const runs = await pool.query<{ error: string }>("select error from llm_runs");
+    expect(runs.rows.every((r) => /referencias fuera del input/.test(r.error))).toBe(true);
+  });
+
+  it("un texto que promete despacho o tiempos de llegada se rechaza", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const llm = fakeLlm(() => JSON.stringify({ body: "Una cuadrilla ya está en camino", references: [] }));
+    const res = await generateText({ pool, llm }, await titleInput(pool, incidentId));
+    expect(res.source).toBe("template");
+    expect(res.error).toMatch(/prohibido por política/);
+  });
+
+  it("una plantilla cacheada se reemplaza cuando el LLM vuelve a responder bien", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    await generateText({ pool, llm: fakeLlm(() => "") }, await titleInput(pool, incidentId));
+    const ok = await generateText({ pool, llm: fakeLlm(citeFirst) }, await titleInput(pool, incidentId));
+    expect(ok.source).toBe("llm");
+    const rows = (await texts(pool)).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].llm_run_id).not.toBeNull();
+  });
+
+  it("una plantilla de respaldo que viola la política falla en vez de mostrarse y cachearse", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    await pool.query("update message_templates set body = 'Una cuadrilla llegará en 20 minutos a {{place}}' where key = 'textgen_title'");
+    await expect(generateText({ pool, llm: fakeLlm(() => "") }, await titleInput(pool, incidentId))).rejects.toThrow(/plantilla 'textgen_title' inválida/);
+    expect((await texts(pool)).rows).toEqual([]);
+  });
+
+  it("datos largos en la plantilla se recortan al máximo en vez de fallar", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    input.facts.place = "Frente al edificio, del lado de la parada de ómnibus sobre 18 de Julio, pasando la farmacia de la esquina";
+    const res = await generateText({ pool, llm: fakeLlm(() => "") }, input);
+    expect(res.source).toBe("template");
+    expect(res.body).toHaveLength(90);
+    expect(res.body.endsWith("…")).toBe(true);
+  });
+
+  it("un dato ciudadano con una frase prohibida se omite en la plantilla", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    input.facts.place = "esquina donde la cuadrilla está en camino";
+    const res = await generateText({ pool, llm: null }, input);
+    expect(res.body).toBe("Bache — esquina donde la cuadrilla [dato omitido]");
+  });
+
+  it("el recorte de la plantilla no parte emojis", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    input.facts.place = "🚧".repeat(120);
+    const res = await generateText({ pool, llm: null }, input);
+    expect(Array.from(res.body)).toHaveLength(90);
+    expect(res.body).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
+  it("si otro worker guardó un texto del LLM mientras este redactaba, devuelve el guardado y no el propio", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    const other = await pool.query<{ id: string }>(
+      "insert into llm_runs (purpose, provider, model, instructions_version, status) values ('title', 'otro', 'm', 'v', 'ok') returning id",
+    );
+    const llm = fakeLlm(async (call) => {
+      await pool.query(
+        `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body, llm_run_id) values ('title', 'incident', $1, 1, 'Guardado por otro worker', $2)`,
+        [incidentId, other.rows[0].id],
+      );
+      return citeFirst(call);
+    });
+    const res = await generateText({ pool, llm }, input);
+    expect(res).toMatchObject({ source: "cache", body: "Guardado por otro worker", llmRunId: other.rows[0].id, discarded: false });
+    expect((await texts(pool)).rows).toHaveLength(1);
+  });
+
+  it("el resumen de respaldo conserva peligro activo, paso y accesibilidad", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query("update incidents set active_hazard = true, passage = 'total' where id = $1", [incidentId]);
+    await pool.query("update policy_versions set config = jsonb_set(config, '{enabled}', 'false') where kind = 'textgen'");
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    await runTextgen({ pool, llm: null }, (await claimNext(pool, "w", 60))!);
+    const summary = (await texts(pool)).rows.find((r) => r.purpose === "summary")!;
+    expect(summary.body).toContain("hay peligro activo");
+    expect(summary.body).toContain("paso bloqueado");
+  });
+
+  it("sin cliente LLM, una plantilla cacheada se reutiliza sin re-renderizar", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    expect((await generateText({ pool, llm: null }, await titleInput(pool, incidentId))).source).toBe("template");
+    expect((await generateText({ pool, llm: null }, await titleInput(pool, incidentId))).source).toBe("cache");
+  });
+
+  it("un texto cacheado que la política vigente ya no admite se vuelve a redactar y se reemplaza", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    await generateText({ pool, llm: fakeLlm(() => JSON.stringify({ body: "Bache grande en Av. Italia 2450", references: [] })) }, input);
+    // Se endurece la política: «grande» pasa a estar prohibido.
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{forbidden_patterns}', (config->'forbidden_patterns') || '["grande"]') where kind = 'textgen'`);
+    const llm = fakeLlm(citeFirst);
+    const res = await generateText({ pool, llm }, input);
+    expect(llm.calls).toHaveLength(1);
+    expect(res).toMatchObject({ source: "llm", body: "Bache en Av. Italia 2450" });
+    expect((await texts(pool)).rows.map((r) => r.body)).toEqual(["Bache en Av. Italia 2450"]);
+  });
+
+  it("una plantilla que arma una frase prohibida con datos numéricos es error de configuración", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    await pool.query("update message_templates set body = 'Llegará en {{count}} minutos' where key = 'textgen_title'");
+    const input = { ...(await titleInput(pool, incidentId)), facts: { count: 5 } };
+    await expect(generateText({ pool, llm: null }, input)).rejects.toThrow(/datos numéricos/);
+  });
+
+  it("el reemplazo por política vigente no pisa un texto válido que otro worker guardó mientras tanto", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    await generateText({ pool, llm: fakeLlm(() => JSON.stringify({ body: "Bache grande en Av. Italia 2450", references: [] })) }, input);
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{forbidden_patterns}', (config->'forbidden_patterns') || '["grande"]') where kind = 'textgen'`);
+    const llm = fakeLlm(async () => {
+      await pool.query("update generated_texts set body = 'Guardado válido de otro worker'"); // llegó primero
+      return "no es json";
+    });
+    const res = await generateText({ pool, llm }, input);
+    expect(res).toMatchObject({ source: "cache", body: "Guardado válido de otro worker" });
+    expect(res.error).toBeTruthy();
+    expect((await texts(pool)).rows.map((r) => r.body)).toEqual(["Guardado válido de otro worker"]);
+  });
+
+  it("un incidente archivado no genera textos", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query("update incidents set status = 'archived', archived_at = now() where id = $1", [incidentId]);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const llm = fakeLlm(citeFirst);
+    expect((await runTextgen({ pool, llm }, (await claimNext(pool, "w", 60))!)).discarded).toBe(true);
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it("apagar textgen retira el texto del LLM ya guardado y deja la plantilla", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    const input = await titleInput(pool, incidentId);
+    await generateText({ pool, llm: fakeLlm(citeFirst) }, input);
+    await pool.query("update policy_versions set config = jsonb_set(config, '{enabled}', 'false') where kind = 'textgen'");
+    const res = await generateText({ pool, llm: fakeLlm(citeFirst) }, input);
+    expect(res.source).toBe("template");
+    expect((await texts(pool)).rows[0]).toMatchObject({ body: "Bache — Av. Italia 2450", llm_run_id: null });
+  });
+
+  it("con la política del seed (llm_purposes vacío) los tres textos salen de plantillas sin llamar al LLM", async () => {
+    const pool = await testDb();
+    expect(policies.textgen.llm_purposes).toEqual([]); // la decisión de diseño: determinista por defecto
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{llm_purposes}', '[]') where kind = 'textgen'`);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const llm = fakeLlm(citeFirst);
+    const res = await runTextgen({ pool, llm }, (await claimNext(pool, "w", 60))!);
+    expect(res).toEqual({ discarded: false, sources: { title: "template", summary: "template", explain_priority: "template" }, fallbacks: {} });
+    expect(llm.calls).toHaveLength(0);
+    const rows = (await texts(pool)).rows;
+    expect(rows.find((r) => r.purpose === "title")!.body).toBe("Bache — Av. Italia 2450");
+    expect(rows.find((r) => r.purpose === "explain_priority")!.body).toBe("Prioridad alta por: severidad alta.");
+  });
+
+  it("una política publicada antes de llm_purposes sigue validando y queda determinista", async () => {
+    const pool = await testDb();
+    const territory = await territoryId(pool);
+    await pool.query("update policy_versions set config = config - 'llm_purposes' where kind = 'textgen'");
+    expect((await getActivePolicy(pool, territory, "textgen")).config.llm_purposes).toEqual([]);
+  });
+
+  it("un propósito listado usa el LLM y los demás quedan deterministas", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await pool.query(`update policy_versions set config = jsonb_set(config, '{llm_purposes}', '["summary"]') where kind = 'textgen'`);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const llm = fakeLlm(citeFirst);
+    const res = await runTextgen({ pool, llm }, (await claimNext(pool, "w", 60))!);
+    expect(res.sources).toEqual({ title: "template", summary: "llm", explain_priority: "template" });
+    expect(llm.calls).toHaveLength(1);
+  });
+
+  it("con textgen.enabled = false usa la plantilla sin llamar al LLM", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool);
+    await pool.query("update policy_versions set config = jsonb_set(config, '{enabled}', 'false') where kind = 'textgen'");
+    const llm = fakeLlm(citeFirst);
+    const res = await generateText({ pool, llm }, await titleInput(pool, incidentId));
+    expect(res).toMatchObject({ source: "template", error: "textgen deshabilitado por política" });
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it("el handler deja título, resumen y explicación; la explicación solo cita códigos de motivo del input", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const job = (await claimNext(pool, "w", 60))!;
+    const res = await runTextgen({ pool, llm: fakeLlm(citeFirst) }, job);
+    expect(res).toEqual({ discarded: false, sources: { title: "llm", summary: "llm", explain_priority: "llm" }, fallbacks: {} });
+    const rows = (await texts(pool)).rows;
+    expect(rows.map((r) => r.purpose)).toEqual(["explain_priority", "summary", "title"]);
+    expect(rows[0].references).toEqual(["severity_high"]);
+  });
+
+  it("los hechos usan las etiquetas de la política y no incluyen estado ni despacho", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    const policy = (await getActivePolicy(pool, territory, "textgen")).config;
+    const inc = { id: incidentId, territory_id: territory, revision: 1, type_name: "Bache", area_name: null, location_text: "Av. Italia 2450",
+      severity: "high", active_hazard: false, passage: "partial", accessibility: "not_affected", priority_band: "high",
+      priority_breakdown: { rules: ["severity_high"], promoted_by_age: true }, report_count: 2 };
+    const inputs = textInputs(inc, [], policy);
+    expect(inputs.summary.facts).toMatchObject({ severity: "alta", passage: "parcialmente obstruido", report_count: 2 });
+    expect(inputs.explain_priority.facts.reasons).toEqual(["severidad alta", "antigüedad sin atender"]);
+    expect(JSON.stringify(inputs)).not.toMatch(/status|assign|dispatch/);
+  });
+
+  it("una corrección del operador encola textgen para la revisión nueva", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool); // revisión 1, sin jobs
+    await withTx((c) => setOverride(c, { incidentId, override: { field: "severity", value: "low" }, reason: "test", actor: operator, expectedRevision: 1 }), pool);
+    expect((await textgenJobs(pool, incidentId)).rows.map((r) => r.entity_revision)).toEqual([2]);
+  });
+
+  it("archivar el incidente (último reporte desvinculado) no encola textgen", async () => {
+    const pool = await testDb();
+    const { incidentId, reportId } = await incidentWithReport(pool);
+    await withTx((c) => unlinkReport(c, { reportId, reason: "test", actor: { type: "operator", id: null } }), pool);
+    expect((await pool.query("select status from incidents where id = $1", [incidentId])).rows[0].status).toBe("archived");
+    expect((await textgenJobs(pool, incidentId)).rows).toHaveLength(0);
+  });
+
+  it("latestTexts devuelve solo los textos de la revisión vigente; sin texto, null", async () => {
+    const pool = await testDb();
+    const { incidentId } = await incidentWithReport(pool); // revisión 1
+    await pool.query(
+      `insert into generated_texts (purpose, entity_type, entity_id, entity_revision, body) values
+         ('title', 'incident', $1, 1, 'Bache en Av. Italia'), ('summary', 'incident', $1, 1, 'Un pozo')`,
+      [incidentId],
+    );
+    expect(await latestTexts(pool, incidentId)).toEqual({ revision: 1, title: "Bache en Av. Italia", summary: "Un pozo", explain_priority: null });
+    await pool.query("update incidents set revision = 2 where id = $1", [incidentId]);
+    expect(await latestTexts(pool, incidentId)).toEqual({ revision: 2, title: null, summary: null, explain_priority: null });
+    const many = await latestTextsMany(pool, [incidentId]);
+    expect(many.get(incidentId)?.revision).toBe(2);
+  });
+});

@@ -1,0 +1,114 @@
+{
+  "pair": {
+    "name": "dos-candidatos-elige-el-bache",
+    "report": {
+      "texts": [
+        "Hay un pozo en el asfalto frente al 2450 de Av. Italia, se llena de agua"
+      ],
+      "photo": "bache.jpg",
+      "crop": "left"
+    },
+    "candidates": [
+      {
+        "category": "Basura acumulada",
+        "distanceM": 8,
+        "hoursAgo": 4,
+        "texts": [
+          "Basura desparramada en la vereda de Av. Italia al 2400"
+        ],
+        "photo": "basura.jpg"
+      },
+      {
+        "category": "Bache",
+        "distanceM": 11,
+        "hoursAgo": 26,
+        "texts": [
+          "Bache grande sobre Av. Italia a la altura del 2450, cuidado"
+        ],
+        "photo": "bache.jpg",
+        "crop": "right"
+      }
+    ],
+    "expect": {
+      "verdict": "link",
+      "match": [
+        "different_incident",
+        "same_incident"
+      ]
+    }
+  },
+  "run": {
+    "purpose": "compare",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-dos-candidatos-elige-el-bache",
+      "report_revision": 1,
+      "candidates": {
+        "c1": "incident-1",
+        "c2": "incident-2"
+      },
+      "truncated": false,
+      "photos": {
+        "c1_r1_p1": "cand-1-photo",
+        "c2_r1_p1": "cand-2-photo",
+        "new_p1": "new-photo"
+      },
+      "policy_version_id": "46c22e61-3307-4a90-a8a4-147b5c695526"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b554ce3712f9deeb39e37e7dbeb",
+    "response": {
+      "match_c1": {
+        "type": "choice",
+        "choice": "different_incident",
+        "confidence": 1,
+        "probabilities": {
+          "same_incident": 0,
+          "different_incident": 1,
+          "uncertain": 0
+        }
+      },
+      "object_conflict_c1": {
+        "type": "noul",
+        "noul": 0.99
+      },
+      "place_conflict_c1": {
+        "type": "noul",
+        "noul": 0.88
+      },
+      "time_conflict_c1": {
+        "type": "noul",
+        "noul": 0.71
+      },
+      "match_c2": {
+        "type": "choice",
+        "choice": "same_incident",
+        "confidence": 0.97,
+        "probabilities": {
+          "same_incident": 0.98,
+          "different_incident": 0.01,
+          "uncertain": 0.01
+        }
+      },
+      "object_conflict_c2": {
+        "type": "noul",
+        "noul": 0.04
+      },
+      "place_conflict_c2": {
+        "type": "noul",
+        "noul": 0.04
+      },
+      "time_conflict_c2": {
+        "type": "noul",
+        "noul": 0.15
+      }
+    },
+    "usage": {
+      "input_tokens": 10664,
+      "output_tokens": 214
+    },
+    "latencyMs": 1322,
+    "status": "ok"
+  }
+}

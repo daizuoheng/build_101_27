@@ -7,7 +7,15 @@ export type Handler = {
   onFailed?: (deps: IntakeDeps, job: Job, error: string) => Promise<void>;
 };
 
-export type WorkerOptions = { workerId: string; leaseSec?: number; idleMs?: number; signal?: AbortSignal; log?: (msg: string) => void };
+export type WorkerOptions = {
+  workerId: string;
+  leaseSec?: number;
+  idleMs?: number;
+  signal?: AbortSignal;
+  log?: (msg: string) => void;
+  /** Tarea que `runWorker` corre al arrancar y después cada `everyMs` (entre jobs). Si falla, se loguea y el loop sigue. */
+  periodic?: { everyMs: number; run: () => Promise<void> };
+};
 
 /** Procesa un job si hay uno elegible. Devuelve false si la cola estaba vacía. */
 export async function runOnce(deps: IntakeDeps, handlers: Partial<Record<JobKind, Handler>>, opts: WorkerOptions): Promise<boolean> {
@@ -46,7 +54,16 @@ export async function runOnce(deps: IntakeDeps, handlers: Partial<Record<JobKind
 
 export async function runWorker(deps: IntakeDeps, handlers: Partial<Record<JobKind, Handler>>, opts: WorkerOptions): Promise<void> {
   const idleMs = opts.idleMs ?? 1000;
+  let lastTick = -Infinity;
   while (!opts.signal?.aborted) {
+    if (opts.periodic && Date.now() - lastTick >= opts.periodic.everyMs) {
+      lastTick = Date.now();
+      try {
+        await opts.periodic.run();
+      } catch (err) {
+        opts.log?.(`tarea periódica: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     let worked = false;
     try {
       worked = await runOnce(deps, handlers, opts);

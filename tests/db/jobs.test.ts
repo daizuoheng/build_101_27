@@ -6,7 +6,8 @@ import { appendCitizenMessage, createDraft, getReport, setLocation } from "@/ser
 import { confirmReport } from "@/server/intake/confirm";
 import { claimNext, completeJob, enqueue, failJob } from "@/server/jobs/queue";
 import { handlers } from "@/server/jobs/handlers";
-import { runOnce } from "@/server/jobs/worker-loop";
+import { runOnce, runWorker } from "@/server/jobs/worker-loop";
+import { incidentsAffectedByReviewItem, openReviewItem } from "@/server/review/items";
 import { newSession, territoryId, testDeps } from "./fakes";
 import { resetDb, testDb } from "./setup";
 
@@ -44,6 +45,21 @@ describe("cola de jobs (correcciones de revisión del PR #1)", () => {
     expect(ri.rows).toEqual([{ kind: "provider_failure", entity_id: ENTITY }]);
   });
 
+  it("runWorker ejecuta la tarea periódica al arrancar y luego cada everyMs, y sigue si falla", async () => {
+    const pool = await testDb();
+    const calls: number[] = [];
+    const controller = new AbortController();
+    const run = async () => { calls.push(Date.now()); if (calls.length === 2) throw new Error("tick roto"); };
+    const logs: string[] = [];
+    const done = runWorker(testDeps(pool), {}, { workerId: "w", idleMs: 5, signal: controller.signal, periodic: { everyMs: 40, run }, log: (m) => logs.push(m) });
+    await new Promise((r) => setTimeout(r, 150));
+    controller.abort();
+    await done;
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls[1] - calls[0]).toBeGreaterThanOrEqual(35);
+    expect(logs.some((m) => m.includes("tick roto"))).toBe(true);
+  });
+
   it("reintentar la confirmación revive un process_report fallido", async () => {
     const pool = await testDb();
     const t = await territoryId(pool);
@@ -62,6 +78,35 @@ describe("cola de jobs (correcciones de revisión del PR #1)", () => {
     // Un job pendiente sigue sin duplicarse ni reiniciarse.
     const rev = (await getReport(pool, id)).confirmed_revision!;
     expect(await enqueue(pool, { kind: "process_report", entityType: "report", entityId: id, entityRevision: rev })).toMatchObject({ created: false, revived: false });
+  });
+
+  it("reabrir un ítem suma motivos por code y evidencias por report_id, quedando el más reciente", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    const open = (reasons: unknown[], evidenceRefs: unknown[]) =>
+      openReviewItem(pool, { territoryId: t, kind: "provider_failure", entityType: "report", entityId: ENTITY, reasons, evidenceRefs });
+    const a = await open([{ code: "provider_failure", error: "timeout 1" }], [{ report_id: ENTITY, attempt: 1 }]);
+    const b = await open([{ code: "provider_failure", error: "timeout 2" }, { code: "otro" }], [{ report_id: ENTITY, attempt: 2 }]);
+    expect(b).toEqual({ id: a.id, created: false });
+    const row = (await pool.query("select reasons, evidence_refs from review_items where id = $1", [a.id])).rows[0];
+    expect(row.reasons).toEqual(expect.arrayContaining([{ code: "provider_failure", error: "timeout 2" }, { code: "otro" }]));
+    expect(row.reasons).toHaveLength(2);
+    expect(row.evidence_refs).toEqual([{ report_id: ENTITY, attempt: 2 }]);
+  });
+
+  it("reabrir un uncertain_duplicate con otros candidatos conserva los anteriores; la misma lista no se duplica", async () => {
+    const pool = await testDb();
+    const t = await territoryId(pool);
+    const [c1, c2] = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
+    const open = (refs: unknown[]) =>
+      openReviewItem(pool, { territoryId: t, kind: "uncertain_duplicate", entityType: "report", entityId: ENTITY, reasons: [{ code: "ambiguous" }], evidenceRefs: refs });
+    const a = await open([{ report_id: ENTITY, candidate_incident_ids: [c1] }]);
+    await open([{ report_id: ENTITY, candidate_incident_ids: [c2] }]);
+    await open([{ report_id: ENTITY, candidate_incident_ids: [c2] }]);
+    await open([{ report_id: ENTITY, previous_incident_id: c1 }]);
+    const refs = (await pool.query("select evidence_refs from review_items where id = $1", [a.id])).rows[0].evidence_refs;
+    expect(refs).toHaveLength(3);
+    expect((await incidentsAffectedByReviewItem(pool, a.id)).sort()).toEqual([c1, c2]);
   });
 
   it("reimportar el mismo GeoJSON no cambia nada; uno corregido actualiza la geometría; otra fuente actualiza la procedencia", async () => {
