@@ -4,7 +4,7 @@ export type PriorityInput = {
   severity: "low" | "medium" | "high" | "undetermined";
   activeHazard: boolean;
   passage: "total" | "partial" | "none" | "undetermined";
-  accessibility: "affected" | "not_affected" | "undetermined";
+  accessibility: "affected" | "partial" | "not_affected" | "undetermined";
 };
 
 export type PriorityBand = "high" | "medium" | "low" | "unknown";
@@ -21,12 +21,16 @@ export function computePriority(e: PriorityInput, createdAt: Date, now: Date, po
   if (policy.high.accessibility.includes(e.accessibility)) rules.push("accessibility_affected");
   const ageHours = Math.max(0, (now.getTime() - createdAt.getTime()) / 3_600_000);
 
+  const medium: string[] = [];
+  if (policy.medium.severity.includes(e.severity)) medium.push("severity_medium");
+  if (policy.medium.accessibility.includes(e.accessibility)) medium.push(e.accessibility === "partial" ? "accessibility_partial" : "accessibility_affected");
+
   let band: PriorityBand;
   let promoted = false;
   if (rules.length) band = "high";
-  else if (policy.medium.severity.includes(e.severity)) {
+  else if (medium.length) {
     band = "medium";
-    rules.push("severity_medium");
+    rules.push(...medium);
   } else if (e.severity === "low") {
     band = "low";
     if (ageHours > policy.promote_low_to_medium_after_hours) {

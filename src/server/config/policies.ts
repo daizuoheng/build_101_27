@@ -109,7 +109,8 @@ export const PriorityPolicy = z.object({
     passage: z.array(z.string()),
     accessibility: z.array(z.string()),
   }),
-  medium: z.object({ severity: z.array(z.string()) }),
+  /** `accessibility` vacío si falta: una política publicada antes de ese campo sigue validando (y no sube nada a media). */
+  medium: z.object({ severity: z.array(z.string()), accessibility: z.array(z.string()).default([]) }),
   promote_low_to_medium_after_hours: z.number().positive(),
 });
 

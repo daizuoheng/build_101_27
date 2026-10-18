@@ -23,13 +23,14 @@ type Editable = "problem_type_id" | "severity" | "priority_band";
 
 const SEVERITY: Record<string, string> = { low: "Baja", medium: "Media", high: "Alta", undetermined: "Sin determinar" };
 const PASSAGE: Record<string, string> = { total: "Bloqueado", partial: "Parcialmente obstruido", none: "Libre", undetermined: "Sin determinar" };
-const ACCESSIBILITY: Record<string, string> = { affected: "Afectada", not_affected: "No afectada", undetermined: "Sin determinar" };
+const ACCESSIBILITY: Record<string, string> = { affected: "Afectada", partial: "Parcialmente afectada", not_affected: "No afectada", undetermined: "Sin determinar" };
 const PRIORITY_RULE: Record<string, string> = {
   severity_high: "severidad alta",
   active_hazard: "peligro activo",
   passage_blocked: "paso bloqueado",
   accessibility_affected: "accesibilidad afectada",
   severity_medium: "severidad media",
+  accessibility_partial: "accesibilidad parcialmente afectada",
   promoted_by_age: "lleva tiempo sin atender",
 };
 const FIELD: Record<OverrideField, string> = {

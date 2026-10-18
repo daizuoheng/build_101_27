@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ASSIGNMENT_STATUSES } from "./assignment";
+import { ACCESSIBILITY } from "./evaluation";
 import { IncidentListItem, OVERRIDE_FIELDS } from "./incident";
 import { REVIEW_KINDS } from "./review";
 
@@ -11,7 +12,7 @@ export const IncidentDetailResponse = z.object({
   incident: IncidentListItem.extend({
     revision: z.number(),
     passage: z.enum(["total", "partial", "none", "undetermined"]),
-    accessibility: z.enum(["affected", "not_affected", "undetermined"]),
+    accessibility: z.enum(ACCESSIBILITY),
     /** `incidents.summary` (textgen); null si todavía no se generó. */
     summary: z.string().nullable(),
     /** Texto `explain_priority` de la revisión vigente; null si todavía no se generó. */

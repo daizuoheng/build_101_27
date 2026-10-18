@@ -24,8 +24,8 @@ const judgement = {
       "How severe is the reported problem for people using the space? Judge only from the evidence; do not assume facts not stated or visible.",
     criteria: {
       low: "Limited impact; passage remains available.",
-      medium: "Partial obstruction or deterioration that makes use difficult.",
-      high: "Total blockage or evidence of significant risk to people.",
+      medium: "Partial obstruction, deterioration that makes use difficult, or a tripping or minor injury risk (e.g. broken sidewalk tiles).",
+      high: "Total blockage, or an immediate risk of serious injury (e.g. exposed electrical cables, an open manhole, a deep hole in the roadway, a structure about to fall).",
       undetermined: "Not enough context to judge impact.",
     },
   },
@@ -48,10 +48,11 @@ const judgement = {
   },
   accessibility: {
     instructions:
-      "Does the evidence show that an accessible route (ramp, curb cut, sidewalk, pedestrian crossing) is affected for people with reduced mobility?",
+      "Does the evidence show that an accessible route (ramp, curb cut, sidewalk, pedestrian crossing) is obstructed for people with reduced mobility, such as wheelchair users? Judge the walking route itself, not objects or litter beside it.",
     criteria: {
-      affected: "An accessible route is blocked or unusable.",
-      not_affected: "Accessible routes are not affected.",
+      affected: "The accessible route cannot be used: a wheelchair could not get through and would have to go around it on the roadway.",
+      partial: "The accessible route is narrowed or damaged but can still be used with difficulty (e.g. bags or debris on part of the sidewalk, loose or raised tiles).",
+      not_affected: "Accessible routes are clear, or the problem is beside them (curb, grass strip, roadway) without obstructing them.",
       undetermined: "Cannot tell from the evidence.",
     },
   },
@@ -199,7 +200,7 @@ export const policies = {
   },
   priority: {
     high: { severity: ["high"], active_hazard: true, passage: ["total"], accessibility: ["affected"] },
-    medium: { severity: ["medium"] },
+    medium: { severity: ["medium"], accessibility: ["partial"] },
     promote_low_to_medium_after_hours: 48,
   },
   planning: { window_hours: 24, weight_hours: 2, cap_hours: 12, replan_interval_min: 5, busy_retry_sec: 10 },
@@ -262,7 +263,7 @@ export const policies = {
       unexplained_band: "sin desglose registrado (puede ser un ajuste del operador)",
       severity: { low: "baja", medium: "media", high: "alta", undetermined: "sin determinar" },
       passage: { total: "bloqueado", partial: "parcialmente obstruido", none: "libre", undetermined: "sin determinar" },
-      accessibility: { affected: "afectada", not_affected: "no afectada", undetermined: "sin determinar" },
+      accessibility: { affected: "afectada", partial: "parcialmente afectada", not_affected: "no afectada", undetermined: "sin determinar" },
       active_hazard: { true: "hay peligro activo", false: "sin peligro activo" },
       priority_band: { high: "alta", medium: "media", low: "baja", unknown: "sin determinar" },
       priority_rule: {
@@ -271,6 +272,7 @@ export const policies = {
         passage_blocked: "paso bloqueado",
         accessibility_affected: "accesibilidad afectada",
         severity_medium: "severidad media",
+        accessibility_partial: "accesibilidad parcialmente afectada",
         promoted_by_age: "antigüedad sin atender",
         band_override: "ajuste manual del operador",
       },

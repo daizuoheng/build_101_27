@@ -25,7 +25,7 @@ export async function buildSnapshot(db: Db, territoryId: string, now: Date): Pro
     id: string; revision: number; priority_band: PriorityBand; priority_breakdown: { band_override?: PriorityBand } | null; active_hazard: boolean;
     created_at: Date; dispatch_blocked: boolean; problem_type_id: string | null; area_id: string | null; lon: number; lat: number;
     severity: "low" | "medium" | "high" | "undetermined"; passage: "total" | "partial" | "none" | "undetermined";
-    accessibility: "affected" | "not_affected" | "undetermined"; sources_in_window: number; required: string[];
+    accessibility: "affected" | "partial" | "not_affected" | "undetermined"; sources_in_window: number; required: string[];
   }>(
     `select i.id, i.revision, i.priority_band, i.priority_breakdown, i.active_hazard, i.created_at, i.dispatch_blocked, i.problem_type_id,
        i.area_id, st_x(i.location::geometry) as lon, st_y(i.location::geometry) as lat, i.severity, i.passage, i.accessibility,

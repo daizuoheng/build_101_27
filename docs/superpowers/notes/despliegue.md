@@ -176,6 +176,10 @@ unset DATABASE_URL
 
 ## Seeds después de un merge
 
+**Accesibilidad parcial (migración 0009):** las políticas activas en la base no toman el cambio solas. Hasta correr
+`pnpm cli policy-upgrade --kind evaluation,priority,textgen`, Jev ya puede devolver `partial` (las opciones salen del
+código) pero sin su criterio, la prioridad no la sube a media y los textos muestran el código crudo.
+
 Las migraciones corren solas en el pre-deploy; los seeds no. Si el merge tocó `seeds/`, después del deploy, con
 `DATABASE_URL` de Supabase como en el paso 2:
 
