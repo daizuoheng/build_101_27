@@ -10,6 +10,7 @@
 //    descuenta antes de pasar al siguiente incidente y el costo se recalcula en cada paso.
 
 import {
+  MOBILE_UNIT_KIND,
   PENDING_REASONS,
   PRIORITY_BANDS,
   type BuildPlan,
@@ -92,8 +93,11 @@ const hasAll = (unit: PlanUnit, required: string[]) => required.every((c) => uni
  */
 function staticFeasibility(i: PlanIncident, snapshot: PlanSnapshot, policy: PlanPolicy, now: Date): StaticFeasibility {
   const strategy = (i.problemTypeId && snapshot.strategies[i.problemTypeId]) || snapshot.defaultStrategy;
-  const capable = snapshot.units.filter((u) => hasAll(u, i.requiredCapabilities));
-  if (capable.length === 0) return { strategy, terminalReasons: ["no_capable_unit"], pool: [], staticFailures: [], zoneNoOwner: false };
+  const withCapabilities = snapshot.units.filter((u) => hasAll(u, i.requiredCapabilities));
+  if (withCapabilities.length === 0) return { strategy, terminalReasons: ["no_capable_unit"], pool: [], staticFailures: [], zoneNoOwner: false };
+  // La familia móvil son solo unidades móviles: una oficina de zona con posición no compite por distancia.
+  const capable = strategy === "nearest_mobile" ? withCapabilities.filter((u) => u.kind === MOBILE_UNIT_KIND) : withCapabilities;
+  if (capable.length === 0) return { strategy, terminalReasons: ["no_mobile_unit"], pool: [], staticFailures: [], zoneNoOwner: false };
   if (strategy === "manual") return { strategy, terminalReasons: ["manual_strategy"], pool: [], staticFailures: [], zoneNoOwner: false };
 
   const staticFailures: PendingReason[] = [];

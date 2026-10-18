@@ -15,6 +15,7 @@ export const PENDING_REASONS = [
   "dispatch_blocked", // revisión abierta sobre el incidente
   "manual_strategy", // la política del tipo exige asignación manual
   "no_capable_unit", // ninguna unidad del territorio tiene las capacidades requeridas
+  "no_mobile_unit", // estrategia móvil: hay unidades capaces, pero ninguna es móvil
   "no_capacity", // hay unidades capaces pero sin capacidad libre
   "stale_position", // unidades móviles capaces con posición vencida
   "out_of_radius", // unidades móviles capaces fuera de distancia/radio
@@ -43,6 +44,9 @@ export type PlanIncident = {
   location: { lon: number; lat: number };
   areaId: string | null;
 };
+
+/** `unit_kind` de la familia móvil: la estrategia `nearest_mobile` solo considera estas unidades. */
+export const MOBILE_UNIT_KIND = "mobile_crew";
 
 export type PlanUnit = {
   id: string;

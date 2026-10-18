@@ -26,12 +26,20 @@ export async function getInternalSession(): Promise<InternalSession | null> {
 
 const unauthorized = () => new DomainError("unauthorized", 401, "Iniciá sesión.");
 
-/** Operador del territorio pedido. La identidad sale de la sesión del servidor, nunca del cliente. */
-export async function requireOperator(territoryId: string): Promise<InternalSession> {
+/**
+ * Sesión de operador. Va antes de buscar el recurso pedido: sin sesión 401 y con otro rol 403, exista o no el recurso.
+ * La identidad sale de la sesión del servidor, nunca del cliente.
+ */
+export async function requireOperatorSession(): Promise<InternalSession> {
   const s = await getInternalSession();
   if (!s) throw unauthorized();
-  if (s.role !== "operator" || s.territoryId !== territoryId) throw forbidden();
+  if (s.role !== "operator") throw forbidden();
   return s;
+}
+
+/** El operador de la sesión pertenece al territorio del recurso. */
+export function requireOperator(s: InternalSession, territoryId: string): void {
+  if (s.territoryId !== territoryId) throw forbidden();
 }
 
 /** Usuario de la unidad dueña del recurso. */

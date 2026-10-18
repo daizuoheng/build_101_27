@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { IncidentListItem, IncidentListResponse } from "@/shared/contracts/incident";
 import { HttpError, api, errorMessage } from "@/app/_components/http";
@@ -20,20 +20,30 @@ const REFRESH_MS = 10000;
 type Filters = { areaId: string; problemType: string; priorityBand: string; status: string; sort: "priority" | "recent" | "reports" };
 const EMPTY: Filters = { areaId: "", problemType: "", priorityBand: "", status: "", sort: "priority" };
 
-const ACTIVE = new Set<IncidentListItem["status"]>(["open", "assigned", "in_progress"]);
+/** Medianoches locales de hoy y de ayer: «resueltos hoy/ayer» se cuentan en el calendario del operador. */
+function localDays(): { dayStart: string; yesterdayStart: string } {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return { dayStart: today.toISOString(), yesterdayStart: yesterday.toISOString() };
+}
 
-/** Contadores del encabezado sobre el universo sin filtros (ALCANCE §7: pendientes, por revisar y resueltos). */
-function summarize(all: IncidentListItem[], now: number) {
-  const day = (offset: number) => new Date(now - offset * 86_400_000).toDateString();
-  const resolvedOn = (d: string) => all.filter((i) => i.status === "resolved" && new Date(i.updatedAt).toDateString() === d).length;
-  const active = all.filter((i) => ACTIVE.has(i.status));
-  return {
-    active: active.length,
-    activeHigh: active.filter((i) => i.priorityBand === "high").length,
-    review: all.filter((i) => i.openReviewKinds.length > 0).length,
-    resolvedToday: resolvedOn(day(0)),
-    resolvedYesterday: resolvedOn(day(1)),
-  };
+/** Lugar del mapa en la barra lateral. La barra se transmite dentro de un Suspense y puede montarse después del tablero. */
+const findMapSlot = () => document.getElementById("ops-sidebar-map");
+function subscribeMapSlot(cb: () => void) {
+  if (findMapSlot()) return () => {};
+  // Solo hasta que aparece: después no se sigue mirando cada cambio del DOM.
+  const obs = new MutationObserver(() => {
+    if (!findMapSlot()) return;
+    obs.disconnect();
+    cb();
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  return () => obs.disconnect();
+}
+function useSidebarMapSlot(): HTMLElement | null {
+  return useSyncExternalStore(subscribeMapSlot, findMapSlot, () => null);
 }
 
 const DESKTOP = "(min-width: 1024px)";
@@ -52,47 +62,45 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
   const [search, setSearch] = useState("");
   const [showMap, setShowMap] = useState(false);
   const [data, setData] = useState<IncidentListResponse | null>(null);
-  const [all, setAll] = useState<IncidentListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
-  const [mapSlot, setMapSlot] = useState<HTMLElement | null>(null);
+  const mapSlot = useSidebarMapSlot();
   const desktop = useDesktop();
   const router = useRouter();
-
-  useEffect(() => {
-    const t = setTimeout(() => setMapSlot(document.getElementById("ops-sidebar-map")), 0);
-    return () => clearTimeout(t);
-  }, []);
+  // Solo la última carga pedida escribe el estado: una respuesta lenta de un pedido anterior no pisa a una más nueva.
+  const latest = useRef(0);
 
   const filtered = Object.entries(filters).some(([k, v]) => k !== "sort" && v);
 
-  const load = useCallback(async () => {
-    const qs = new URLSearchParams({ territory: territorySlug, sort: filters.sort });
+  const load = useCallback(async (signal: AbortSignal) => {
+    const id = ++latest.current;
+    const stale = () => signal.aborted || id !== latest.current;
+    const qs = new URLSearchParams({ territory: territorySlug, sort: filters.sort, ...localDays() });
     for (const k of ["areaId", "problemType", "priorityBand", "status"] as const) if (filters[k]) qs.set(k, filters[k]);
     try {
-      const [d, base] = await Promise.all([
-        api<IncidentListResponse>(`/api/operacion/incidents?${qs}`),
-        // Los contadores no dependen de los filtros: sin filtros se reutiliza la misma respuesta.
-        filtered ? api<IncidentListResponse>(`/api/operacion/incidents?${new URLSearchParams({ territory: territorySlug })}`) : null,
-      ]);
+      const d = await api<IncidentListResponse>(`/api/operacion/incidents?${qs}`, { signal });
+      if (stale()) return;
       setData(d);
-      setAll((base ?? d).incidents);
       setError(null);
       setUpdatedAt(Date.now());
     } catch (err) {
+      if (stale()) return;
       if (err instanceof HttpError && err.status === 401) {
         router.push(`/login?next=${encodeURIComponent(`/operacion?territory=${territorySlug}`)}`);
         return;
       }
       setError(errorMessage(err));
     }
-  }, [territorySlug, filters, filtered, router]);
+  }, [territorySlug, filters, router]);
 
   useEffect(() => {
-    const first = setTimeout(load, 0);
-    const t = setInterval(load, REFRESH_MS);
+    const ctrl = new AbortController();
+    const run = () => void load(ctrl.signal);
+    const first = setTimeout(run, 0);
+    const t = setInterval(run, REFRESH_MS);
     return () => {
+      ctrl.abort();
       clearTimeout(first);
       clearInterval(t);
     };
@@ -106,7 +114,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     if (!term) return list;
     return list.filter((i) => [i.title, i.locationText, i.area?.name, i.problemType?.name, shortCode(i.id)].some((s) => s?.toLocaleLowerCase("es").includes(term)));
   }, [data, term]);
-  const kpi = all && updatedAt ? summarize(all, updatedAt) : null;
+  const kpi = data?.summary ?? null;
   const total = data?.incidents.length ?? 0;
 
   const map = data && (

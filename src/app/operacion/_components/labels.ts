@@ -68,7 +68,15 @@ export const PLAN_PENDING_REASON: Record<string, string> = {
   stale_position: "Ubicación de las cuadrillas desactualizada",
   out_of_radius: "Cuadrillas compatibles fuera de radio",
   no_zone_owner: "Sin responsable para esta zona y tipo",
+  no_mobile_unit: "Ninguna cuadrilla móvil compatible",
   ambiguous_zone_owner: "Varios responsables de zona con igual precedencia",
+  // Descartes del despacho al revalidar una propuesta (`plan_items.blocked_reason`, dispatch/apply-plan.ts).
+  obsolete_plan: "Sin enviar: hay un plan más nuevo o en cálculo",
+  revision_changed: "El incidente cambió: se recalcula el plan",
+  incident_closed: "El incidente ya está cerrado",
+  unit_unavailable: "La unidad propuesta ya no está disponible",
+  not_mobile_unit: "La unidad propuesta no es móvil",
+  unknown_type: "Tipo de problema sin determinar",
 };
 
 export const PLAN_PROPOSAL_REASON: Record<string, string> = {

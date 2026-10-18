@@ -10,6 +10,7 @@ import { withTx } from "../db/tx";
 import { notFound } from "../errors";
 import { appendEvent } from "../events/append";
 import { enqueue } from "../jobs/queue";
+import { MOBILE_UNIT_KIND } from "@/shared/contracts/plan";
 
 /** Motivo por el que una propuesta no se convirtió en orden (se guarda en `plan_items.blocked_reason`). */
 export type SkipReason =
@@ -22,6 +23,7 @@ export type SkipReason =
   | "no_capacity"
   | "unknown_type"
   | "no_capable_unit"
+  | "not_mobile_unit" // la estrategia pasó a `nearest_mobile` y la unidad propuesta no es móvil
   | "manual_strategy"
   | "stale_position"
   | "out_of_radius"
@@ -55,6 +57,7 @@ export const applyPlan: ApplyPlan = async (pool, planRunId) => {
   // Las propuestas obsoletas no se envían: solo se ejecuta el último plan del territorio. Atajo antes del loop;
   // `applyOne` lo vuelve a verificar dentro de cada transacción por si otro plan se confirma a mitad de camino.
   if (!(await isLatestRun(pool, run))) {
+    await markObsolete(pool, items);
     return { created, skipped: items.map((i) => ({ incidentId: i.incidentId, reason: "obsolete_plan" })), stoppedForReplan: false };
   }
 
@@ -63,19 +66,36 @@ export const applyPlan: ApplyPlan = async (pool, planRunId) => {
     const out = await withTx((c) => applyOne(c, run, item, policy), pool);
     if (out.kind === "obsolete") {
       // Un plan más nuevo se confirmó durante el despacho: lo que falta de este plan ya no se envía.
+      await markObsolete(pool, items.slice(idx + 1));
       skipped.push(...items.slice(idx).map((i) => ({ incidentId: i.incidentId, reason: "obsolete_plan" })));
       return { created, skipped, stoppedForReplan: false };
     }
     if (out.kind === "created") created.push(out.assignmentId);
     else if (out.kind === "skipped") skipped.push({ incidentId: item.incidentId, reason: out.reason });
     else if (out.kind === "replan") {
-      skipped.push({ incidentId: item.incidentId, reason: "revision_changed" });
+      // Primero el replan: si falla, el reintento del job todavía encuentra las propuestas y lo vuelve a pedir.
       await requestReplan(pool, run);
+      // La propuesta ya no vale y el resto de este plan ya no se envía: el plan nuevo las reemplaza. Quedan así a la
+      // vista, juntas, para que nadie las cuente como propuestas en camino mientras tanto.
+      await withTx(async (c) => {
+        await c.query("update plan_items set status = 'blocked', blocked_reason = 'revision_changed' where id = $1 and status = 'proposed'", [item.id]);
+        await markObsolete(c, items.slice(idx + 1));
+      }, pool);
+      skipped.push({ incidentId: item.incidentId, reason: "revision_changed" });
       return { created, skipped, stoppedForReplan: true };
     }
   }
   return { created, skipped, stoppedForReplan: false };
 };
+
+/** Propuestas de este plan que ya no se van a enviar. Solo las que siguen `proposed`: otro despacho pudo procesarlas. */
+async function markObsolete(db: Pool | PoolClient, items: Item[]) {
+  if (!items.length) return;
+  await db.query(
+    "update plan_items set status = 'obsolete', blocked_reason = 'obsolete_plan' where id = any($1::uuid[]) and status = 'proposed'",
+    [items.map((i) => i.id)],
+  );
+}
 
 /** Una propuesta, revalidada bajo bloqueo. Orden de bloqueo fijo (ítem → incidente → unidad) para no generar ciclos. */
 async function applyOne(c: PoolClient, run: Run, item: Item, policy: Versioned<DispatchPolicy>): Promise<Outcome> {
@@ -116,8 +136,8 @@ async function applyOne(c: PoolClient, run: Run, item: Item, policy: Versioned<D
   if (active.rows[0]) return block(c, item, "active_assignment");
 
   const unit = (
-    await c.query<{ territory_id: string; status: string; capacity: number; service_radius_m: number | null; fresh: boolean; distance_m: number | null }>(
-      `select u.territory_id, u.status, u.capacity, u.service_radius_m,
+    await c.query<{ territory_id: string; status: string; unit_kind: string; capacity: number; service_radius_m: number | null; fresh: boolean; distance_m: number | null }>(
+      `select u.territory_id, u.status, u.unit_kind, u.capacity, u.service_radius_m,
          (u.location is not null and u.location_updated_at is not null
            and u.location_updated_at >= now() - make_interval(mins => $3)) as fresh,
          case when u.location is null then null
@@ -147,6 +167,7 @@ async function applyOne(c: PoolClient, run: Run, item: Item, policy: Versioned<D
   const strategy = policy.config.strategies[inc.pt_slug] ?? policy.config.default_strategy;
   if (strategy === "manual") return block(c, item, "manual_strategy");
   if (strategy === "nearest_mobile") {
+    if (unit.unit_kind !== MOBILE_UNIT_KIND) return block(c, item, "not_mobile_unit");
     if (!unit.fresh || unit.distance_m === null) return block(c, item, "stale_position");
     const radius = Math.min(policy.config.max_distance_m, unit.service_radius_m ?? Number.POSITIVE_INFINITY);
     if (unit.distance_m > radius) return block(c, item, "out_of_radius");

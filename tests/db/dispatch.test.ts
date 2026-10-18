@@ -6,8 +6,11 @@ import { applyPlan } from "@/server/dispatch/apply-plan";
 import { performOperatorAction } from "@/server/dispatch/operator-action";
 import { transitionAssignment } from "@/server/dispatch/transitions";
 import { DomainError } from "@/server/errors";
+import { handlers } from "@/server/jobs/handlers";
+import { runOnce } from "@/server/jobs/worker-loop";
+import { requestReplan } from "@/server/planning/queries";
 import type { Actor } from "@/server/contracts";
-import { territoryId } from "./fakes";
+import { territoryId, testDeps } from "./fakes";
 import { resetDb, testDb } from "./setup";
 
 // Fixtures en la base de test. Montevideo, Centro; ~0.001° de longitud ≈ 91 m.
@@ -135,6 +138,23 @@ describe("despacho transaccional", () => {
     expect(res.skipped).toEqual([{ incidentId: a, reason: "stale_position" }]);
   });
 
+  it("nearest_mobile no despacha a una unidad que no es móvil aunque tenga posición vigente", async () => {
+    const oficina = await unit("oficina", ["limpieza"], { kind: "zone_office", capacity: 5 });
+    const a = await incident("basura_acumulada");
+    const res = await applyPlan(pool, await plan([{ incidentId: a, unitId: oficina }]));
+    expect(res.skipped).toEqual([{ incidentId: a, reason: "not_mobile_unit" }]);
+    expect(await activeOrders(oficina)).toBe(0);
+  });
+
+  it("el worker corre el job `plan` pedido por el operador y el `dispatch` que encola: la propuesta termina en orden", async () => {
+    const u = await unit("u1", ["limpieza"]);
+    const a = await incident("basura_acumulada");
+    await requestReplan(pool, { territoryId: t, actorId: OPERATOR.id! });
+    for (let i = 0; i < 10 && (await runOnce(testDeps(pool), handlers, { workerId: "w" })); i++);
+    expect(await one("select count(*)::int as n from jobs where kind in ('plan', 'dispatch') and status <> 'done'", [])).toEqual({ n: 0 });
+    expect(await one("select unit_id, status from assignments where incident_id = $1", [a])).toEqual({ unit_id: u, status: "offered" });
+  });
+
   it("estrategia de zona: despacha al responsable del área sin GPS y bloquea a quien no es responsable", async () => {
     // alumbrado usa `zone_owner` en la política de despacho del seed.
     const area = (await pool.query<{ id: string }>("select id from areas where territory_id = $1 order by name limit 1", [t])).rows[0].id;
@@ -175,6 +195,9 @@ describe("despacho transaccional", () => {
     expect(res).toEqual({ created: [], skipped: [{ incidentId: a, reason: "revision_changed" }], stoppedForReplan: true });
     expect(await activeOrders(u)).toBe(0);
     expect(await one("select count(*)::int as n from jobs where kind = 'plan' and entity_id = $1 and status = 'pending'", [t])).toEqual({ n: 1 });
+    // La propuesta descartada queda bloqueada a la vista y el resto del plan ya no se envía: el plan nuevo lo reemplaza.
+    const items = (await pool.query("select status, blocked_reason from plan_items where plan_run_id = $1 order by position", [run])).rows;
+    expect(items).toEqual([{ status: "blocked", blocked_reason: "revision_changed" }, { status: "obsolete", blocked_reason: "obsolete_plan" }]);
   });
 
   it("sin la revisión registrada en el plan, lo trata como obsoleto y replanifica", async () => {
@@ -198,6 +221,7 @@ describe("despacho transaccional", () => {
     const res = await applyPlan(pool, old);
     expect(res.created).toEqual([]);
     expect(res.skipped).toEqual([{ incidentId: b, reason: "obsolete_plan" }]);
+    expect(await one("select status, blocked_reason from plan_items where plan_run_id = $1", [old])).toEqual({ status: "obsolete", blocked_reason: "obsolete_plan" });
   });
 
   it("si se confirma un plan más nuevo a mitad del despacho, lo que falta del plan viejo no se envía", async () => {

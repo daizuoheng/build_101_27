@@ -274,6 +274,20 @@ describe("buildPlan", () => {
     expect(pendingFor(r, "i-3")?.reasons).toEqual(["no_capacity"]);
   });
 
+  it("nearest_mobile solo compite entre unidades móviles: una oficina de zona con posición vigente no recibe la propuesta", () => {
+    const oficina = unit("u-oficina", { kind: "zone_office", capacity: 5 });
+    const solo = buildPlan(snapshot({ incidents: [incident("basura")], units: [oficina] }), policy, NOW);
+    expect(proposalFor(solo, "basura")).toBeNull();
+    expect(pendingFor(solo, "basura")?.reasons).toEqual(["no_mobile_unit"]);
+
+    const conMovil = buildPlan(
+      snapshot({ incidents: [incident("basura")], units: [oficina, unit("u-movil", { location: P.cerca(P.centro, 0.01) })] }),
+      policy,
+      NOW,
+    );
+    expect(proposalFor(conMovil, "basura")).toMatchObject({ unitId: "u-movil" });
+  });
+
   it("entre móviles con igual costo de oportunidad elige la más cercana", () => {
     const r = buildPlan(
       snapshot({

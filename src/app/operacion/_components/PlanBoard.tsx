@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { IncidentListResponse } from "@/shared/contracts/incident";
 import type { PlanItemView, PlanResponse } from "@/shared/contracts/plan";
 import { HttpError, api, errorMessage } from "@/app/_components/http";
@@ -13,6 +13,41 @@ import { FilterSelect, KpiCard, OpsHeader, PriorityBadge, SearchBox } from "./Op
 
 const REFRESH_MS = 10000;
 const EMPTY_VIEW = { band: "", area: "", status: "", type: "" };
+
+type ItemState = { kind: "assigned" | "proposed" | "closed" | "pending"; label: string; reasons: string[] };
+
+/**
+ * Situación de un ítem del plan para la vista. Tiene unidad si hay orden activa o propuesta todavía sin enviar; un
+ * incidente resuelto o archivado ya no espera cuadrilla. El resto sigue pendiente hasta el próximo plan: un ítem
+ * `blocked` u `obsolete` conserva la unidad propuesta aunque el despacho la haya descartado, y uno `executed` cuya
+ * orden se cerró (rechazada, cancelada) sin resolver el incidente tampoco tiene unidad.
+ */
+function itemState(i: PlanItemView): ItemState {
+  if (i.assignedUnit) {
+    // Los motivos explican la unidad propuesta: si la orden activa es de otra (asignación manual), no aplican.
+    const reasons = i.assignedUnit.id === i.proposedUnit?.id ? i.reasons : [];
+    return { kind: "assigned", label: `${i.assignedUnit.name} · orden ${ASSIGNMENT_STATUS[i.assignedUnit.status] ?? i.assignedUnit.status}`, reasons };
+  }
+  if (i.incident.status === "resolved" || i.incident.status === "archived") {
+    return { kind: "closed", label: `Incidente ${STATUS[i.incident.status].toLocaleLowerCase("es")}`, reasons: [] };
+  }
+  if (i.proposedUnit && i.status === "proposed") {
+    return { kind: "proposed", label: `${PLAN_ITEM_STATUS.proposed}: ${i.proposedUnit.name}`, reasons: i.reasons };
+  }
+  // Los motivos de la propuesta original no explican por qué sigue pendiente: si el despacho la descartó, el motivo
+  // es el del descarte; si la orden enviada ya se cerró, no hay otro.
+  if (i.status === "executed" && i.proposedUnit) {
+    return { kind: "pending", label: `${PLAN_ITEM_STATUS.blocked} · orden a ${i.proposedUnit.name} cerrada`, reasons: [] };
+  }
+  return { kind: "pending", label: PLAN_ITEM_STATUS.blocked, reasons: i.proposedUnit && i.blockedReason ? [i.blockedReason] : i.reasons };
+}
+
+const ITEM_STYLE: Record<ItemState["kind"], { tone: string; icon: "crew" | "arrow" | "check" | "alert" }> = {
+  assigned: { tone: "text-accent", icon: "crew" },
+  proposed: { tone: "text-[var(--success)]", icon: "arrow" },
+  closed: { tone: "text-ink-2", icon: "check" },
+  pending: { tone: "text-danger", icon: "alert" },
+};
 
 /** Opciones de filtro del territorio. El plan expone área y tipo por nombre, así que se filtra por nombre. */
 type Catalog = { areaLabel: string; areas: string[]; problemTypes: string[] };
@@ -28,6 +63,8 @@ export function PlanBoard({ territorySlug }: { territorySlug: string }) {
   const [view, setViewState] = useState(EMPTY_VIEW);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const router = useRouter();
+  // Solo la última carga pedida escribe el estado: una respuesta lenta de un pedido anterior no pisa a una más nueva.
+  const latest = useRef(0);
 
   const onAuthError = useCallback(
     (err: unknown) => {
@@ -40,20 +77,30 @@ export function PlanBoard({ territorySlug }: { territorySlug: string }) {
     [router, territorySlug],
   );
 
-  const load = useCallback(async () => {
-    try {
-      setData(await api<PlanResponse>(`/api/operacion/plan?${new URLSearchParams({ territory: territorySlug })}`));
-      setError(null);
-      setUpdatedAt(Date.now());
-    } catch (err) {
-      if (!onAuthError(err)) setError(errorMessage(err));
-    }
-  }, [territorySlug, onAuthError]);
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      const id = ++latest.current;
+      const stale = () => signal.aborted || id !== latest.current;
+      try {
+        const d = await api<PlanResponse>(`/api/operacion/plan?${new URLSearchParams({ territory: territorySlug })}`, { signal });
+        if (stale()) return;
+        setData(d);
+        setError(null);
+        setUpdatedAt(Date.now());
+      } catch (err) {
+        if (!stale() && !onAuthError(err)) setError(errorMessage(err));
+      }
+    },
+    [territorySlug, onAuthError],
+  );
 
   useEffect(() => {
-    const first = setTimeout(load, 0);
-    const t = setInterval(load, REFRESH_MS);
+    const ctrl = new AbortController();
+    const run = () => void load(ctrl.signal);
+    const first = setTimeout(run, 0);
+    const t = setInterval(run, REFRESH_MS);
     return () => {
+      ctrl.abort();
       clearTimeout(first);
       clearInterval(t);
     };
@@ -92,9 +139,10 @@ export function PlanBoard({ territorySlug }: { territorySlug: string }) {
 
   const run = data?.planRun ?? null;
   const items = data?.items ?? [];
-  const withUnit = items.filter((i) => i.assignedUnit || i.proposedUnit).length;
-  const pending = items.filter((i) => !i.assignedUnit && !i.proposedUnit).length;
-  const high = items.filter((i) => i.incident.priorityBand === "high" || i.incident.activeHazard).length;
+  const states = items.map(itemState);
+  const withUnit = states.filter((st) => st.kind === "assigned" || st.kind === "proposed").length;
+  const pending = states.filter((st) => st.kind === "pending").length;
+  const high = items.filter((i, k) => states[k].kind !== "closed" && (i.incident.priorityBand === "high" || i.incident.activeHazard)).length;
 
   // Filtros de visualización: proyectan el plan completo, nunca cambian lo que planifica el backend (ARQUITECTURA §Planificador).
   const asOptions = (values: string[] | undefined) => (values ?? []).map((v) => [v, areaDisplay(v) ?? v] as [string, string]);
@@ -186,9 +234,9 @@ export function PlanBoard({ territorySlug }: { territorySlug: string }) {
 }
 
 function PlanRow({ item }: { item: PlanItemView }) {
-  const pending = !item.assignedUnit && !item.proposedUnit;
-  const reasonLabels = item.reasons.map((r) => PLAN_PROPOSAL_REASON[r] ?? PLAN_PENDING_REASON[r] ?? r);
-  const statusClass = item.assignedUnit ? "text-accent" : item.proposedUnit ? "text-[var(--success)]" : "text-danger";
+  const state = itemState(item);
+  const style = ITEM_STYLE[state.kind];
+  const reasonLabels = state.reasons.map((r) => PLAN_PROPOSAL_REASON[r] ?? PLAN_PENDING_REASON[r] ?? r);
   return (
     <li className="ops-item px-4 py-3.5">
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
@@ -211,18 +259,14 @@ function PlanRow({ item }: { item: PlanItemView }) {
       </p>
 
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2">
-        <span className={`flex flex-wrap items-center gap-1.5 font-medium ${statusClass}`}>
-          <Icon name={item.assignedUnit ? "crew" : item.proposedUnit ? "arrow" : "alert"} size={18} />
-          {item.assignedUnit
-            ? `${item.assignedUnit.name} · orden ${ASSIGNMENT_STATUS[item.assignedUnit.status] ?? item.assignedUnit.status}`
-            : item.proposedUnit
-              ? `${PLAN_ITEM_STATUS[item.status] ?? item.status}: ${item.proposedUnit.name}`
-              : PLAN_ITEM_STATUS.blocked}
+        <span className={`flex flex-wrap items-center gap-1.5 font-medium ${style.tone}`}>
+          <Icon name={style.icon} size={18} />
+          {state.label}
         </span>
         <span className="font-medium text-ink-2">{item.incident.problemType ?? "Tipo sin determinar"}</span>
       </div>
       {(item.explanation || reasonLabels.length > 0) && (
-        <p className={`mt-1 ${pending ? "text-warn" : "text-ink-2"}`}>{item.explanation ?? `Motivo: ${reasonLabels.join(" · ")}`}</p>
+        <p className={`mt-1 ${state.kind === "pending" ? "text-warn" : "text-ink-2"}`}>{item.explanation ?? `Motivo: ${reasonLabels.join(" · ")}`}</p>
       )}
     </li>
   );

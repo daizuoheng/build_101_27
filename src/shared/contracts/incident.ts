@@ -30,6 +30,9 @@ export const IncidentListQuery = z.object({
   priorityBand: z.enum(["high", "medium", "low", "unknown"]).optional(),
   status: z.enum(["open", "assigned", "in_progress", "resolved", "archived"]).optional(),
   sort: z.enum(["priority", "recent", "reports"]).default("priority"),
+  /** Inicio de hoy y de ayer en el calendario local del operador (con DST un día no siempre dura 24 h). Piden `summary`. */
+  dayStart: z.string().datetime({ offset: true }).optional(),
+  yesterdayStart: z.string().datetime({ offset: true }).optional(),
 });
 
 // --- Correcciones del operador (overrides por campo). Dominio en Núcleo (src/server/incidents/overrides.ts). ---
@@ -71,6 +74,13 @@ export const IncidentListResponse = z.object({
     problemTypes: z.array(z.object({ slug: z.string(), name: z.string() })),
   }),
   incidents: z.array(IncidentListItem),
+  /**
+   * Contadores del encabezado sobre todo el territorio: no dependen de los filtros ni del límite de la lista.
+   * Solo si se pidieron con `dayStart` y `yesterdayStart`; si no, null.
+   */
+  summary: z
+    .object({ active: z.number(), activeHigh: z.number(), review: z.number(), resolvedToday: z.number(), resolvedYesterday: z.number() })
+    .nullable(),
   generatedAt: z.string(),
 });
 export type IncidentListResponse = z.infer<typeof IncidentListResponse>;
