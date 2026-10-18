@@ -367,13 +367,9 @@ function ReviewCard({
         onDone(item, outcomeUnknown.current ? `Ya estaba resuelto (puede que tu intento anterior se haya aplicado): ${item.title}` : `Otro operador ya lo resolvió: ${item.title}`);
         return;
       }
-      // Solo el 404 de la API (`not_found`: el ítem no existe o es de otro territorio) saca la tarjeta. Un 404 sin ese
-      // código (ruta inexistente, proxy) es un error más y el operador puede reintentar.
-      if (http?.status === 404 && http.code === "not_found") {
-        attempt.current = null;
-        onDone(item, `Este ítem ya no está en la cola: ${item.title}`);
-        return;
-      }
+      // Un 404 no saca la tarjeta: `not_found` también lo dan el incidente o el reporte de la acción (p. ej. asociar a
+      // un incidente que ya no existe), y un 404 sin código puede ser una ruta o un proxy. Se muestra el mensaje y se
+      // recarga la cola: si el ítem de verdad ya no está, la recarga lo saca.
       if (unknownOutcome) outcomeUnknown.current = true;
       else {
         // Una respuesta definitiva que no es `review_item_closed` muestra que el ítem seguía abierto: ningún intento
@@ -386,8 +382,8 @@ function ReviewCard({
           ? `${errorMessage(err)} Podés reintentar «${REVIEW_ACTION[resolution.action]}»: se reenvía igual que antes (con la misma nota) y no se aplica dos veces.`
           : errorMessage(err),
       );
-      // Un 409 de otro tipo (el incidente cambió o se cerró): la cola se recarga para mostrar el estado actual.
-      if (http?.status === 409) onStale();
+      // Un 409 de otro tipo (el incidente cambió o se cerró) o un 404: la cola se recarga para mostrar el estado actual.
+      if (http?.status === 409 || http?.status === 404) onStale();
     } finally {
       setBusy(false);
     }
