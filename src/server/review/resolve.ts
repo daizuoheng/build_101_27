@@ -175,7 +175,10 @@ async function retry(c: Db, item: Item, actor: Actor): Promise<Record<string, un
 async function apply(c: Db, item: Item, actor: Actor, resolution: ResolveAction, note?: string): Promise<Record<string, unknown>> {
   switch (resolution.action) {
     case "link": {
-      if (!candidatesOf(item).includes(resolution.incidentId)) throw badRequest("not_a_candidate", "Ese incidente no está entre los candidatos del reporte.");
+      // Con candidatos (agrupación dudosa), el destino es uno de ellos. Sin candidatos (un reporte que el operador
+      // desasoció, `unlinkReport`), cualquier incidente abierto del territorio: lo valida `linkReport`.
+      const candidates = candidatesOf(item);
+      if (candidates.length && !candidates.includes(resolution.incidentId)) throw badRequest("not_a_candidate", "Ese incidente no está entre los candidatos del reporte.");
       await requireUnlinked(c, item.entity_id);
       const { linkId } = await linkReport(c, { reportId: item.entity_id, incidentId: resolution.incidentId, origin: "manual", actor });
       await groupingDecided(c, item, resolution.incidentId, actor);

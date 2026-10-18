@@ -12,7 +12,7 @@ import { withTx } from "@/server/db/tx";
 import { transitionAssignment } from "@/server/dispatch/transitions";
 import { DomainError } from "@/server/errors";
 import { locatePoint } from "@/server/geo/locate";
-import { linkReport } from "@/server/incidents/links";
+import { linkReport, unlinkReport } from "@/server/incidents/links";
 import { getEvaluation } from "@/server/intake/evaluations";
 import { indicatesActiveHazard } from "@/server/intake/branches";
 import { handlers } from "@/server/jobs/handlers";
@@ -152,6 +152,20 @@ describe("resolución de ítems de revisión", () => {
     const other = await insertIncident("bache", { at: east(800) });
     await expectDomainError(resolve(itemId, { action: "link", incidentId: other }), 400, "not_a_candidate");
     expect((await itemOf(itemId)).status).toBe("open");
+  });
+
+  it("un uncertain_duplicate de un reporte desasociado (sin candidatos) se puede asociar a otro incidente abierto", async () => {
+    const { a, b, reportId, itemId } = await uncertainDuplicate();
+    await resolve(itemId, { action: "link", incidentId: a });
+    await withTx((c) => unlinkReport(c, { reportId, reason: "no era este", actor: OPERATOR }), pool);
+    const again = await one<{ id: string; evidence_refs: Record<string, unknown>[] }>(
+      "select id, evidence_refs from review_items where kind = 'uncertain_duplicate' and entity_id = $1 and status = 'open'",
+      [reportId],
+    );
+    expect(again.evidence_refs.some((r) => Array.isArray(r.candidate_incident_ids))).toBe(false); // así lo abre unlinkReport
+
+    expect(await resolve(again.id, { action: "link", incidentId: b })).toEqual({ reviewItemId: again.id, status: "resolved" });
+    expect((await one<{ incident_id: string }>("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).incident_id).toBe(b);
   });
 
   it("create_incident sobre un uncertain_duplicate crea el incidente que daría processReport", async () => {
