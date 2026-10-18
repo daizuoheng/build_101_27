@@ -4,14 +4,14 @@
 
 **Tesis:** el triage de avisos ciudadanos no escala con personas (miles por día) y no se resuelve con reglas fijas (texto libre, fotos, el mismo problema contado de diez maneras). La IA interpreta y agrupa; las reglas, explícitas y auditables, ordenan y asignan.
 
-Formato build 101: **3:00 en total para pitch y demo** + 3 min de preguntas.
+Formato build 101: **4:00 en total para pitch y demo** + preguntas del jurado (3 min según la consigna; confirmar si eso también cambió).
 Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee.
 
 ## La demo: tres pantallas, nadie toca la del medio
 
 | Rol | Pantalla | Quién |
 |---|---|---|
-| Vecino | `/reportar/montevideo` en un celular, proyectado | Alguien del equipo |
+| Vecino (y el segundo vecino del acto 4, con una sesión nueva) | `/reportar/montevideo` en un celular, proyectado | Alguien del equipo |
 | Intendencia | `/operacion` (consola), proyectada | **Nadie.** Se actualiza sola cada 3 s |
 | Cuadrilla | `/unidad` en otro celular, logueado como `unidad.cuadrilla-demo` | Alguien del equipo |
 | Narrador | — | Vos |
@@ -27,16 +27,17 @@ Ritmo de referencia: 150 palabras por minuto (2,5 por segundo). Las esperas son 
 | 1. El problema | ~31 s | — | 0:31 |
 | 2. Qué es | ~16 s | — | 0:47 |
 | 3. Acto 1 · El vecino avisa | ~10 s | ~20 s | 1:17 |
-| 4. Acto 2 · La Intendencia lo ve | ~12 s | ~3 s | 1:32 |
-| 5. Acto 3 · La cuadrilla recibe la orden | ~9 s | ~4 s | 1:45 |
-| 6. Por qué IA | ~26 s | — | 2:11 |
-| 7. Cierre | ~7 s | — | **~2:18** |
+| 4. Acto 2 · La Intendencia lo ve | ~16 s | ~6 s | 1:39 |
+| 5. Acto 3 · La cuadrilla recibe la orden | ~12 s | ~7 s | 1:58 |
+| 6. Acto 4 · Otro vecino avisa lo mismo | ~14 s | ~20 s | 2:32 |
+| 7. Por qué IA | ~21 s | — | 2:53 |
+| 8. Cierre | ~7 s | — | **~3:00** |
 
-Hablado medido: 284 palabras (~1:53). Quedan ~40 s de colchón, que el acto 1 puede comerse si la geocodificación o la red tardan. **Regla de corte en vivo:** si a las 2:15 no empezaste el bloque 6, decís solo "Lo medimos…" y vas al cierre.
+Hablado medido: 324 palabras (~2:10). Quedan ~60 s de colchón sobre los 4:00, que los actos 1 y 4 pueden comerse si la geocodificación o la red tardan. **Regla de corte en vivo:** si a las 3:15 no empezaste el bloque 7, decís solo "Lo medimos…" y vas al cierre.
 
 ---
 
-## 1. El problema, como proceso · ~31 s
+## 1. El problema, como proceso
 
 > Once de la noche. Un contenedor se prende fuego en una esquina. Lo ven diez vecinos, y llegan diez avisos, cada uno contado distinto.
 > Solo por contenedores quemados, Bomberos recibió unos cuarenta mil llamados en 2025. Y en Montevideo hay dos mil reclamos de basura por día.
@@ -44,12 +45,12 @@ Hablado medido: 284 palabras (~1:53). Quedan ~40 s de colchón, que el acto 1 pu
 
 *Las 33 horas son una cuenta ilustrativa (2.000 × 1 min), no un dato medido.*
 
-## 2. Qué es · ~15 s
+## 2. Qué es
 
 > Radar Urbano es un sistema de triage para intendencias y entes públicos. Entra cualquier aviso, como lo cuente el vecino, y sale un incidente priorizado y la orden a la cuadrilla correcta, sin que nadie toque nada.
 > Lo vemos en vivo.
 
-## 3. Acto 1 · El vecino avisa · ~13 s + ~20 s de espera
+## 3. Acto 1 · El vecino avisa
 
 *[Celular del vecino proyectado. Manda la foto del contenedor en llamas y pega: "se está prendiendo fuego el contenedor de la esquina"]*
 
@@ -61,34 +62,48 @@ Hablado medido: 284 palabras (~1:53). Quedan ~40 s de colchón, que el acto 1 pu
 
 *[Escribe "18 de Julio y Ejido", confirma el pin con «Sí, es ahí» y toca Enviar — sin narrar]*
 
-## 4. Acto 2 · La Intendencia lo ve, sin tocar nada · ~13 s + ~3 s de espera
+## 4. Acto 2 · La Intendencia lo ve, sin tocar nada
 
 *[Consola proyectada. Nadie la toca. El incidente aparece resaltado a los ~2 s]*
 
 > Esta es la consola de la Intendencia. Nadie la está tocando.
-> Ahí apareció: contenedor con fuego, peligro activo, prioridad alta. Con la foto y el relato del vecino como evidencia.
+> Ahí apareció: contenedor con fuego, peligro activo, prioridad alta.
 
-*[Opcional, si sobra tiempo: un toque en el incidente para abrir el detalle con la foto. Es mirar, no decidir]*
+*[Un toque en el incidente: se abre el detalle con la foto y el texto del vecino]*
 
-## 5. Acto 3 · La cuadrilla recibe la orden · ~11 s + ~4 s de espera
+> Lo abro solo para mirar la evidencia: la foto y lo que escribió el vecino. No hay nada que aprobar.
+
+## 5. Acto 3 · La cuadrilla recibe la orden
 
 *[Celular de la cuadrilla. Suena, vibra y aparece "Llegó una orden nueva"]*
 
 > Y a los segundos, a la cuadrilla le llega la orden. La que puede atender fuego, no la de limpieza. Nadie la asignó.
 
-*[La cuadrilla toca Aceptar]*
+*[La cuadrilla toca Aceptar. La consola muestra el cambio de estado sola]*
 
-## 6. Por qué IA, y cómo sabemos que funciona · ~26 s
+> Acepta, y la consola se entera sola.
+
+## 6. Acto 4 · Otro vecino avisa lo mismo
+
+*[Celular del vecino, sesión nueva. Pega: "el contenedor de 18 de Julio y Ejido está largando mucho humo, huele a plástico quemado", confirma el pin y envía]*
+
+> Ahora otro vecino avisa del mismo fuego, con otras palabras: no dice "fuego", dice "humo".
+
+*[Espera. Consola: el incidente pasa a 2 reportes. Celular de la cuadrilla: nada nuevo]*
+
+> En la consola sigue siendo un solo incidente, ahora con dos reportes. Y la cuadrilla no recibió una segunda orden.
+
+## 7. Por qué IA, y cómo sabemos que funciona
 
 > Con personas, esto no escala. Con reglas fijas, no se entiende, porque cada vecino lo cuenta distinto.
-> La IA interpreta y agrupa: si otros nueve vecinos avisan del mismo fuego, se suman a este incidente, y la cuadrilla no recibe diez órdenes.
+> Por eso la IA interpreta y agrupa, y las reglas ordenan y asignan.
 > Lo medimos con la API real: acertó las cinco decisiones de agrupación de nuestra prueba. Y cuando duda, lo manda a revisión humana.
 
-## 7. Cierre · ~8 s
+## 8. Cierre
 
 > Del aviso a la orden, de punta a punta. Diez avisos, un incidente, una cuadrilla. Eso es Radar Urbano.
 
-**Si hay que cortar tiempo, en este orden:** (1) "Y en Montevideo hay dos mil reclamos de basura por día" junto con la frase de las 33 horas, que depende de esa; (2) "Con la foto y el relato del vecino como evidencia"; (3) "Con personas, esto no escala…" (pasa a las preguntas).
+**Si hay que cortar tiempo, en este orden:** (1) "Acepta, y la consola se entera sola"; (2) el toque al detalle y su frase; (3) "Y en Montevideo hay dos mil reclamos de basura por día" junto con la frase de las 33 horas, que depende de esa. **El acto 4 no se corta:** es la prueba en vivo de lo que hace la IA.
 
 ---
 
@@ -107,7 +122,9 @@ Procedimiento completo y comandos: `docs/superpowers/notes/demo-en-vivo.md` (en 
 - **`SESSION_SECRET` de 32 caracteres o más**, si no el login da 500.
 - **Antes de subir:** correr `scripts/e2e-demo.mjs` para verificar, y después `reset-demo --yes` (el script deja el incidente resuelto).
 - **Aviso de emergencia:** con fuego activo el chat muestra el texto de `emergencyChannel` (`seeds/territory-montevideo.ts`), que hoy dice "consultá el canal de emergencias local de tu zona". Para la demo conviene algo concreto, como "llamá a Bomberos al 104 o al 911".
-- **Todo a un toque:** la foto en la galería del celular del vecino, los textos copiados para pegar.
+- **Todo a un toque:** la foto en la galería del celular del vecino, los dos textos copiados para pegar.
+- **Acto 4:** tener lista una segunda sesión de vecino (otra pestaña o ventana privada en el mismo celular). El texto ya trae la dirección para ahorrar un paso; igual va a pedir confirmar el pin. Probar en el ensayo que se agrupe (misma esquina, dentro de 30 m) y que no salga como evidencia insuficiente sin foto.
+- **Después del pitch:** si el jurado quiere probar otro problema, que la cuadrilla complete antes la orden del fuego (Iniciar → Completar), por si su capacidad es de una sola orden.
 - **Video de respaldo** grabado de los tres actos, por si falla la red.
 - **Ensayo:** dos pasadas completas con cronómetro y los tres roles.
 
@@ -125,9 +142,9 @@ Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta
 *Respaldo:* sin Jev no hay tipo, severidad, fuego activo ni agrupación; las reglas de prioridad y asignación no tienen hechos sobre los que operar.
 
 **2. "Probemos con un caso nuestro."** *(la rúbrica dice que pueden variar un caso — es la mejor oportunidad)*
-> Dale: contale el mismo fuego con tus palabras. *(Pasarle el celular del vecino con una sesión nueva.)*
+> Dale: contale un problema con tus palabras, el que quieras. *(Pasarle el celular del vecino con una sesión nueva.)*
 
-Lo que debería pasar, y conviene narrarlo: el reporte se suma al incidente que ya existe (la consola muestra 2 reportes) y **la cuadrilla no recibe una segunda orden**. Si prefieren otro problema (un bache, basura), se crea otro incidente y la orden va a la cuadrilla con esa capacidad. Si dicen algo vago ("hay un problema en mi barrio"), lo esperado es que repregunte: es correcto, decirlo. *Preparar:* sesión nueva lista en el celular del vecino; la dirección escrita (sin GPS en plan B).
+Lo que debería pasar, y conviene narrarlo: otro problema (un bache, basura) crea otro incidente y la orden va a la cuadrilla con esa capacidad; el mismo fuego contado de otra forma se suma al incidente y la cuadrilla no recibe otra orden. Antes, que la cuadrilla complete la orden del fuego. Si dicen algo vago ("hay un problema en mi barrio"), lo esperado es que repregunte: es correcto, decirlo. *Preparar:* sesión nueva lista en el celular del vecino; la dirección escrita (sin GPS en plan B).
 
 **3. "¿Cómo saben que funciona? Es una muestra muy chica."**
 > Es chica, y lo decimos así: es una prueba contra la API real, no un benchmark. Pero son casos difíciles a propósito. Distingue un contenedor prendido fuego de uno ya quemado. Cuando el texto dice fuego y la foto muestra un contenedor quemado, detecta la contradicción y lo manda a revisión. Y si alguien reporta fuego donde ayer hubo un contenedor quemado, no los junta: lo manda a revisión. En total, cinco de cinco decisiones de agrupación y dieciocho de dieciocho respuestas de clasificación, iguales en dos corridas.
