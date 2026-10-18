@@ -1,7 +1,8 @@
 import type { Pool } from "pg";
 import { withTx } from "../src/server/db/tx";
 import { appendEvent } from "../src/server/events/append";
-import { demoUnits } from "./demo-units";
+import { locatePoint } from "../src/server/geo/locate";
+import { DEMO_STAGE_UNIT, demoUnits } from "./demo-units";
 import { demoPasswords, seedDemoUsers } from "./demo-users";
 
 /**
@@ -56,14 +57,43 @@ export async function seedDemo(pool: Pool, territorySlug: string): Promise<{ uni
   }, pool);
 }
 
-/** Acción explícita y auditada: marca vigentes las posiciones SIMULADAS de las unidades de demo. */
-export async function refreshDemoPositions(pool: Pool, territorySlug: string): Promise<number> {
+/**
+ * Acción explícita y auditada: marca vigentes las posiciones SIMULADAS de las unidades de demo. Con `near`, antes
+ * mueve la cuadrilla de la demo (`DEMO_STAGE_UNIT`) a ese punto, que tiene que estar dentro de la cobertura.
+ * Con `stageOnly`, solo la cuadrilla de la demo queda vigente y las demás móviles vencen (`stale_position`), así
+ * ninguna más cercana le gana la orden del reporte en vivo. Las oficinas por zona no dependen de la posición.
+ */
+export async function refreshDemoPositions(
+  pool: Pool,
+  territorySlug: string,
+  opts: { near?: { lon: number; lat: number }; stageOnly?: boolean } = {},
+): Promise<number> {
   return withTx(async (c) => {
+    if (opts.stageOnly) {
+      await c.query(
+        `update response_units u set location_updated_at = null, updated_at = now()
+         from territories t where t.id = u.territory_id and t.slug = $1 and u.is_demo and u.slug <> $2`,
+        [territorySlug, DEMO_STAGE_UNIT],
+      );
+    }
+    if (opts.near) {
+      const { lon, lat } = opts.near;
+      if ((await locatePoint(c, lon, lat))?.territorySlug !== territorySlug) throw new Error(`(${lat}, ${lon}) está fuera de la cobertura de '${territorySlug}'`);
+      const moved = await c.query<{ id: string }>(
+        `update response_units u set location = st_setsrid(st_makepoint($2, $3), 4326)::geography
+         from territories t where t.id = u.territory_id and t.slug = $1 and u.is_demo and u.slug = $4
+         returning u.id`,
+        [territorySlug, lon, lat, DEMO_STAGE_UNIT],
+      );
+      if (!moved.rows[0]) throw new Error(`no existe la unidad '${DEMO_STAGE_UNIT}' en '${territorySlug}' (la crea seed-demo de montevideo)`);
+      await appendEvent(c, { entityType: "response_unit", entityId: moved.rows[0].id, kind: "demo_position_moved", actorType: "system", data: { simulated: true, lon, lat } });
+    }
     const { rows } = await c.query<{ id: string }>(
       `update response_units u set location_updated_at = now(), updated_at = now()
        from territories t where t.id = u.territory_id and t.slug = $1 and u.is_demo and u.location is not null
+         and (not $2 or u.slug = $3)
        returning u.id`,
-      [territorySlug],
+      [territorySlug, !!opts.stageOnly, DEMO_STAGE_UNIT],
     );
     for (const r of rows) {
       await appendEvent(c, { entityType: "response_unit", entityId: r.id, kind: "demo_position_refreshed", actorType: "system", data: { simulated: true } });

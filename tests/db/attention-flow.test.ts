@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { seedAll } from "../../seeds";
 import { refreshDemoPositions, seedDemo } from "../../seeds/demo";
+import { DEMO_STAGE_UNIT } from "../../seeds/demo-units";
 import type { JevCall } from "@/server/ai/jev/client";
 import { confirmedReport, drain, fakeAnswers, fakeComparison, fakeJev, territoryId } from "./fakes";
 import { resetDb, testDb } from "./setup";
@@ -78,5 +79,14 @@ describe("recorrido de atención: reporte → incidente → plan → orden", () 
     expect(after.rows.every((r) => r.proposals === 0)).toBe(true);
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'dispatch'")).n).toBe(dispatchBefore);
     expect((await one(pool, "select count(*)::int as n from jobs where status = 'failed'")).n).toBe(0);
+  });
+
+  it("demo en vivo: con --near la orden le llega a la cuadrilla de la demo aunque otra esté más cerca", async () => {
+    // La cuadrilla de la demo a ~1 km del reporte; las demás conservan sus posiciones pero vencidas.
+    await refreshDemoPositions(pool, "montevideo", { near: { lon: -56.19, lat: -34.9 }, stageOnly: true });
+    await confirmedReport(pool, t, "Hay un pozo grande en la esquina");
+    await drain(pool, fakeJev());
+    const a = await one(pool, "select a.status, u.slug from assignments a join response_units u on u.id = a.unit_id");
+    expect(a).toEqual({ status: "offered", slug: DEMO_STAGE_UNIT });
   });
 });

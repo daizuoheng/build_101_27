@@ -60,7 +60,7 @@ describe("job plan", () => {
     expect(v.band).toBe("medium"); // baja con más de 48 h: promovida al planificar, con la hora actual
     expect(v.requiredCapabilities).toEqual(["vialidad"]);
 
-    expect(snapshot.units).toHaveLength(4);
+    expect(snapshot.units).toHaveLength(5);
     const oficina = snapshot.units.find((u) => u.kind === "zone_office")!;
     expect(oficina.location).toBeNull();
     expect(oficina.zoneResponsibilities).toHaveLength(2);
