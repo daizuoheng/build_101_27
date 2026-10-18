@@ -7,6 +7,7 @@ import type { IncidentListResponse } from "@/shared/contracts/incident";
 import type { ResolveAction, ResolveBody, ReviewItemView, ReviewQueueResponse } from "@/shared/contracts/review";
 import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import { Icon } from "./Icons";
+import { newIdempotencyKey } from "./idempotency";
 import {
   REVIEW_ACTION, SEVERITY, age, incidentHref, linkTargets, relatedIncidentId, reviewKindLabel, reviewReasonText, shortCode,
   type ReviewActionName,
@@ -24,12 +25,6 @@ type ResolveResult = { reviewItemId: string; status: string; replayed: boolean }
 const QUEUE_HEADING_ID = "cola-revision";
 const cardTitleId = (itemId: string) => `revision-${itemId}`;
 
-/** Clave de idempotencia. `crypto.randomUUID` solo existe en contexto seguro (https o localhost); afuera, una equivalente. */
-function newIdempotencyKey(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  const b = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-}
 type Titles = ReadonlyMap<string, string>;
 
 const NEEDS_NOTE: ReadonlySet<ReviewActionName> = new Set(["dismiss", "set_severity", "set_type"]);
