@@ -111,14 +111,16 @@ Hablado medido: 324 palabras (~2:10). Quedan ~60 s de colchón sobre los 4:00, q
 
 Procedimiento completo y comandos: `docs/superpowers/notes/demo-en-vivo.md` (en `main`). Lo que importa para el escenario:
 
-- **Dónde corre.** No hay despliegue con https (Railway está preparado, no desplegado). Se corre en una máquina del equipo con el **plan B por red local**: `ALLOWED_DEV_ORIGINS=<ip> next dev` + `pnpm worker`, y los celulares entran por `http://<ip>:3000`. Con plan B:
-  - **No hay GPS** (el navegador lo bloquea por http): el vecino **escribe la dirección**. Usar una que ya se probó y geocodifica bien, como "18 de Julio y Ejido". Probarla en el ensayo.
-  - La primera carga de cada pantalla tarda: **abrir las tres pantallas antes de empezar**.
-  - Se ve el indicador de Next abajo a la izquierda.
-- **`--near` cerca de la dirección.** `refresh-demo-positions --near <lat>,<lon> --watch 10` en una terminal abierta. La cuadrilla atiende en un radio de 3 km: el punto tiene que estar cerca de "18 de Julio y Ejido" (el `-34.9058,-56.1882` del doc lo está).
+- **Dónde corre: Railway (https), según el equipo ya desplegado.** Por https el GPS funciona, pero **conviene igual escribir la dirección** ("18 de Julio y Ejido"): es predecible y no depende de dónde esté el escenario. Si usan "usar mi ubicación", el punto va a ser el LATU y el `--near` tiene que estar cerca del LATU. Plan B si falla la red o Railway: la red local (`demo-en-vivo.md`), sin GPS.
+- **`--near` contra la base de producción y cerca de la dirección.** `refresh-demo-positions --near <lat>,<lon> --watch 10` tiene que correr **contra la base de Railway/Supabase** (con su `DATABASE_URL`) en una terminal abierta durante toda la demo: las posiciones vencen a los 30 min. La cuadrilla atiende en un radio de 3 km: el `-34.9058,-56.1882` del doc sirve para "18 de Julio y Ejido". Una dirección más lejos queda "Pendiente de cuadrilla" (pasó en una prueba con Avenida Italia y Comercio, a 5,7 km).
+- **`reset-demo --yes` también contra la base de producción.** Verificar que la consola de Railway quede vacía después.
+- **Credenciales en Railway:** usuarios `operador.montevideo` y `unidad.cuadrilla-demo`; las contraseñas son las de `DEMO_OPERATOR_PASSWORD` y `DEMO_UNIT_PASSWORD` **del entorno de Railway** al momento del seed (pueden no ser las del `.env.local`). Probar los dos logins antes.
+- **Operador y cuadrilla nunca en el mismo navegador:** comparten la cookie de sesión, y entrar como cuadrilla echa al operador (la consola pasa a "No tenés acceso a este recurso" y deja de actualizarse). Cuadrilla en otro celular, o en una ventana privada.
+- **Abrir las tres pantallas y hacer los logins antes de empezar**, fuera del proyector.
 - **Cuadrilla:** tocar la pantalla de `/unidad` una vez después de abrirla; si no, el navegador bloquea el tono y la vibración. Con la pestaña visible y el celular desbloqueado.
 - **No precargar otros incidentes.** Con `--near` solo `cuadrilla-demo` queda vigente: si ya tiene una orden, la del fuego podría no llegarle. Arrancar con `reset-demo --yes`.
 - **No usar alumbrado** para la demo: va por zona a la oficina, no a la cuadrilla.
+- **Si se prueba un bache, darle pistas de gravedad** ("un pozo enorme, los autos lo esquivan") o una foto. Con "vi un pozo en avenida italia" Jev dejó la gravedad como indeterminada (0,87) y la consola lo muestra "Sin evaluar": es correcto (no adivina), pero en la demo se ve mal. El fuego no tiene este problema: el peligro activo lo sube a Alta.
 - **`SESSION_SECRET` de 32 caracteres o más**, si no el login da 500.
 - **Antes de subir:** correr `scripts/e2e-demo.mjs` para verificar, y después `reset-demo --yes` (el script deja el incidente resuelto).
 - **Aviso de emergencia:** con fuego activo el chat muestra el texto de `emergencyChannel` (`seeds/territory-montevideo.ts`), que hoy dice "consultá el canal de emergencias local de tu zona". Para la demo conviene algo concreto, como "llamá a Bomberos al 104 o al 911".
@@ -162,7 +164,7 @@ Lo que debería pasar, y conviene narrarlo: otro problema (un bache, basura) cre
 *Respaldo:* latencia por evaluación completa 230–400 ms solo texto, 640–1.100 ms con una foto; la comparación para agrupar 0,5–1,4 s. Costo por aviso: no lo medimos todavía; decirlo así.
 
 **6. "¿Qué está simulado?"** *(la rúbrica pide declarar las simulaciones)*
-> La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, que están marcadas como demo. Y hoy corre en una máquina nuestra por la red local, no en un servidor público.
+> La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, que están marcadas como demo.
 
 ### Otras que pueden salir
 
@@ -201,13 +203,12 @@ Lo que debería pasar, y conviene narrarlo: otro problema (un bache, basura) cre
 - "Es un chat", "es como ChatGPT para reclamos".
 - Un costo por aviso, un porcentaje de precisión o un ahorro en dinero: no los medimos.
 - Que está integrado con la Intendencia o con el SUR.
-- Que está desplegado o que se puede usar desde cualquier lado: hoy corre en la red local.
 - Que la cuadrilla recibe una notificación con el celular bloqueado, o por WhatsApp.
 - Críticas a la gestión de la Intendencia.
 
 ## Qué no prometer como hecho
 
-Al 18 de octubre (`main` en `45c15f5`) no existen o no están probados: el despliegue con https (Railway está preparado, no desplegado), las notificaciones a un celular bloqueado o por WhatsApp (la cuadrilla necesita `/unidad` abierta), el «Seguimiento con código» del vecino, y la prueba en celulares reales (Safari, fotos HEIC, permisos). Algunas esquinas no geocodifican (p. ej. "Rivera y Comercio" cae al mapa) y las que no están en caché tardan 2,5–6 s. **Revisar esta lista contra el estado del sistema antes del pitch.**
+Al 18 de octubre (`main` en `45c15f5`) no existen o no están probados: las notificaciones a un celular bloqueado o por WhatsApp (la cuadrilla necesita `/unidad` abierta), el «Seguimiento con código» del vecino, y la prueba en celulares reales (Safari, fotos HEIC, permisos). Algunas esquinas no geocodifican (p. ej. "Rivera y Comercio" cae al mapa) y las que no están en caché tardan 2,5–6 s. **Revisar esta lista contra el estado del sistema antes del pitch.**
 
 ## Datos y fuentes
 

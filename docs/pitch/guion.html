@@ -294,10 +294,13 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
     <h2 id="t-notas">Notas para la demo</h2>
     <p class="note" style="max-width:72ch">Procedimiento completo y comandos: <code>docs/superpowers/notes/demo-en-vivo.md</code> en <code>main</code>.</p>
     <ul class="checklist">
-      <li><span><b>Corre en la red local (plan B), no desplegada.</b> <code>ALLOWED_DEV_ORIGINS=&lt;ip&gt; next dev</code> + <code>pnpm worker</code>; los celulares entran por <code>http://&lt;ip&gt;:3000</code>.</span></li>
-      <li><span><b>Sin GPS por http:</b> el vecino escribe la dirección. Usar una ya probada, como "18 de Julio y Ejido", y probarla en el ensayo.</span></li>
-      <li><span><b>Abrir las tres pantallas antes de empezar:</b> la primera carga tarda.</span></li>
-      <li><span><b><code>--near</code> cerca de la dirección:</b> <code>refresh-demo-positions --near -34.9058,-56.1882 --watch 10</code> en una terminal abierta (la cuadrilla atiende en 3 km).</span></li>
+      <li><span><b>Corre en Railway (https).</b> El GPS funciona, pero conviene escribir la dirección ("18 de Julio y Ejido"): es predecible. Con "usar mi ubicación" el punto es el LATU. Plan B si falla: la red local.</span></li>
+      <li><span><b><code>--near</code> contra la base de producción y cerca de la dirección:</b> <code>refresh-demo-positions --near -34.9058,-56.1882 --watch 10</code> con la <code>DATABASE_URL</code> de Railway, abierta toda la demo (las posiciones vencen a los 30 min). Más de 3 km queda "Pendiente de cuadrilla".</span></li>
+      <li><span><b><code>reset-demo --yes</code> también contra producción,</b> y verificar que la consola quede vacía.</span></li>
+      <li><span><b>Credenciales:</b> <code>operador.montevideo</code> y <code>unidad.cuadrilla-demo</code>, con las contraseñas del entorno de Railway al momento del seed. Probar los logins antes.</span></li>
+      <li><span><b>Operador y cuadrilla nunca en el mismo navegador:</b> comparten la cookie; entrar como cuadrilla echa al operador ("No tenés acceso a este recurso").</span></li>
+      <li><span><b>Abrir las tres pantallas y hacer los logins antes de empezar,</b> fuera del proyector.</span></li>
+      <li><span><b>Si se prueba un bache, darle pistas de gravedad</b> o una foto; si no, queda "Sin evaluar" (gravedad indeterminada). El fuego sube solo a Alta.</span></li>
       <li><span><b>Cuadrilla:</b> tocar la pantalla de <code>/unidad</code> una vez después de abrirla, si no no suena ni vibra. Pestaña visible y celular desbloqueado.</span></li>
       <li><span><b>No precargar otros incidentes:</b> solo <code>cuadrilla-demo</code> queda vigente; si ya tiene una orden, la del fuego podría no llegarle. Arrancar con <code>reset-demo --yes</code>.</span></li>
       <li><span><b>No usar alumbrado:</b> va por zona a la oficina, no a la cuadrilla.</span></li>
@@ -347,7 +350,7 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
       <div>
         <span class="tag">La rúbrica pide declararlo</span>
         <h3>6. "¿Qué está simulado?"</h3>
-        <p><strong>La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, marcadas como demo. Y hoy corre en una máquina nuestra por la red local, no en un servidor público.</strong></p>
+        <p><strong>La IA no: todas las llamadas son a la API real. Lo simulado son las posiciones GPS de las cuadrillas, marcadas como demo.</strong></p>
       </div>
     </div>
 
@@ -414,7 +417,6 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
         <li>"Es un chat", "es como ChatGPT para reclamos".</li>
         <li>Un costo por aviso, un porcentaje de precisión o un ahorro en dinero: no los medimos.</li>
         <li>Que está integrado con la Intendencia o con el SUR.</li>
-        <li>Que está desplegado: hoy corre en la red local.</li>
         <li>Que la cuadrilla recibe la orden con el celular bloqueado, o por WhatsApp.</li>
         <li>Críticas a la gestión de la Intendencia.</li>
       </ul>
@@ -426,7 +428,6 @@ footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--li
     <div class="nogo">
       <p>Al 18 de octubre (<code>main</code> en <code>45c15f5</code>) no existen o no están probados:</p>
       <ul>
-        <li>El despliegue con https: Railway está preparado, no desplegado.</li>
         <li>Avisos a un celular bloqueado o por WhatsApp: la cuadrilla necesita <code>/unidad</code> abierta.</li>
         <li>El «Seguimiento con código» del vecino.</li>
         <li>La prueba en celulares reales: Safari, fotos HEIC, permisos.</li>
