@@ -195,10 +195,10 @@ export function UnitInbox() {
       <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:px-8">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-ink-2">
+            <p className="flex items-center gap-2 text-[15px] font-medium text-ink-2">
               <IconTruck className="h-[18px] w-[18px]" /> Bandeja de unidad
             </p>
-            <h1 className="text-[26px] font-bold leading-tight tracking-tight text-primary lg:text-[32px]">{unit?.name ?? "Órdenes asignadas"}</h1>
+            <h1 className="text-[28px] font-bold leading-[34px] tracking-[-0.02em] text-ink lg:text-[34px] lg:leading-[41px]">{unit?.name ?? "Órdenes asignadas"}</h1>
             {unit && (
               <p className="text-ink-2">
                 {unit.activeOrders} de {unit.capacity} {unit.capacity === 1 ? "orden activa" : "órdenes activas"} · actualizado {ago(inbox!.generatedAt, now)}
@@ -215,7 +215,7 @@ export function UnitInbox() {
         {notice && (
           <p
             role={notice.tone === "error" ? "alert" : "status"}
-            className={`rounded-xl px-4 py-3 font-semibold ${
+            className={`rounded-[var(--r-md)] px-4 py-3 font-semibold ${
               notice.tone === "ok" ? "bg-success-soft text-success" : notice.tone === "warn" ? "bg-warn-soft text-warn" : "bg-danger-soft text-danger-strong"
             }`}
           >
@@ -224,7 +224,7 @@ export function UnitInbox() {
         )}
 
         {arrivedNow > 0 && (
-          <p role="status" className="rounded-xl bg-success-soft px-4 py-3 font-semibold text-success">
+          <p role="status" className="rounded-[var(--r-md)] bg-accent-soft px-4 py-3 font-semibold text-accent">
             {arrivedNow === 1 ? "Llegó una orden nueva." : `Llegaron ${arrivedNow} órdenes nuevas.`}
           </p>
         )}
@@ -295,7 +295,7 @@ function AssignmentCard({
   }
 
   return (
-    <article aria-labelledby={titleId} className={`card flex h-full flex-col gap-4 p-4 sm:p-5 ${i.activeHazard ? "border-2 border-danger-line" : ""} ${fresh ? "ru-fresh" : ""}`}>
+    <article aria-labelledby={titleId} className={`card flex h-full flex-col gap-4 p-4 sm:p-5 ${i.activeHazard ? "ru-hazard" : ""} ${fresh ? "ru-fresh" : ""}`}>
       <div className="flex flex-wrap items-center gap-2">
         <span className={`badge ${prio.className}`}>
           <span aria-hidden>{prio.symbol}</span> {prio.label}
@@ -310,7 +310,7 @@ function AssignmentCard({
       </div>
 
       <div className="flex flex-col gap-1">
-        <h2 id={titleId} className="text-xl font-bold leading-snug text-ink">{i.title}</h2>
+        <h2 id={titleId} className="text-[22px] font-bold leading-[28px] tracking-[-0.015em] text-ink">{i.title}</h2>
         {rules.length > 0 && <p className="text-[15px] text-ink-2">Prioridad por: {rules.join(", ")}.</p>}
       </div>
 
@@ -348,12 +348,12 @@ function AssignmentCard({
 
       {i.citizenTexts.length > 0 && (
         <section aria-label="Lo que reportaron">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-ink-2">
+          <h3 className="text-[13px] font-medium text-ink-2">
             Lo que reportaron {i.citizenTexts.length > 1 ? `(${i.citizenTexts.length} reportes)` : ""}
           </h3>
           <ul className="mt-1.5 flex flex-col gap-1.5">
             {i.citizenTexts.slice(0, 4).map((t, idx) => (
-              <li key={idx} className="rounded-lg bg-surface-low px-3 py-2 text-[15px] text-ink">“{t}”</li>
+              <li key={idx} className="rounded-[var(--r-md)] bg-surface-2 px-3 py-2 text-[15px] text-ink">“{t}”</li>
             ))}
           </ul>
           {i.citizenTexts.length > 4 && <p className="mt-1 text-sm text-ink-2">y {i.citizenTexts.length - 4} más.</p>}
@@ -362,11 +362,11 @@ function AssignmentCard({
 
       {i.photoIds.length > 0 && (
         <section aria-label="Fotos">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-ink-2">Fotos ({i.photoIds.length})</h3>
+          <h3 className="text-[13px] font-medium text-ink-2">Fotos ({i.photoIds.length})</h3>
           <ul className="mt-1.5 flex flex-wrap gap-2">
             {i.photoIds.map((p, idx) => (
               <li key={p}>
-                <a href={`/api/unidad/photos/${encodeURIComponent(p)}`} target="_blank" rel="noopener noreferrer" className="block h-20 w-20 overflow-hidden rounded-lg border border-line-soft">
+                <a href={`/api/unidad/photos/${encodeURIComponent(p)}`} target="_blank" rel="noopener noreferrer" className="block h-20 w-20 overflow-hidden rounded-[var(--r-md)]">
                   {/* eslint-disable-next-line @next/next/no-img-element -- foto privada servida por ruta autorizada */}
                   <img src={`/api/unidad/photos/${encodeURIComponent(p)}?size=thumb`} alt={`Foto ${idx + 1} del reporte`} className="h-full w-full object-cover" loading="lazy" />
                 </a>

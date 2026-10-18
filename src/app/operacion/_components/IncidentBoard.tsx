@@ -189,7 +189,6 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
         <form className="card flex flex-wrap items-center gap-3 p-3" aria-label="Búsqueda y filtros" onSubmit={(e) => e.preventDefault()}>
           <SearchBox value={search} onChange={setSearch} placeholder="Buscar por calle, barrio, tipo o código (#…)" />
           <div className="ops-filters flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <span className="ops-eyebrow">Filtros:</span>
             <FilterSelect label="Prioridad" value={filters.priorityBand} onChange={set("priorityBand")}
               options={Object.entries(PRIORITY).map(([k, v]) => [k, v.label])} />
             <FilterSelect label={areaLabel} value={filters.areaId} onChange={set("areaId")}

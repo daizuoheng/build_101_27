@@ -346,7 +346,7 @@ function ReportCard({ report: r, busy, canUnlink, onUnlink }: { report: Detail["
         <ul className="flex flex-wrap gap-2" aria-label="Fotos del reporte">
           {r.photoIds.map((p, k) => (
             <li key={p}>
-              <a href={`/api/operacion/photos/${p}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-[10px] border border-line">
+              <a href={`/api/operacion/photos/${p}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-[var(--r-md)] border border-line">
                 {/* eslint-disable-next-line @next/next/no-img-element -- foto privada servida por la API con sesión, sin optimizador */}
                 <img src={`/api/operacion/photos/${p}?size=thumb`} alt={`Foto ${k + 1} del reporte ${r.publicCode ?? ""}`} width={96} height={96} className="h-24 w-24 object-cover" />
               </a>
@@ -475,7 +475,7 @@ function Corrections({
       {removable.length > 0 && (
         <ul className="flex flex-col gap-2" aria-label="Correcciones vigentes">
           {removable.map((o) => (
-            <li key={o.field} className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-surface-2 px-3 py-2">
+            <li key={o.field} className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r-md)] bg-surface-2 px-3 py-2">
               <span>
                 <span className="font-semibold">{FIELD[o.field]}: {valueLabel(o.field, o.value, data)}</span>
                 <span className="block text-ink-2">«{o.reason}» · {when(o.createdAt)}</span>

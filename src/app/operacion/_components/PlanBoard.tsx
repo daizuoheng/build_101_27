@@ -197,7 +197,6 @@ export function PlanBoard({ territorySlug }: { territorySlug: string }) {
         <form className="card flex flex-wrap items-center gap-3 p-3" aria-label="Búsqueda y filtros del plan" onSubmit={(e) => e.preventDefault()}>
           <SearchBox value={search} onChange={setSearch} placeholder="Buscar por calle, barrio, tipo, cuadrilla o código (#…)" />
           <div className="ops-filters flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <span className="ops-eyebrow">Filtros:</span>
             <FilterSelect label="Prioridad" value={view.band} onChange={setView("band")} options={Object.entries(PRIORITY).map(([k, v]) => [k, v.label])} />
             <FilterSelect label={catalog?.areaLabel ?? "Área"} value={view.area} onChange={setView("area")} options={asOptions(catalog?.areas)} />
             <FilterSelect label="Estado" value={view.status} onChange={setView("status")} options={Object.entries(STATUS).map(([k, v]) => [k, v])} />

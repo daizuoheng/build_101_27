@@ -1,50 +1,70 @@
 @import "tailwindcss";
 
 /*
- * Tokens del sistema "Radar Urbano MVD" (diseños Stitch, DESIGN.md). Los nombres se mantienen para que todas
- * las superficies (ciudadano, unidad, operación) compartan el mismo sistema. Contrastes AA sobre --surface y --bg.
+ * Tokens de Radar Urbano en clave Human Interface Guidelines: grises agrupados neutros, tinta casi negra y un solo
+ * acento (el azul de la marca) reservado para acciones, selección y estado. Solo tema claro.
+ * Contrastes sobre --surface: ink 16.8, ink-2 6.0, accent 8.9, outline 3.3 (no texto).
  */
 :root {
   /* Solo tema claro: evita que el navegador oscurezca la página a la fuerza (Chrome/Android "tema oscuro para sitios"). */
   color-scheme: only light;
-  --bg: #f8fafc;
+  --bg: #f2f2f7;
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --surface-low: #f2f3ff;
-  --surface-container: #eaedff;
-  --ink: #0f172a;
-  --ink-2: #475569;
-  --line: #cbd5e1;
-  --line-soft: #e2e8f0;
+  --surface-2: #f2f2f7;
+  --surface-low: #ececf0;
+  --surface-container: #e5e5ea;
+  --surface-3: var(--surface-container);
+  --ink: #1d1d1f;
+  --ink-2: #636366;
+  --line: #d1d1d6;
+  --line-soft: #e5e5ea;
+  --outline: #8e8e93;
+  --outline-variant: var(--line);
 
-  --primary: #00355f;
+  /* --primary: solo hover/presionado del acento, nunca texto decorativo. */
+  --primary: #0a3d6b;
   --accent: #0f4c81;
   --accent-ink: #ffffff;
-  --accent-soft: #d2e4ff;
-  --focus: #0f4c81;
+  --accent-soft: #e2eaf2;
+  --accent-soft-ink: var(--accent);
+  --focus: var(--accent);
 
   --success: #006c4a;
+  --success-strong: #005137;
   --success-ink: #ffffff;
-  --success-soft: #dcfce7;
+  --success-soft: #e0ede9;
 
-  --danger: #dc2626;
-  --danger-strong: #b91c1c;
-  --danger-soft: #fef2f2;
-  --danger-line: #fca5a5;
-  --warn: #b45309;
-  --warn-soft: #fffbeb;
-  --warn-line: #fcd34d;
-  --info-soft: #eaedff;
+  --danger: #ba1a1a;
+  --danger-strong: var(--danger);
+  --danger-pressed: #93000a;
+  --danger-soft: #f7e4e4;
+  --danger-line: #e8b4b0;
+  --warn: #a64a00;
+  --warn-soft: #f4e9e0;
+  --warn-line: #e5c7a8;
+  --info-soft: var(--accent-soft);
+  --on-signal: #ffffff;
 
-  --prio-high: #dc2626;
-  --prio-medium: #b45309;
-  --prio-low: #047857;
-  --prio-unknown: #475569;
+  --prio-high: var(--danger);
+  --prio-medium: var(--warn);
+  --prio-low: var(--success);
+  --prio-unknown: var(--ink-2);
 
-  --radius: 0.5rem;
-  --radius-lg: 1rem;
-  --shadow-1: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
-  --shadow-2: 0 4px 12px -2px rgba(15, 76, 129, 0.08), 0 2px 6px -1px rgba(15, 23, 42, 0.04);
+  /* Radios por jerarquía: insignia < control < tarjeta < panel. */
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --radius: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 10px 30px -12px rgba(0, 0, 0, 0.18);
+
+  /* Movimiento: presión breve y cambios de estado rápidos; el pulso de .ru-fresh es el único gesto expresivo. */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-press: 100ms;
+  --dur-fast: 160ms;
 }
 
 @theme inline {
@@ -72,7 +92,11 @@
   --color-warn-soft: var(--warn-soft);
   --color-warn-line: var(--warn-line);
   --color-info-soft: var(--info-soft);
-  --font-sans: var(--font-jakarta), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --color-surface-3: var(--surface-3);
+  --color-outline: var(--outline);
+  /* Fuente del sistema (SF en Apple) para todo; la de la marca queda solo en el logotipo (.ru-wordmark). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-brand: var(--font-jakarta), var(--font-sans);
 }
 
 html {
@@ -85,14 +109,35 @@ body {
   font-family: var(--font-sans);
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* Anillo de foco sólido: 8.9:1 sobre blanco (antes mezclado al 55 %, 2.9:1). */
 :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--focus) 55%, transparent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
-/* Controles: mínimo 44 px táctiles (DESIGN.md pide 48 en botones principales). */
+.ru-wordmark {
+  font-family: var(--font-brand);
+  letter-spacing: -0.02em;
+}
+
+/* Material de las barras flotantes (encabezados y compositor). Nunca en tarjetas ni filas. */
+.glass {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: saturate(1.8) blur(24px);
+  backdrop-filter: saturate(1.8) blur(24px);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .glass {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Controles: mínimo 44 px táctiles (DESIGN.md pide 48 en botones principales). Presión con escala breve. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -101,31 +146,31 @@ body {
   min-height: 44px;
   min-width: 44px;
   padding: 0.5rem 1rem;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  background: var(--surface-low);
   color: var(--ink);
   font-weight: 600;
   font-size: 1rem;
   line-height: 1.25;
+  letter-spacing: -0.01em;
   cursor: pointer;
   text-decoration: none;
-  transition: background-color 120ms, transform 80ms;
+  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-press) var(--ease);
 }
 .btn:hover:not(:disabled) {
-  background: var(--surface-2);
+  background: var(--surface-container);
 }
 .btn:active:not(:disabled) {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 .btn:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 .btn-primary {
   min-height: 48px;
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-ink);
 }
 .btn-primary:hover:not(:disabled) {
@@ -134,23 +179,22 @@ body {
 .btn-success {
   min-height: 48px;
   background: var(--success);
-  border-color: var(--success);
   color: var(--success-ink);
 }
 .btn-success:hover:not(:disabled) {
-  background: #005137;
+  background: var(--success-strong);
 }
 .btn-danger {
-  background: var(--danger-strong);
-  border-color: var(--danger-strong);
-  color: #fff;
+  background: var(--danger);
+  color: var(--on-signal);
 }
 .btn-danger:hover:not(:disabled) {
-  background: #991b1b;
+  background: var(--danger-pressed);
 }
+/* Acción destructiva secundaria: texto rojo sobre gris, como el botón «Eliminar» de iOS. */
 .btn-ghost-danger {
-  border-color: var(--danger-line);
-  color: var(--danger-strong);
+  background: var(--surface-low);
+  color: var(--danger);
 }
 .btn-ghost-danger:hover:not(:disabled) {
   background: var(--danger-soft);
@@ -164,54 +208,62 @@ body {
   min-height: 44px;
   padding: 0.5rem 1rem;
   border-radius: 9999px;
-  border: 1px solid var(--line-soft);
-  background: var(--surface);
-  color: var(--ink);
+  border: 1px solid transparent;
+  background: var(--surface-low);
+  color: var(--accent);
   font-weight: 600;
   font-size: 0.9375rem;
   cursor: pointer;
-  transition: background-color 120ms;
+  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-press) var(--ease);
 }
 .chip:hover:not(:disabled) {
-  background: var(--surface-2);
+  background: var(--surface-container);
+}
+.chip:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .chip-primary {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-ink);
 }
 .chip-primary:hover:not(:disabled) {
   background: var(--primary);
 }
 .chip:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
+/* Campos: borde 3.3:1 (antes 1.5:1); al enfocar, anillo de acento en vez de halo tenue. */
 .field {
   min-height: 44px;
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: 1px solid var(--outline);
+  border-radius: var(--r-md);
   background: var(--surface);
   color: var(--ink);
   font-size: 1rem;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.field::placeholder {
+  color: var(--ink-2);
 }
 .field:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(15, 76, 129, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
+/* Tarjeta: grupo blanco sobre el gris de fondo, filete apenas visible y sin sombra pesada (lista agrupada de iOS). */
 .card {
   background: var(--surface);
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-lg);
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-1);
 }
 
-/* Insignias de prioridad: color + símbolo + texto (legibles sin color). */
+/* Insignias de prioridad: color + símbolo + texto (legibles sin color). Relleno tenue, sin borde. */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -220,17 +272,17 @@ body {
   border-radius: 9999px;
   border: 1px solid transparent;
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.5rem;
   white-space: nowrap;
 }
-.badge-high { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger-strong); }
-.badge-medium { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn); }
-.badge-low { background: #f0fdf4; border-color: #86efac; color: #047857; }
-.badge-unknown { background: var(--bg); border-color: var(--line); color: var(--ink-2); }
-.badge-muted { background: var(--surface-2); color: #334155; }
-.badge-success { background: var(--success-soft); color: #005137; }
-.badge-info { background: var(--accent-soft); color: var(--primary); }
+.badge-high { background: var(--danger-soft); color: var(--danger); }
+.badge-medium { background: var(--warn-soft); color: var(--warn); }
+.badge-low { background: var(--success-soft); color: var(--success); }
+.badge-unknown { background: var(--surface-low); color: var(--ink-2); }
+.badge-muted { background: var(--surface-low); color: var(--ink-2); }
+.badge-success { background: var(--success-soft); color: var(--success); }
+.badge-info { background: var(--accent-soft); color: var(--accent); }
 
 .sr-only {
   position: absolute;
@@ -245,6 +297,18 @@ body {
 }
 
 /* Orden o incidente que acaba de llegar con la pantalla abierta: borde de acento y un pulso breve. */
+/* Variantes de piezas compuestas: van acá (sin capa, más específicas) porque .card y .field no están en una capa
+   de Tailwind y les ganan a las utilidades. */
+.card.ru-hazard {
+  border: 1.5px solid var(--danger-line);
+}
+.field.ru-composer {
+  border-radius: 24px;
+  padding: 0.75rem 1rem;
+  font-size: 17px;
+  line-height: 22px;
+}
+
 .ru-fresh {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
@@ -273,10 +337,10 @@ body {
   border: 3px solid #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
-.ru-pin--high { background: #c0182a; }
-.ru-pin--medium { background: #b86500; }
-.ru-pin--low { background: #2f6b46; }
-.ru-pin--unknown { background: #5b616a; }
+.ru-pin--high { background: var(--prio-high); }
+.ru-pin--medium { background: var(--prio-medium); }
+.ru-pin--low { background: var(--prio-low); }
+.ru-pin--unknown { background: var(--prio-unknown); }
 .leaflet-container {
   font: inherit;
 }

@@ -2,8 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-// Fuente del sistema de diseño, autoalojada por next/font (sin pedidos a Google desde el navegador).
-const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], variable: "--font-jakarta", display: "swap" });
+// Fuente de la marca, solo para el logotipo (.ru-wordmark, en negrita); el resto usa la fuente del sistema.
+// Autoalojada por next/font (sin pedidos a Google desde el navegador).
+const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: "700", variable: "--font-jakarta", display: "swap" });
 
 export const metadata: Metadata = {
   title: "Radar Urbano",
