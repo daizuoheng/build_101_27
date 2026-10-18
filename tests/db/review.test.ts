@@ -29,7 +29,7 @@ import { P, confirmedReport, fakeAnswers, fakeComparison, fakeJev, territoryId, 
 import { resetDb, testDb } from "./setup";
 
 // Sesión del servidor simulada: las rutas se prueban de punta a punta salvo la cookie.
-const session = vi.hoisted(() => ({ current: null as InternalSession | null }));
+const session = vi.hoisted(() => ({ current: null as InternalSession | null, pool: null as Pool | null }));
 vi.mock("@/server/access/internal-session", async (importOriginal) => {
   const orig = await importOriginal<typeof import("@/server/access/internal-session")>();
   return {
@@ -40,6 +40,12 @@ vi.mock("@/server/access/internal-session", async (importOriginal) => {
     },
   };
 });
+// Las rutas usan `getPool()` (DATABASE_URL): sin esto leerían y escribirían la base de desarrollo, no la de test.
+vi.mock("@/server/db/pool", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("@/server/db/pool")>();
+  return { ...orig, getPool: () => session.pool ?? orig.getPool() };
+});
+session.pool = await testDb();
 
 const OPERATOR: Actor = { type: "operator", id: "00000000-0000-4000-8000-0000000000aa" };
 const OTHER_OPERATOR: Actor = { type: "operator", id: "00000000-0000-4000-8000-0000000000ab" };
