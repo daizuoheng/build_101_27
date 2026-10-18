@@ -8,7 +8,7 @@ import type { OverrideField, OverrideValue, SetOverrideBody } from "@/shared/con
 import type { IncidentDetailResponse, OverrideResult } from "@/shared/contracts/incident-detail";
 import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import { Icon } from "./Icons";
-import { newIdempotencyKey } from "./idempotency";
+import { AttemptKeys, outcomeOf } from "./idempotency";
 import { ASSIGNMENT_STATUS, PRIORITY, REVIEW_KIND, STATUS, areaDisplay, shortCode } from "./labels";
 import { OpsHeader, PriorityBadge } from "./OpsShell";
 
@@ -68,27 +68,17 @@ const ASSIGNMENT_ACTION: Partial<Record<AssignmentAction, { label: string; confi
 };
 const CLOSED = new Set(["resolved", "archived"]);
 
-/**
- * Clave de idempotencia por intento: la misma acción reintentada después de un error de red reutiliza su clave (el
- * servidor no la aplica dos veces); cualquier otra respuesta la descarta. `version` (la revisión o versión que vio el
- * operador) se congela con la clave: si el pedido perdido sí se aplicó y el polling trajo la revisión nueva, el
- * reintento manda el mismo pedido y el servidor lo reconoce, en vez de aplicarlo otra vez con la revisión nueva.
- * Un éxito descarta solo la clave de esa acción: la de otra acción con resultado incierto (cortada a mitad) se
- * conserva, porque su reintento tiene que seguir siendo «el mismo pedido».
- */
+/** Clave de idempotencia por intento: ver `AttemptKeys` (reintento dentro de una ventana, éxito o rechazo la descartan). */
 function useAttemptKeys() {
-  const keys = useRef(new Map<string, { key: string; version: number }>());
+  const keys = useRef(new AttemptKeys());
   return useCallback(async <T,>(signature: string, version: number, run: (key: string, version: number) => Promise<T>): Promise<T> => {
-    const attempt = keys.current.get(signature) ?? { key: newIdempotencyKey(), version };
-    keys.current.set(signature, attempt);
+    const attempt = keys.current.take(signature, version);
     try {
       const r = await run(attempt.key, attempt.version);
-      keys.current.delete(signature);
+      keys.current.settle(signature, "applied");
       return r;
     } catch (err) {
-      // Solo una respuesta del servidor dice que el pedido no se aplicó. Un error de red, o un corte mientras se leía
-      // el cuerpo (llega como AbortError, no como HttpError), conserva la clave: el pedido pudo haberse aplicado.
-      if (err instanceof HttpError && err.status !== 0) keys.current.delete(signature);
+      keys.current.settle(signature, outcomeOf(err));
       throw err;
     }
   }, []);
