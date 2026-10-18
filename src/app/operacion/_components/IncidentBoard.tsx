@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { IncidentListItem, IncidentListResponse } from "@/shared/contracts/incident";
-import { HttpError, api, errorMessage } from "@/app/_components/http";
+import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import { Icon, type IconName } from "./Icons";
 import { PLAN_ITEM_STATUS, PRIORITY, REVIEW_KIND, STATUS, age, areaDisplay, shortCode, versusYesterday } from "./labels";
 import { FilterSelect, KpiCard, OpsHeader, PriorityBadge, SearchBox } from "./OpsShell";
@@ -79,7 +79,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     const qs = new URLSearchParams({ territory: territorySlug, sort: filters.sort, ...localDays() });
     for (const k of ["areaId", "problemType", "priorityBand", "status"] as const) if (filters[k]) qs.set(k, filters[k]);
     try {
-      const d = await api<IncidentListResponse>(`/api/operacion/incidents?${qs}`, { signal });
+      const d = await api<IncidentListResponse>(`/api/operacion/incidents?${qs}`, { signal: withTimeout(signal) });
       if (stale()) return;
       setData(d);
       setError(null);

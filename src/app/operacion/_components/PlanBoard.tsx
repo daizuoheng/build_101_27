@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { IncidentListResponse } from "@/shared/contracts/incident";
 import type { PlanItemView, PlanResponse } from "@/shared/contracts/plan";
-import { HttpError, api, errorMessage } from "@/app/_components/http";
+import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import {
   ASSIGNMENT_STATUS, PLAN_ITEM_STATUS, PLAN_PENDING_REASON, PLAN_PROPOSAL_REASON, PLAN_TRIGGER, PRIORITY, STATUS, areaDisplay, hours, shortCode,
 } from "./labels";
@@ -82,7 +82,7 @@ export function PlanBoard({ territorySlug }: { territorySlug: string }) {
       const id = ++latest.current;
       const stale = () => signal.aborted || id !== latest.current;
       try {
-        const d = await api<PlanResponse>(`/api/operacion/plan?${new URLSearchParams({ territory: territorySlug })}`, { signal });
+        const d = await api<PlanResponse>(`/api/operacion/plan?${new URLSearchParams({ territory: territorySlug })}`, { signal: withTimeout(signal) });
         if (stale()) return;
         setData(d);
         setError(null);
