@@ -32,7 +32,7 @@ export const demoUnits: Record<string, DemoUnit[]> = {
     },
     {
       slug: "cuadrilla-limpieza",
-      name: "Cuadrilla Limpieza (demo)",
+      name: "Cuadrilla Limpieza · Centro (demo)",
       unitKind: "mobile_crew",
       capacity: 1,
       capabilities: ["limpieza"],
@@ -41,25 +41,25 @@ export const demoUnits: Record<string, DemoUnit[]> = {
     },
     {
       slug: "cuadrilla-vial",
-      name: "Cuadrilla Vialidad y Limpieza (demo)",
+      name: "Cuadrilla Vialidad y Limpieza · Carrasco (demo)",
       unitKind: "mobile_crew",
       capacity: 1,
       capabilities: ["vialidad", "limpieza"],
-      position: { lon: -56.1805, lat: -34.9012 }, // Cordón
+      position: { lon: -56.055, lat: -34.883 }, // Carrasco
       serviceRadiusM: 3000,
     },
     {
       slug: "cuadrilla-fuego",
-      name: "Cuadrilla Fuego y Limpieza (demo)",
+      name: "Cuadrilla Fuego y Limpieza · Montevideo Shopping (demo)",
       unitKind: "mobile_crew",
       capacity: 1,
       capabilities: ["fuego", "limpieza"],
-      position: { lon: -56.2055, lat: -34.9070 }, // Ciudad Vieja
+      position: { lon: -56.137, lat: -34.9017 }, // Montevideo Shopping, Buceo
       serviceRadiusM: 3000,
     },
     {
       slug: "oficina-alumbrado",
-      name: "Oficina de Alumbrado zona Centro (demo)",
+      name: "Oficina Alumbrado · Centro y Cordón (demo)",
       unitKind: "zone_office",
       capacity: 5,
       capabilities: ["alumbrado"],
