@@ -80,7 +80,8 @@ function useAttemptKeys() {
     keys.current.set(signature, attempt);
     try {
       const r = await run(attempt.key, attempt.version);
-      keys.current.delete(signature);
+      // Cualquier acción aplicada cambia el estado: una clave guardada de un intento anterior ya no es «el mismo pedido».
+      keys.current.clear();
       return r;
     } catch (err) {
       if (!(err instanceof HttpError && err.status === 0)) keys.current.delete(signature);
