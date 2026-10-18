@@ -1,0 +1,77 @@
+{
+  "pair": {
+    "name": "fuego-nuevo-vs-quemado-ayer",
+    "report": {
+      "texts": [
+        "Se está prendiendo fuego el contenedor de 8 de Octubre y Garibaldi ahora mismo, sale humo negro"
+      ]
+    },
+    "candidates": [
+      {
+        "category": "Contenedor dañado",
+        "distanceM": 5,
+        "hoursAgo": 48,
+        "texts": [
+          "El contenedor de 8 de Octubre y Garibaldi amaneció todo quemado, está derretido"
+        ],
+        "photo": "contenedor-quemado.jpg"
+      }
+    ],
+    "expect": {
+      "verdict": "review",
+      "match": [
+        "different_incident",
+        "uncertain"
+      ]
+    }
+  },
+  "run": {
+    "purpose": "compare",
+    "provider": "jev",
+    "modelRequested": "jev-1.14.0",
+    "inputRefs": {
+      "report_id": "smoke-fuego-nuevo-vs-quemado-ayer",
+      "report_revision": 1,
+      "candidates": {
+        "c1": "incident-1"
+      },
+      "truncated": false,
+      "photos": {
+        "c1_r1_p1": "cand-1-photo"
+      },
+      "policy_version_id": "46c22e61-3307-4a90-a8a4-147b5c695526"
+    },
+    "modelReturned": "jev-1.14.0",
+    "requestId": "req_01a14b5551f17c35b836a5a1d42d75ab",
+    "response": {
+      "match_c1": {
+        "type": "choice",
+        "choice": "different_incident",
+        "confidence": 0.19,
+        "probabilities": {
+          "same_incident": 0.38,
+          "different_incident": 0.46,
+          "uncertain": 0.16
+        }
+      },
+      "object_conflict_c1": {
+        "type": "noul",
+        "noul": 0.27
+      },
+      "place_conflict_c1": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "time_conflict_c1": {
+        "type": "noul",
+        "noul": 0.86
+      }
+    },
+    "usage": {
+      "input_tokens": 4215,
+      "output_tokens": 109
+    },
+    "latencyMs": 480,
+    "status": "ok"
+  }
+}

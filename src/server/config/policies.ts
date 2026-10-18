@@ -54,14 +54,45 @@ export const EvaluationPolicy = z.object({
   }),
   noul_facts: z.array(z.object({ key: z.string().regex(/^[a-z_]+$/), instructions: z.string() })),
   review: z.object({ min_applicability: z.number(), min_type: z.number(), min_contradiction: z.number() }),
+  assessment: z.object({
+    timeout_ms: z.number().int().positive(),
+    max_reports: z.number().int().positive(),
+    max_photos: z.number().int().nonnegative(),
+    preamble: z.string(),
+    evolution: ChoiceSpec,
+    consistency: ChoiceSpec,
+    min_change: z.number().min(0).max(1),
+    min_hazard_off: z.number().min(0).max(1),
+    min_contradiction: z.number().min(0).max(1),
+  }),
 });
 
+/** Texto de pregunta por candidato: `{candidate}` se reemplaza por el índice local (c1, c2…), nunca por un id. */
+const PerCandidate = z.string().refine((s) => s.includes("{candidate}"), "debe incluir {candidate}");
+
 export const GroupingPolicy = z.object({
+  provider: z.literal("jev"),
+  model: z.string(),
+  image_header: z.boolean(),
+  timeout_ms: z.number().int().positive(),
   radius_m: z.number().positive(),
   max_candidates: z.number().int().positive(),
   same_threshold: z.number(),
   different_threshold: z.number(),
   conflict_band: z.number(),
+  evidence: z.object({
+    max_reports_per_candidate: z.number().int().positive(),
+    max_photos_per_candidate: z.number().int().nonnegative(),
+  }),
+  questions: z.object({
+    match: z.object({
+      instructions: PerCandidate,
+      criteria: z.object({ same_incident: z.string(), different_incident: z.string(), uncertain: z.string() }),
+    }),
+    object_conflict: z.object({ instructions: PerCandidate }),
+    place_conflict: z.object({ instructions: PerCandidate }),
+    time_conflict: z.object({ instructions: PerCandidate }),
+  }),
 });
 
 export const PriorityPolicy = z.object({
@@ -80,6 +111,8 @@ export const PlanningPolicy = z.object({
   weight_hours: z.number().nonnegative(),
   cap_hours: z.number().nonnegative(),
   replan_interval_min: z.number().positive(),
+  /** Si otra corrida de plan del territorio está en curso, el pedido se reintenta en un job único a estos segundos. */
+  busy_retry_sec: z.number().int().positive(),
 });
 
 export const DispatchPolicy = z.object({
@@ -91,7 +124,44 @@ export const DispatchPolicy = z.object({
   strategies: z.record(z.string(), z.enum(["nearest_mobile", "zone_owner", "manual"])),
 });
 
-export const TextgenPolicy = LlmCallConfig.extend({ enabled: z.boolean() });
+const TextPurposes = z.object({ title: z.string(), summary: z.string(), explain_priority: z.string() });
+/** Se compila una vez al leer la política (flags "iu": sin mayúsculas y con clases Unicode). */
+const Regex = z.string().transform((src, ctx) => {
+  try {
+    return new RegExp(src, "iu");
+  } catch {
+    ctx.addIssue({ code: "custom", message: "expresión regular inválida" });
+    return z.NEVER;
+  }
+});
+
+export const TextgenPolicy = LlmCallConfig.extend({
+  enabled: z.boolean(),
+  /**
+   * Propósitos que redacta el LLM; el resto sale de su plantilla determinista. Vacío = todo determinista, y es el
+   * valor si falta: así una política publicada antes de este campo sigue validando y conserva sus ajustes.
+   */
+  llm_purposes: z.array(z.enum(["title", "summary", "explain_priority"])).default([]),
+  max_chars: z.object({ title: z.number().int().positive(), summary: z.number().int().positive(), explain_priority: z.number().int().positive() }),
+  max_references: z.number().int().positive(),
+  max_reference_chars: z.number().int().positive(),
+  forbidden_patterns: z.array(Regex),
+  instructions: TextPurposes.extend({ common: z.string(), untrusted: z.string(), output: z.string().refine((s) => /json/i.test(s), "debe mencionar json") }),
+  labels: z.object({
+    unknown_type: z.string(),
+    unknown_place: z.string(),
+    list_separator: z.string(),
+    no_reasons: z.string(),
+    redacted: z.string(),
+    unexplained_band: z.string(),
+    severity: z.record(z.string(), z.string()),
+    passage: z.record(z.string(), z.string()),
+    accessibility: z.record(z.string(), z.string()),
+    active_hazard: z.record(z.string(), z.string()),
+    priority_band: z.record(z.string(), z.string()),
+    priority_rule: z.record(z.string(), z.string()),
+  }),
+});
 
 const schemas = {
   intake: IntakePolicy,
@@ -121,6 +191,17 @@ export class PolicyMissingError extends Error {
   }
 }
 
+export class PolicyInvalidError extends Error {
+  constructor(public territoryId: string, public kind: PolicyKind, public version: number, detail: string) {
+    super(`la política activa '${kind}' v${version} del territorio ${territoryId} no valida contra el esquema actual (${detail}). Correr \`pnpm cli seed\` publica la del seed como versión nueva`);
+  }
+}
+
+/** ¿La configuración valida contra el esquema actual de su tipo? */
+export function isValidPolicy(kind: PolicyKind, config: unknown): boolean {
+  return schemas[kind].safeParse(config).success;
+}
+
 /** Política activa validada. Falla si no existe o no valida: la app no inventa valores por defecto. */
 export async function getActivePolicy<K extends PolicyKind>(db: Db, territoryId: string, kind: K): Promise<Versioned<PolicyOf<K>>> {
   const { rows } = await db.query<{ id: string; version: number; config: unknown }>(
@@ -128,6 +209,7 @@ export async function getActivePolicy<K extends PolicyKind>(db: Db, territoryId:
     [territoryId, kind],
   );
   if (!rows[0]) throw new PolicyMissingError(territoryId, kind);
-  const config = schemas[kind].parse(rows[0].config) as PolicyOf<K>;
-  return { id: rows[0].id, version: rows[0].version, config };
+  const parsed = schemas[kind].safeParse(rows[0].config);
+  if (!parsed.success) throw new PolicyInvalidError(territoryId, kind, rows[0].version, parsed.error.issues.map((i) => i.path.join(".")).join(", "));
+  return { id: rows[0].id, version: rows[0].version, config: parsed.data as PolicyOf<K> };
 }

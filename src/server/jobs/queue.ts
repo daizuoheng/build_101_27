@@ -24,11 +24,13 @@ export type EnqueueInput = {
   runAfter?: Date;
   /** Sufijo extra para jobs que se repiten sobre la misma revisión (p. ej. replanificación periódica). */
   dedupeSuffix?: string;
+  /** `false`: un job `failed` con la misma clave queda como está (p. ej. el periódico, que vuelve a pedir el mismo intervalo cada minuto). */
+  reviveFailed?: boolean;
 };
 
 /**
  * Idempotente por `kind:entityType:entityId:entityRevision`: un job pendiente, en curso o terminado no se duplica.
- * Un job `failed` se revive (intentos en cero): reencolar explícitamente es pedir otro intento.
+ * Un job `failed` se revive (intentos en cero): reencolar explícitamente es pedir otro intento. Salvo `reviveFailed: false`.
  */
 export async function enqueue(db: Db, j: EnqueueInput): Promise<{ id: string; created: boolean; revived: boolean }> {
   const dedupeKey = [j.kind, j.entityType, j.entityId, j.entityRevision, j.dedupeSuffix].filter((x) => x !== undefined).join(":");
@@ -37,9 +39,9 @@ export async function enqueue(db: Db, j: EnqueueInput): Promise<{ id: string; cr
      values ($1, $2, $3, $4, $5, $6, $7, coalesce($8, now()))
      on conflict (dedupe_key) do update set status = 'pending', attempts = 0, last_error = null, run_after = now(),
        locked_by = null, lease_until = null, updated_at = now()
-       where jobs.status = 'failed'
+       where jobs.status = 'failed' and $9
      returning id, (xmax = 0) as inserted`,
-    [j.kind, j.entityType, j.entityId, j.entityRevision, dedupeKey, j.territoryId ?? null, j.payload ?? {}, j.runAfter ?? null],
+    [j.kind, j.entityType, j.entityId, j.entityRevision, dedupeKey, j.territoryId ?? null, j.payload ?? {}, j.runAfter ?? null, j.reviveFailed !== false],
   );
   if (ins.rows[0]) return { id: ins.rows[0].id, created: ins.rows[0].inserted, revived: !ins.rows[0].inserted };
   const existing = await db.query<{ id: string }>("select id from jobs where dedupe_key = $1", [dedupeKey]);

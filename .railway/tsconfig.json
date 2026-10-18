@@ -1,0 +1,13 @@
+{
+  "//": "El include **/*.ts del tsconfig raíz no entra en carpetas que empiezan con punto: pnpm typecheck verifica este archivo aparte.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true
+  },
+  "files": ["railway.ts"]
+}

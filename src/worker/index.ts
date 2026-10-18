@@ -7,15 +7,14 @@ async function main() {
   const { getDeps } = await import("../server/deps");
   const { handlers } = await import("../server/jobs/handlers");
   const { runWorker } = await import("../server/jobs/worker-loop");
+  const { periodicPlanTask } = await import("../server/pipeline/plan");
   const controller = new AbortController();
   for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => controller.abort());
   const workerId = `${hostname()}:${process.pid}`;
-  console.log(`worker ${workerId} iniciado`);
-  await runWorker(getDeps(), handlers, {
-    workerId,
-    signal: controller.signal,
-    log: (m) => console.log(new Date().toISOString(), m),
-  });
+  const log = (m: string) => console.log(new Date().toISOString(), m);
+  const periodic = periodicPlanTask(handlers, getDeps().pool, log);
+  console.log(`worker ${workerId} iniciado${periodic ? "" : " (sin handler plan: replanificación periódica apagada)"}`);
+  await runWorker(getDeps(), handlers, { workerId, signal: controller.signal, log, periodic });
   await getDeps().pool.end();
   console.log("worker detenido");
 }
