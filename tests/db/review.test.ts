@@ -210,6 +210,17 @@ describe("resolución de ítems de revisión", () => {
     }
   });
 
+  it("create_incident desde otra duda del reporte cierra también su uncertain_duplicate y desbloquea los candidatos", async () => {
+    const { a, b, reportId, itemId } = await uncertainDuplicate();
+    const low = (await openReviewItem(pool, { territoryId: t, kind: "low_confidence", entityType: "report", entityId: reportId })).id;
+    await resolve(low, { action: "create_incident" });
+    expect((await itemOf(itemId)).status).toBe("dismissed");
+    expect((await itemOf(itemId)).resolution).toMatchObject({ reason: "grouping_decided" });
+    expect(await blocked(a)).toBe(false);
+    expect(await blocked(b)).toBe(false);
+    expect(await count("select count(*)::int as n from events where kind = 'review_closed_by_grouping' and entity_id = $1", [reportId])).toBe(1);
+  });
+
   it("link de un reporte que ya quedó asociado ⇒ 409 report_already_linked, sin mover el vínculo", async () => {
     const { a, b, reportId, itemId } = await uncertainDuplicate();
     await withTx((c) => linkReport(c, { reportId, incidentId: b, origin: "manual", actor: OPERATOR }), pool);

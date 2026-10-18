@@ -69,7 +69,7 @@ async function createIncident(c: Db, item: Item, actor: Actor): Promise<Record<s
     entityType: "incident", entityId: incidentId, kind: "incident_created_manually", actorType: "operator", actorId: actor.id,
     data: { report_id: r.id, evaluation_id: ev.id, priority: priorityBand, review_item_id: item.id },
   });
-  await moveEvaluationReviews(c, item, incidentId, actor);
+  await groupingDecided(c, item, incidentId, actor);
   return { incident_id: incidentId };
 }
 
@@ -86,22 +86,35 @@ async function requireUnlinked(c: Db, reportId: string) {
 const EVALUATION_KINDS: ReviewKind[] = ["insufficient_evidence", "contradiction", "low_confidence", "unknown_type"];
 
 /**
- * Al decidir la agrupación, las dudas de evaluación abiertas sobre el reporte pasan al incidente, como en el camino
- * automático (`openEvaluationReviews("incident")` de process-report): ahí bloquean el despacho hasta revisarlas.
+ * El operador decidió la agrupación del reporte (`link` o `create_incident`). Los demás ítems abiertos del reporte:
+ * - las dudas de evaluación pasan al incidente, como en el camino automático (`openEvaluationReviews("incident")` de
+ *   process-report): ahí bloquean el despacho hasta revisarlas;
+ * - un `uncertain_duplicate` ya está decidido: se cierra y sus candidatos se recalculan (si no, quedarían bloqueados).
  */
-async function moveEvaluationReviews(c: Db, item: Item, incidentId: string, actor: Actor) {
+async function groupingDecided(c: Db, item: Item, incidentId: string, actor: Actor) {
   const { rows } = await c.query<{ id: string; kind: ReviewKind; reasons: unknown[]; evidence_refs: unknown[] }>(
     `select id, kind, reasons, evidence_refs from review_items
-     where entity_type = 'report' and entity_id = $1 and status = 'open' and id <> $2 and kind = any($3) for update`,
-    [item.entity_id, item.id, EVALUATION_KINDS],
+     where entity_type = 'report' and entity_id = $1 and status = 'open' and id <> $2 and kind = any($3) order by id for update`,
+    [item.entity_id, item.id, [...EVALUATION_KINDS, "uncertain_duplicate"]],
   );
+  if (!rows.length) return;
+  const territoryId = (await c.query<{ territory_id: string }>("select territory_id from incidents where id = $1", [incidentId])).rows[0].territory_id;
   for (const r of rows) {
-    await openReviewItem(c, { territoryId: item.territory_id, kind: r.kind, entityType: "incident", entityId: incidentId, reasons: r.reasons, evidenceRefs: r.evidence_refs });
+    const moved = r.kind !== "uncertain_duplicate";
+    if (moved) {
+      await openReviewItem(c, { territoryId, kind: r.kind, entityType: "incident", entityId: incidentId, reasons: r.reasons, evidenceRefs: r.evidence_refs });
+    }
+    const reason = moved ? "moved_to_incident" : "grouping_decided";
     await c.query(
-      `update review_items set status = 'dismissed', resolution = jsonb_build_object('action', 'dismiss', 'reason', 'moved_to_incident', 'incident_id', $2::text),
-         resolved_by = $3, resolved_at = now(), updated_at = now() where id = $1`,
-      [r.id, incidentId, actor.id],
+      `update review_items set status = 'dismissed', resolution = jsonb_build_object('action', 'dismiss', 'reason', $2::text, 'incident_id', $3::text),
+         resolved_by = $4, resolved_at = now(), updated_at = now() where id = $1`,
+      [r.id, reason, incidentId, actor.id],
     );
+    if (!moved) await recomputeDispatchBlocked(c, await incidentsAffectedByReviewItem(c, r.id));
+    await appendEvent(c, {
+      entityType: "report", entityId: item.entity_id, kind: "review_closed_by_grouping", actorType: "operator", actorId: actor.id,
+      data: { review_item_id: r.id, kind: r.kind, reason, incident_id: incidentId, decided_by_review_item_id: item.id },
+    });
   }
 }
 
@@ -165,7 +178,7 @@ async function apply(c: Db, item: Item, actor: Actor, resolution: ResolveAction,
       if (!candidatesOf(item).includes(resolution.incidentId)) throw badRequest("not_a_candidate", "Ese incidente no está entre los candidatos del reporte.");
       await requireUnlinked(c, item.entity_id);
       const { linkId } = await linkReport(c, { reportId: item.entity_id, incidentId: resolution.incidentId, origin: "manual", actor });
-      await moveEvaluationReviews(c, item, resolution.incidentId, actor);
+      await groupingDecided(c, item, resolution.incidentId, actor);
       return { link_id: linkId };
     }
     case "create_incident":
