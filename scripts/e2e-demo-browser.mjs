@@ -142,5 +142,7 @@ try {
 }
 const relevant = errors.filter((e) => !/favicon|Download the React DevTools|\[HMR\]|\[Fast Refresh\]/.test(e));
 if (relevant.length) console.log(`\nerrores en consola:\n  ${relevant.slice(0, 20).join("\n  ")}`);
+// Un error de la página o de la consola también hace fallar el recorrido, aunque los actos hayan pasado.
+if (relevant.length) failed = true;
 console.log(failed ? "\n✗ demo en navegador falló" : `\n✓ demo en navegador completa en ${elapsed()}; capturas en ${out}/`);
 process.exit(failed ? 1 : 0);

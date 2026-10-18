@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssignmentAction, UnitAssignmentCard, UnitInboxResponse } from "@/shared/contracts/assignment";
-import { api, errorMessage, HttpError } from "@/app/_components/http";
+import { api, errorMessage, HttpError, withTimeout } from "@/app/_components/http";
 import { SiteHeader } from "@/app/_components/SiteHeader";
 import { IconAlert, IconClock, IconPin, IconRefresh, IconTruck } from "@/app/_components/icons";
 import { ACTION, ago, distance, PRIORITY, PRIORITY_RULE, PROPOSAL_REASON, STATUS } from "./labels";
@@ -82,7 +82,8 @@ export function UnitInbox() {
     loading.current = true;
     const gen = ++generation.current;
     try {
-      const data = await api<UnitInboxResponse>("/api/unidad/assignments");
+      // Con tope de tiempo: un pedido colgado no deja `loading` trabado y la bandeja sigue actualizándose.
+      const data = await api<UnitInboxResponse>("/api/unidad/assignments", { signal: withTimeout(new AbortController().signal) });
       if (gen !== generation.current) return;
       receive(data);
       setLoadError(null);
