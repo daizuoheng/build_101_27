@@ -84,7 +84,9 @@ function useAttemptKeys() {
       keys.current.clear();
       return r;
     } catch (err) {
-      if (!(err instanceof HttpError && err.status === 0)) keys.current.delete(signature);
+      // Solo una respuesta del servidor dice que el pedido no se aplicó. Un error de red, o un corte mientras se leía
+      // el cuerpo (llega como AbortError, no como HttpError), conserva la clave: el pedido pudo haberse aplicado.
+      if (err instanceof HttpError && err.status !== 0) keys.current.delete(signature);
       throw err;
     }
   }, []);
