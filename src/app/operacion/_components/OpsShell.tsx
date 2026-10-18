@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { PriorityBand } from "@/shared/contracts/plan";
 import { BrandMark, Icon, type IconName } from "./Icons";
 import { ThemeToggle } from "./ThemeToggle";
@@ -107,21 +107,11 @@ export function OpsHeader({
 }
 
 function Freshness({ updatedAt, offline }: { updatedAt: number | null; offline?: boolean }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
   if (updatedAt === null) return <span className="text-ink-2" role="status">Cargando…</span>;
-  const s = Math.max(0, Math.round((now - updatedAt) / 1000));
   return (
-    <span className="flex items-center gap-3">
-      <span role="status" className={`flex items-center gap-1.5 font-semibold ${offline ? "text-danger" : "text-[var(--success)]"}`}>
-        <span aria-hidden className={`h-2 w-2 rounded-full ${offline ? "bg-danger" : "bg-[var(--success)]"}`} />
-        {offline ? "Sin conexión" : "Conectado en vivo"}
-      </span>
-      <span aria-hidden className="text-[var(--outline)]">|</span>
-      <span className="font-semibold" aria-live="off">Actualizado hace {s < 60 ? `${s} s` : `${Math.floor(s / 60)} min`}</span>
+    <span role="status" className={`flex items-center gap-1.5 font-semibold ${offline ? "text-danger" : "text-[var(--success)]"}`}>
+      <span aria-hidden className={`h-2 w-2 rounded-full ${offline ? "bg-danger" : "bg-[var(--success)]"}`} />
+      {offline ? "Sin conexión" : "Conectado en vivo"}
     </span>
   );
 }
