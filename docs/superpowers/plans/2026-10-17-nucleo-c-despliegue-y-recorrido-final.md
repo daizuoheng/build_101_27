@@ -4,7 +4,7 @@
 
 **Goal:** Desplegar `main` en Railway + Supabase, probar el recorrido completo desde celulares reales y dejar `HANDOFF.md` con el estado verdadero.
 
-**Architecture:** No hay código nuevo salvo correcciones que surjan del despliegue. **El equipo ya provisionó Railway y Supabase desde sus dashboards** (17 oct, noche) y **cada merge a `main` despliega solo**; ningún commit de ese setup está en el repo (`main` sigue en `18e645a`). Por eso este plan ya no crea infraestructura: **verifica** lo provisionado contra `docs/superpowers/notes/despliegue.md`, resuelve lo marcado "sin verificar", reconcilia `.railway/railway.ts` con lo que existe y agrega el guion de demo. `main` ya tiene todo Núcleo (PR #15).
+**Architecture:** No hay código nuevo salvo correcciones que surjan del despliegue. **El equipo ya provisionó Railway y Supabase desde sus dashboards** (17 oct, noche) y **cada merge a `main` despliega solo**; ningún commit de ese setup está en el repo (`.railway/railway.ts` es el del #5). Por eso este plan ya no crea infraestructura: **verifica** lo provisionado contra `docs/superpowers/notes/despliegue.md`, resuelve lo marcado "sin verificar", reconcilia `.railway/railway.ts` con lo que existe y agrega el guion de demo. `main` (`60de192`) ya tiene las tres épicas: Núcleo (#15, #20), Operación (#22) y Recepción (#23).
 
 **Tech Stack:** Railway (Railpack, `.railway/railway.ts`), Supabase (Postgres + PostGIS, Storage privado), `pnpm cli`.
 
@@ -58,7 +58,7 @@
 
 ### Task 2: Guion de demo y recorrido final
 
-**Precondición:** plan D en `main` (plan inmediato y textos visibles); los planes A y B ya están desde #20 y #22. `epic/operacion` (#22) y `epic/recepcion` (#23) ya están en `main` desde el 17 oct, con T11, T12, las vistas y la bandeja `/unidad`. Con el despliegue continuo, mergear ya es desplegar. Después del último merge, `pnpm cli seed` contra Supabase si alguno tocó políticas (#22 y #23 pueden haberlo hecho: verificarlo con `/usr/bin/git log 18e645a..origin/main -- seeds/`).
+**Precondición:** plan D en `main` (plan inmediato, textos visibles y `template-upgrade`). El plan A está en `main` desde #20. Del plan B, la Task 1 entró con #18 (y #21 la condicionó al handler) dentro de #20; el registro de `plan` y `dispatch` lo hizo Operación en #22; el resto pasó al plan D. `epic/operacion` (#22) y `epic/recepcion` (#23) ya están en `main` desde el 17 oct, con T11, T12, las vistas y la bandeja `/unidad`. Con el despliegue continuo, mergear ya es desplegar. **#23 cambió `seeds/policies.ts` y `seeds/templates.ts`** (verificado con `/usr/bin/git diff 34fb686 60de192 -- seeds/`): contra Supabase, `pnpm cli seed` (agrega las 3 plantillas nuevas; sin eso el chat puede dar `TemplateMissingError`) y, con el plan D en `main`, `pnpm cli template-upgrade` para las 4 cambiadas (ver plan D Task 4).
 
 **Files:**
 - Create: `docs/superpowers/notes/recorrido-final.md`
