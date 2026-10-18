@@ -103,6 +103,18 @@ export function candidateIncidentIds(evidenceRefs: Record<string, unknown>[]): s
   return [...ids];
 }
 
+/**
+ * Incidentes a los que se puede asociar el reporte de un `uncertain_duplicate`. Los abre la agrupación con sus
+ * candidatos; los que abre `unlinkReport` no traen candidatos sino el incidente del que se desasoció
+ * (`previous_incident_id`), y el backend acepta volver a asociarlo mientras siga abierto.
+ */
+export function linkTargets(evidenceRefs: Record<string, unknown>[]): { source: "candidates" | "previous" | "none"; ids: string[] } {
+  const candidates = candidateIncidentIds(evidenceRefs);
+  if (candidates.length > 0) return { source: "candidates", ids: candidates };
+  const prev = evidenceRefs.find((r) => typeof r.previous_incident_id === "string")?.previous_incident_id as string | undefined;
+  return prev ? { source: "previous", ids: [prev] } : { source: "none", ids: [] };
+}
+
 /** Incidente al que se refiere un ítem: el propio, o el de la orden (su evidencia lo nombra). Un reporte no tiene. */
 export function relatedIncidentId(item: Pick<ReviewItemView, "entityType" | "entityId" | "evidenceRefs">): string | null {
   if (item.entityType === "incident") return item.entityId;

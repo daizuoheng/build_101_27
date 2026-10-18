@@ -8,7 +8,7 @@ import type { ResolveAction, ResolveBody, ReviewItemView, ReviewQueueResponse } 
 import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import { Icon } from "./Icons";
 import {
-  REVIEW_ACTION, SEVERITY, age, candidateIncidentIds, incidentHref, relatedIncidentId, reviewKindLabel, reviewReasonText, shortCode,
+  REVIEW_ACTION, SEVERITY, age, incidentHref, linkTargets, relatedIncidentId, reviewKindLabel, reviewReasonText, shortCode,
   type ReviewActionName,
 } from "./labels";
 import { KpiCard, OpsHeader, PriorityBadge } from "./OpsShell";
@@ -294,7 +294,9 @@ function ReviewCard({
 
   const has = (a: ReviewActionName) => item.actions.includes(a);
   const incidentId = relatedIncidentId(item);
-  const candidates = item.kind === "uncertain_duplicate" ? candidateIncidentIds(item.evidenceRefs) : [];
+  // Destinos de «Asociar»: los candidatos de la agrupación o, en un ítem abierto al desasociar, el incidente anterior.
+  const targets = item.kind === "uncertain_duplicate" ? linkTargets(item.evidenceRefs) : { source: "none" as const, ids: [] };
+  const candidates = targets.ids;
   const reasons = [...new Set(item.reasons.map(reviewReasonText).filter((r): r is string => !!r))];
   const noteRequired = item.actions.some((a) => a !== "set_type" && NEEDS_NOTE.has(a as ReviewActionName));
   // `set_type` se hace desde el detalle y `reassign` no se ofrece en el MVP: si no queda otra, la tarjeta no muestra controles.
@@ -417,7 +419,7 @@ function ReviewCard({
 
       {candidates.length > 0 && (
         <div className="mt-2">
-          <h4 className="font-semibold">Incidentes candidatos</h4>
+          <h4 className="font-semibold">{targets.source === "previous" ? "Incidente del que se desasoció" : "Incidentes candidatos"}</h4>
           <ul className="mt-1 flex flex-col gap-1.5">
             {candidates.map((cid) => (
               <li key={cid} className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-surface-2 px-3 py-1.5">

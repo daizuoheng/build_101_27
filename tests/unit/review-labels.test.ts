@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { REVIEW_KINDS } from "@/shared/contracts/review";
-import { REVIEW_ACTION, REVIEW_KIND, candidateIncidentIds, relatedIncidentId, reviewKindLabel, reviewReasonText } from "@/app/operacion/_components/labels";
+import { REVIEW_ACTION, REVIEW_KIND, candidateIncidentIds, linkTargets, relatedIncidentId, reviewKindLabel, reviewReasonText } from "@/app/operacion/_components/labels";
 
 describe("etiquetas de la cola de revisión", () => {
   it("hay una etiqueta por cada tipo de ítem y por cada acción", () => {
@@ -40,6 +40,12 @@ describe("etiquetas de la cola de revisión", () => {
     ];
     expect(candidateIncidentIds(refs)).toEqual(["a", "b", "c"]);
     expect(candidateIncidentIds([])).toEqual([]);
+  });
+
+  it("los destinos de «Asociar» son los candidatos o, si no hay (desasociado a mano), el incidente anterior", () => {
+    expect(linkTargets([{ candidate_incident_ids: ["a", "b"] }, { previous_incident_id: "z" }])).toEqual({ source: "candidates", ids: ["a", "b"] });
+    expect(linkTargets([{ report_id: "r", previous_incident_id: "z" }])).toEqual({ source: "previous", ids: ["z"] });
+    expect(linkTargets([{ report_id: "r" }])).toEqual({ source: "none", ids: [] });
   });
 
   it("el incidente relacionado sale de la entidad o, para una orden, de su evidencia", () => {
