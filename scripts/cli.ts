@@ -50,6 +50,29 @@ const commands: Record<string, () => Promise<Command>> = {
       if (r.status !== 0) return r.status ?? 1;
     }
   },
+  // Lleva las plantillas globales al texto del seed (los seeds nunca pisan filas); no toca las de territorio.
+  "template-upgrade": async () => async (args) => {
+    const { getPool } = await import("../src/server/db/pool");
+    const { upgradeTemplates } = await import("../seeds/template-upgrade");
+    const all = args.all === "true";
+    const keys = (args.keys ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+    if (all === keys.length > 0) {
+      console.error("uso: template-upgrade (--keys <ask_location[,draft_ready,...]> | --all) [--dry-run]");
+      return 2;
+    }
+    const selection = all ? "all" : keys;
+    const dryRun = args["dry-run"] === "true";
+    // Una clave mal escrita no deja aplicadas las demás a medias: primero se mira y, si hay desconocidas, no se escribe.
+    let r = await upgradeTemplates(getPool(), { keys: selection, dryRun: true });
+    if (!dryRun && !r.unknown.length) r = await upgradeTemplates(getPool(), { keys: selection });
+    const list = (xs: string[]) => xs.join(", ") || "ninguna";
+    console.log(dryRun ? "simulación, sin cambios en la base" : r.unknown.length ? "claves desconocidas: no se aplicó nada" : "aplicado");
+    console.log(`actualizadas: ${list(r.updated)}`);
+    console.log(`insertadas: ${list(r.inserted)}`);
+    console.log(`sin cambios: ${list(r.unchanged)}`);
+    console.log(`desconocidas: ${list(r.unknown)}`);
+    return r.unknown.length ? 2 : 0;
+  },
   "seed-demo": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { seedDemo } = await import("../seeds/demo");
