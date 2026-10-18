@@ -176,9 +176,14 @@ export function ReviewQueue({ territorySlug }: { territorySlug: string }) {
   });
 
   const hide = useCallback((item: ReviewItemView, message: string) => {
-    const ids = visibleIds.current;
-    const next = ids[ids.indexOf(item.id) + 1] ?? ids[ids.indexOf(item.id) - 1];
-    pendingFocus.current = next && next !== item.id ? cardTitleId(next) : QUEUE_HEADING_ID;
+    // Solo si el foco sigue en la tarjeta que sale (o se perdió): si el operador ya pasó a otra, no se lo saca de ahí.
+    const active = document.activeElement;
+    const card = document.getElementById(cardTitleId(item.id))?.closest("li");
+    if (!active || active === document.body || card?.contains(active)) {
+      const ids = visibleIds.current;
+      const next = ids[ids.indexOf(item.id) + 1] ?? ids[ids.indexOf(item.id) - 1];
+      pendingFocus.current = next && next !== item.id ? cardTitleId(next) : QUEUE_HEADING_ID;
+    }
     setHidden((h) => new Set(h).add(item.id));
     setNotice(message);
     refresh.current();
@@ -475,7 +480,7 @@ function ReviewCard({
                 <Link href={incidentHref(incidentId, territorySlug)} className="font-semibold text-accent hover:underline">detalle del incidente</Link>.
               </>
             ) : (
-              "El tipo se corrige desde el detalle del incidente."
+              "Corregir el tipo todavía no está disponible desde la cola para un reporte sin incidente."
             )}
           </p>
         )}
