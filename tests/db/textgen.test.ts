@@ -92,7 +92,7 @@ describe("textos generados (textgen)", () => {
     expect(job).toMatchObject({ kind: "textgen", entity_id: incidentId, entity_revision: 1 });
 
     const llm = fakeLlm(citeFirst);
-    expect(await runTextgen({ pool, llm }, job)).toEqual({ discarded: true, sources: {}, fallbacks: {} });
+    expect(await runTextgen({ pool, llm }, job)).toEqual({ discarded: true, applied: false, sources: {}, fallbacks: {} });
     expect(llm.calls).toHaveLength(0);
     expect((await texts(pool)).rows).toEqual([]);
   });
@@ -319,7 +319,7 @@ describe("textos generados (textgen)", () => {
     await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
     const llm = fakeLlm(citeFirst);
     const res = await runTextgen({ pool, llm }, (await claimNext(pool, "w", 60))!);
-    expect(res).toEqual({ discarded: false, sources: { title: "template", summary: "template", explain_priority: "template" }, fallbacks: {} });
+    expect(res).toEqual({ discarded: false, applied: true, sources: { title: "template", summary: "template", explain_priority: "template" }, fallbacks: {} });
     expect(llm.calls).toHaveLength(0);
     const rows = (await texts(pool)).rows;
     expect(rows.find((r) => r.purpose === "title")!.body).toBe("Bache — Av. Italia 2450");
@@ -360,7 +360,7 @@ describe("textos generados (textgen)", () => {
     await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
     const job = (await claimNext(pool, "w", 60))!;
     const res = await runTextgen({ pool, llm: fakeLlm(citeFirst) }, job);
-    expect(res).toEqual({ discarded: false, sources: { title: "llm", summary: "llm", explain_priority: "llm" }, fallbacks: {} });
+    expect(res).toEqual({ discarded: false, applied: true, sources: { title: "llm", summary: "llm", explain_priority: "llm" }, fallbacks: {} });
     const rows = (await texts(pool)).rows;
     expect(rows.map((r) => r.purpose)).toEqual(["explain_priority", "summary", "title"]);
     expect(rows[0].references).toEqual(["severity_high"]);
@@ -407,5 +407,33 @@ describe("textos generados (textgen)", () => {
     expect(await latestTexts(pool, incidentId)).toEqual({ revision: 2, title: null, summary: null, explain_priority: null });
     const many = await latestTextsMany(pool, [incidentId]);
     expect(many.get(incidentId)?.revision).toBe(2);
+  });
+
+  it("el handler copia título y resumen de la revisión vigente a las columnas del incidente", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const job = (await claimNext(pool, "w", 60))!;
+    const res = await runTextgen({ pool, llm: null }, job);
+    expect(res.applied).toBe(true);
+    const inc = (await pool.query("select title, summary from incidents where id = $1", [incidentId])).rows[0];
+    const texts = await latestTexts(pool, incidentId);
+    expect(inc).toEqual({ title: texts.title, summary: texts.summary });
+    expect(inc.summary).not.toBeNull();
+  });
+
+  it("si la revisión cambió antes de copiar, no escribe las columnas", async () => {
+    const pool = await testDb();
+    const { incidentId, territory } = await incidentWithReport(pool);
+    const before = (await pool.query("select title, summary from incidents where id = $1", [incidentId])).rows[0];
+    await enqueueTextgen(pool, { incidentId, revision: 1, territoryId: territory });
+    const job = (await claimNext(pool, "w", 60))!;
+    const llm = fakeLlm(async (call) => {
+      await pool.query("update incidents set revision = 2 where id = $1", [incidentId]);
+      return citeFirst(call);
+    });
+    const res = await runTextgen({ pool, llm }, job);
+    expect(res.applied).toBe(false);
+    expect((await pool.query("select title, summary from incidents where id = $1", [incidentId])).rows[0]).toEqual(before);
   });
 });
