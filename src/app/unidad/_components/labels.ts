@@ -26,6 +26,7 @@ export const PRIORITY_RULE: Record<string, string> = {
   passage_blocked: "paso bloqueado",
   accessibility_affected: "accesibilidad afectada",
   severity_medium: "gravedad media",
+  accessibility_partial: "accesibilidad parcialmente afectada",
   promoted_by_age: "lleva tiempo sin atender",
 };
 

@@ -89,6 +89,20 @@ describe("computePriority", () => {
     expect(computePriority({ ...base, accessibility: "affected" }, now, now, policy).band).toBe("high");
     expect(computePriority({ ...base, passage: "total" }, now, now, policy).band).toBe("high");
   });
+  it("accesibilidad parcial ⇒ media, aunque la severidad sea baja o indeterminada", () => {
+    const r = computePriority({ ...base, accessibility: "partial" }, now, now, policy);
+    expect(r.band).toBe("medium");
+    expect(r.breakdown.rules).toEqual(["accessibility_partial"]);
+    expect(computePriority({ ...base, severity: "undetermined", accessibility: "partial" }, now, now, policy).band).toBe("medium");
+    expect(computePriority({ ...base, severity: "medium", accessibility: "partial" }, now, now, policy).breakdown.rules).toEqual([
+      "severity_medium",
+      "accessibility_partial",
+    ]);
+  });
+  it("una política sin medium.accessibility sigue validando y no sube la parcial", () => {
+    const old = PriorityPolicy.parse({ ...policies.priority, medium: { severity: ["medium"] } });
+    expect(computePriority({ ...base, accessibility: "partial" }, now, now, old).band).toBe("low");
+  });
   it("indeterminada ⇒ unknown", () => {
     expect(computePriority({ ...base, severity: "undetermined" }, now, now, policy).band).toBe("unknown");
   });

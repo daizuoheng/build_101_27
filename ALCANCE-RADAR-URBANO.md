@@ -100,7 +100,7 @@ Proveedor recomendado: Jev. La documentación confirma preguntas tipadas, probab
 | Condición y peligro activo | Detalles según tipo; fuego activo: sí / no / desconocido | Distinguir daño material de una situación urgente y exigir capacidad adecuada |
 | Severidad observada | baja / media / alta / indeterminada | Estimar impacto a partir de evidencia disponible |
 | Paso bloqueado | sí / no / desconocido | Detectar afectación a la circulación |
-| Accesibilidad afectada | sí / no / desconocido | Detectar rampa o recorrido peatonal inutilizable |
+| Accesibilidad afectada | sí / parcial / no / desconocido | Detectar rampa o recorrido peatonal inutilizable (sí) o angostado/dañado pero transitable (parcial) |
 | Evidencia | Resumen breve de hechos visibles o declarados | Explicar la evaluación |
 | Fuente de cada observación | foto / texto ciudadano | Distinguir lo observado de lo reportado |
 | Contradicción texto-foto | sí / no / indeterminada, con motivo | Derivar casos inconsistentes a revisión |
@@ -121,7 +121,7 @@ Para el despacho, conservar por separado las puntuaciones de aplicabilidad y tip
 La prioridad combina los resultados de IA con reglas visibles. No representa una medida científica de riesgo ni un SLA municipal.
 
 - **Alta:** severidad alta, fuego activo reportado u observado, bloqueo total del paso o afectación confirmada por la evidencia a una rampa/recorrido accesible. Los peligros activos se destacan para revisión urgente aunque la evidencia sea incierta.
-- **Media:** severidad media, o incidente de prioridad baja con más de 48 horas abierto.
+- **Media:** severidad media, recorrido accesible parcialmente afectado (angostado o dañado pero transitable), o incidente de prioridad baja con más de 48 horas abierto.
 - **Baja:** severidad baja, sin agravantes identificados.
 - **Revisión requerida (eje separado de prioridad):** aplicabilidad, severidad o evidencia contradictoria sin resolver. Un incidente puede ser de prioridad alta y requerir revisión simultáneamente.
 

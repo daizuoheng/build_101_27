@@ -14,7 +14,7 @@ import { latestAssessed, recomputeEffective } from "./effective";
 
 export type Severity = "low" | "medium" | "high" | "undetermined";
 export type Passage = "total" | "partial" | "none" | "undetermined";
-export type Accessibility = "affected" | "not_affected" | "undetermined";
+export type Accessibility = "affected" | "partial" | "not_affected" | "undetermined";
 export type Band = "high" | "medium" | "low" | "unknown";
 
 /** Campos del incidente que decide la evaluación (los que puede cambiar Jev). */

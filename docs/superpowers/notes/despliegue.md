@@ -176,6 +176,10 @@ unset DATABASE_URL
 
 ## Seeds después de un merge
 
+**Accesibilidad parcial (migración 0009):** las políticas activas en la base no toman el cambio solas. Hasta correr
+`pnpm cli policy-upgrade --kind evaluation,priority,textgen`, Jev ya puede devolver `partial` (las opciones salen del
+código) pero sin su criterio, la prioridad no la sube a media y los textos muestran el código crudo.
+
 `pnpm cli seed` también inserta ocho unidades especializadas de Montevideo: limpieza, vialidad y limpieza,
 fuego y limpieza, alumbrado (oficina por zona), arbolado, señalización, drenaje y limpieza, y accesibilidad.
 Para cargar solo esas unidades después de sembrar el catálogo y los barrios: `pnpm cli seed-units --territory montevideo`.
