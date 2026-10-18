@@ -76,6 +76,17 @@ async function fixture(): Promise<Fixture> {
   await appendEvent(pool, { entityType: "assignment", entityId: assignmentId, kind: "offered", actorType: "system" });
   await openReviewItem(pool, { territoryId: mvd, kind: "contradiction", entityType: "incident", entityId: incidentId, reasons: [{ code: "reports_inconsistent" }] });
 
+  const conv = (await one(pool, "select id from conversations where report_id = $1", [autoReport])).id;
+  const msg = (role: string, body: string, control = false) =>
+    pool.query(
+      `insert into messages (conversation_id, seq, role, body, origin, control_reply)
+       select $1, coalesce(max(seq), 0) + 1, $2, $3, 'human', $4 from messages where conversation_id = $1`,
+      [conv, role, body, control],
+    );
+  await msg("assistant", "Tus reportes: ABC123 (resuelto)");
+  await msg("citizen", "sí", true);
+  await msg("citizen", "[foto]");
+
   const orig = await one(pool, "insert into attachments (report_id, storage_key, content_type, bytes, sha256, purpose) values ($1, 'k-orig', 'image/heic', 3, 'a', 'original') returning id", [autoReport]);
   await pool.query("insert into attachments (report_id, storage_key, content_type, bytes, sha256, purpose, derived_from_id) values ($1, 'k-jev', 'image/jpeg', 3, 'b', 'jev', $2)", [autoReport, orig.id]);
   return { pool, mvd, b, operatorId, incidentId, autoReport, manualReport, assignmentId, photoId: orig.id };
@@ -112,6 +123,11 @@ describe("detalle del incidente para el operador", () => {
     expect(auto.description).toBe("Hay un pozo grande en la calle");
     expect(auto.messages).toContainEqual(expect.objectContaining({ role: "citizen", body: "Hay un pozo grande en la calle" }));
     expect(body.reports.find((r) => r.id === f.manualReport)!.photoIds).toEqual([]);
+    // Solo el relato del ciudadano: ni respuestas del asistente (pueden citar otros reportes de la sesión), ni
+    // respuestas de control, ni marcadores de foto.
+    expect(auto.messages.every((m) => m.role === "citizen")).toBe(true);
+    expect(auto.messages.map((m) => m.body)).not.toEqual(expect.arrayContaining(["sí", "[foto]"]));
+    expect(auto.messages.map((m) => m.body).join(" ")).not.toContain("Tus reportes");
 
     expect(body.activeAssignment).toMatchObject({ id: f.assignmentId, status: "offered", version: 1, reviewBlocked: false });
     expect(body.activeAssignment!.unitName).toBeTruthy();
@@ -193,6 +209,18 @@ describe("detalle del incidente para el operador", () => {
     expect((await one(f.pool, "select grouping from reports where id = $1", [f.manualReport])).grouping).toBe("review");
     const { body } = await getIncidentDetail(f.pool, f.incidentId);
     expect(body.reports.map((x) => x.id)).toEqual([f.autoReport]);
+  });
+
+  it("asociar un reporte de otro territorio responde igual que uno inexistente (404)", async () => {
+    const f = await fixture();
+    const foreign = await confirmedReport(f.pool, f.mvd, "Reporte de otro lado");
+    await f.pool.query("update reports set territory_id = $2 where id = $1", [foreign, f.b]);
+    const link = (reportId: string, key: string) =>
+      withTx((c) => requestLink(c, { incidentId: f.incidentId, userId: f.operatorId, body: { action: "link", reportId, idempotencyKey: key } }), f.pool);
+    const a = await link(foreign, "lnk-f000001").catch((e) => e);
+    const b = await link("00000000-0000-4000-8000-000000000000", "lnk-f000002").catch((e) => e);
+    expect(a).toMatchObject({ status: 404 });
+    expect({ code: a.code, message: a.message }).toEqual({ code: b.code, message: b.message });
   });
 
   describe("rutas", () => {

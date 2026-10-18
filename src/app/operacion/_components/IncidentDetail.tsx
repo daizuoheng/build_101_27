@@ -69,15 +69,17 @@ const CLOSED = new Set(["resolved", "archived"]);
 
 /**
  * Clave de idempotencia por intento: la misma acción reintentada después de un error de red reutiliza su clave (el
- * servidor no la aplica dos veces); cualquier otra respuesta la descarta.
+ * servidor no la aplica dos veces); cualquier otra respuesta la descarta. `version` (la revisión o versión que vio el
+ * operador) se congela con la clave: si el pedido perdido sí se aplicó y el polling trajo la revisión nueva, el
+ * reintento manda el mismo pedido y el servidor lo reconoce, en vez de aplicarlo otra vez con la revisión nueva.
  */
 function useAttemptKeys() {
-  const keys = useRef(new Map<string, string>());
-  return useCallback(async <T,>(signature: string, run: (key: string) => Promise<T>): Promise<T> => {
-    const key = keys.current.get(signature) ?? crypto.randomUUID();
-    keys.current.set(signature, key);
+  const keys = useRef(new Map<string, { key: string; version: number }>());
+  return useCallback(async <T,>(signature: string, version: number, run: (key: string, version: number) => Promise<T>): Promise<T> => {
+    const attempt = keys.current.get(signature) ?? { key: crypto.randomUUID(), version };
+    keys.current.set(signature, attempt);
     try {
-      const r = await run(key);
+      const r = await run(attempt.key, attempt.version);
       keys.current.delete(signature);
       return r;
     } catch (err) {
@@ -128,6 +130,7 @@ export function IncidentDetail({ incidentId, territorySlug }: { incidentId: stri
         return;
       }
       if (err instanceof HttpError && err.status === 404) {
+        setData(null); // sin datos viejos ni botones activos junto al aviso
         setMissing(true);
         return;
       }
@@ -155,12 +158,12 @@ export function IncidentDetail({ incidentId, territorySlug }: { incidentId: stri
   }, [load]);
 
   /** Corre un pedido; un 409 de revisión recarga y avisa, sin tocar lo que el operador eligió. */
-  async function act(signature: string, run: (key: string) => Promise<unknown>, done: string): Promise<boolean> {
+  async function act(signature: string, version: number, run: (key: string, version: number) => Promise<unknown>, done: string): Promise<boolean> {
     setBusy(true);
     setNotice(null);
     setError(null);
     try {
-      await attempt(signature, run);
+      await attempt(signature, version, run);
       setNotice(done);
       await load();
       return true;
@@ -181,21 +184,23 @@ export function IncidentDetail({ incidentId, territorySlug }: { incidentId: stri
   }
 
   const base = `/api/operacion/incidents/${encodeURIComponent(incidentId)}`;
+  // La firma es lo que el operador quiso hacer (sin revisión ni versión): la revisión vista viaja congelada con la clave.
+  const revision = data?.incident.revision ?? 0;
   const setOverride = (override: OverrideValue, reason: string, done: string) =>
-    act(`set:${JSON.stringify(override)}:${reason}:${data?.incident.revision}`, (key) =>
+    act(`set:${JSON.stringify(override)}:${reason}`, revision, (key, expectedRevision) =>
       api<OverrideResult>(`${base}/overrides`, {
         method: "POST",
-        json: { override, reason, expectedRevision: data!.incident.revision, idempotencyKey: key } satisfies SetOverrideBody,
+        json: { override, reason, expectedRevision, idempotencyKey: key } satisfies SetOverrideBody,
       }), done);
   const removeOverride = (field: OverrideField) =>
-    act(`remove:${field}:${data?.incident.revision}`, (key) => api(`${base}/overrides/${field}`, { method: "DELETE", json: { idempotencyKey: key } }), `Se quitó la corrección de ${FIELD[field].toLowerCase()}.`);
+    act(`remove:${field}`, revision, (key) => api(`${base}/overrides/${field}`, { method: "DELETE", json: { idempotencyKey: key } }), `Se quitó la corrección de ${FIELD[field].toLowerCase()}.`);
   const unlink = (reportId: string, reason: string) =>
-    act(`unlink:${reportId}:${reason}`, (key) => api(`${base}/links`, { method: "POST", json: { action: "unlink", reportId, reason, idempotencyKey: key } }), "Reporte desasociado. Quedó en la cola de revisión para asociarlo o crear su incidente.");
+    act(`unlink:${reportId}:${reason}`, revision, (key) => api(`${base}/links`, { method: "POST", json: { action: "unlink", reportId, reason, idempotencyKey: key } }), "Reporte desasociado. Quedó en la cola de revisión para asociarlo o crear su incidente.");
   const assignmentAction = (action: AssignmentAction) => {
     const a = data?.activeAssignment;
     if (!a) return Promise.resolve(false);
-    return act(`assignment:${a.id}:${action}:${a.version}`, (key) =>
-      api(`/api/operacion/assignments/${a.id}`, { method: "POST", json: { action, expectedVersion: a.version, idempotencyKey: key } }),
+    return act(`assignment:${a.id}:${action}`, a.version, (key, expectedVersion) =>
+      api(`/api/operacion/assignments/${a.id}`, { method: "POST", json: { action, expectedVersion, idempotencyKey: key } }),
       action === "complete" ? "Orden completada." : "Orden cancelada.");
   };
 

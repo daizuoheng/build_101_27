@@ -96,6 +96,12 @@ export async function requestLink(c: PoolClient, i: { incidentId: string; userId
   const actor = operator(i.userId);
   return idempotent<Omit<LinkResult, "replayed">>(c, { incidentId: i.incidentId, userId: i.userId, key: idempotencyKey, request: { op: "link", ...request } }, async () => {
     if (request.action === "link") {
+      // Un reporte de otro territorio, o un borrador, responde igual que uno inexistente: no se revela que existe.
+      const rep = await c.query(
+        "select 1 from reports r join incidents i on i.id = $2 where r.id = $1 and r.territory_id = i.territory_id and r.status = 'confirmed'",
+        [request.reportId, i.incidentId],
+      );
+      if (!rep.rows[0]) throw notFound("Reporte inexistente.");
       const r = await linkReport(c, { reportId: request.reportId, incidentId: i.incidentId, origin: "manual", actor });
       return { action: "link", incidentId: i.incidentId, reportId: request.reportId, previousIncidentId: r.previousIncidentId };
     }

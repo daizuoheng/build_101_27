@@ -31,7 +31,10 @@ export const IncidentDetailResponse = z.object({
       confirmedAt: z.string().nullable(),
       linkOrigin: z.enum(["auto", "manual"]),
       description: z.string().nullable(),
-      /** Roles de `messages.role` (migrations/0002_intake.sql). */
+      /**
+       * Relato del ciudadano (sin respuestas de control ni marcadores de foto). El enum son los roles de `messages.role`
+       * (migrations/0002_intake.sql); hoy el detalle solo envía `citizen`: lo demás puede citar otros reportes de la sesión.
+       */
       messages: z.array(z.object({ role: z.enum(["citizen", "assistant", "system"]), body: z.string(), createdAt: z.string() })),
       /** Adjuntos `original` del reporte; se sirven por GET /api/operacion/photos/[id] (derivado JPEG). */
       photoIds: z.array(z.string()),

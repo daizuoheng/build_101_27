@@ -38,7 +38,11 @@ export async function getIncidentDetail(db: Db, incidentId: string): Promise<{ t
     db.query<{ id: string; public_code: string | null; confirmed_at: Date | null; origin: "auto" | "manual"; description: string | null; messages: { role: "citizen" | "assistant" | "system"; body: string; createdAt: string }[]; photo_ids: string[] }>(
       `select r.id, r.public_code, r.confirmed_at, l.origin, r.description,
          coalesce((select json_agg(json_build_object('role', m.role, 'body', m.body, 'createdAt', m.created_at) order by m.seq)
-                   from conversations cv join messages m on m.conversation_id = cv.id where cv.report_id = r.id), '[]') as messages,
+                   from conversations cv join messages m on m.conversation_id = cv.id
+                   -- Solo el relato del ciudadano, como lo lee el pipeline (drafts.ts): sin respuestas del asistente
+                   -- (una consulta de estado cita otros reportes de la sesión, de cualquier territorio), sin
+                   -- respuestas de control («sí», «enviar») ni marcadores de foto.
+                   where cv.report_id = r.id and m.role = 'citizen' and not m.control_reply and m.body <> '[foto]'), '[]') as messages,
          coalesce((select array_agg(at.id order by at.created_at, at.id) from attachments at where at.report_id = r.id and at.purpose = 'original'), '{}') as photo_ids
        from report_incident_links l join reports r on r.id = l.report_id
        where l.incident_id = $1 and l.active
