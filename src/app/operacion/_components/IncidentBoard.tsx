@@ -1,13 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { IncidentListItem, IncidentListResponse } from "@/shared/contracts/incident";
 import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import { Icon, type IconName } from "./Icons";
-import { PLAN_ITEM_STATUS, PRIORITY, REVIEW_KIND, STATUS, age, areaDisplay, shortCode, versusYesterday } from "./labels";
+import { PLAN_ITEM_STATUS, PRIORITY, STATUS, age, areaDisplay, incidentHref, reviewKindLabel, shortCode, versusYesterday } from "./labels";
 import { FilterSelect, KpiCard, OpsHeader, PriorityBadge, SearchBox } from "./OpsShell";
 
 const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
@@ -216,7 +217,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
           {data && incidents.length === 0 && <p className="card p-4 text-ink-2">No hay incidentes con estos filtros.</p>}
           <ul className="flex flex-col gap-2.5">
             {incidents.map((i) => (
-              <IncidentRow key={i.id} item={i} now={updatedAt ?? 0} areaLabel={areaLabel} selected={selected === i.id} onSelect={() => setSelected(i.id)} />
+              <IncidentRow key={i.id} item={i} now={updatedAt ?? 0} areaLabel={areaLabel} selected={selected === i.id} territorySlug={territorySlug} />
             ))}
           </ul>
         </section>
@@ -228,7 +229,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
 /** Estado operativo del pie de la tarjeta: lo que el operador tiene que saber primero. */
 function footerStatus(item: IncidentListItem): { text: string; icon: IconName; className: string } {
   if (item.openReviewKinds.length > 0)
-    return { text: `Por revisar (${item.openReviewKinds.map((k) => REVIEW_KIND[k] ?? k).join(", ")})`, icon: "help", className: "text-warn" };
+    return { text: `Por revisar (${item.openReviewKinds.map((k) => reviewKindLabel(k).toLocaleLowerCase("es")).join(", ")})`, icon: "help", className: "text-warn" };
   if (item.dispatchBlocked) return { text: "Despacho bloqueado", icon: "block", className: "text-warn" };
   switch (item.status) {
     case "open":
@@ -245,13 +246,14 @@ function footerStatus(item: IncidentListItem): { text: string; icon: IconName; c
 }
 
 function IncidentRow({
-  item, now, areaLabel, selected, onSelect,
+  item, now, areaLabel, selected, territorySlug,
 }: {
   item: IncidentListItem;
   now: number;
   areaLabel: string;
+  /** Marcado desde el mapa; el título lleva al detalle. */
   selected: boolean;
-  onSelect: () => void;
+  territorySlug: string;
 }) {
   const f = footerStatus(item);
   const area = areaDisplay(item.area?.name);
@@ -268,9 +270,9 @@ function IncidentRow({
         <span className="text-ink-2">Hace {age(item.createdAt, now)}</span>
       </div>
       <h3 className="text-lg font-semibold leading-snug">
-        <button type="button" className="ops-item-action text-left" aria-pressed={selected} onClick={onSelect}>
+        <Link href={incidentHref(item.id, territorySlug)} className="ops-item-action text-left hover:underline">
           {item.title}
-        </button>
+        </Link>
       </h3>
       <p className="mt-0.5 text-ink-2">{place}</p>
       <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2">

@@ -1,4 +1,5 @@
 import type { IncidentListItem } from "@/shared/contracts/incident";
+import type { ResolveAction, ReviewItemView, ReviewKind } from "@/shared/contracts/review";
 
 // Prioridad legible sin color: etiqueta + símbolo de forma distinta.
 export const PRIORITY: Record<IncidentListItem["priorityBand"], { label: string; symbol: string; rank: number }> = {
@@ -16,18 +17,103 @@ export const STATUS: Record<IncidentListItem["status"], string> = {
   archived: "Archivado",
 };
 
-export const REVIEW_KIND: Record<string, string> = {
-  insufficient_evidence: "evidencia insuficiente",
-  uncertain_duplicate: "posible duplicado",
-  contradiction: "contradicción",
-  low_confidence: "baja confianza",
-  unknown_type: "tipo desconocido",
-  no_compatible_unit: "sin unidad compatible",
-  rejected_assignment: "orden rechazada",
-  incompatible_assignment: "orden incompatible",
-  provider_failure: "falla del proveedor",
-  out_of_coverage: "fuera de cobertura",
+// --- Cola de revisión (Tarea 14). Exhaustivos: si se agrega un tipo o una acción al contrato, tsc pide su etiqueta. ---
+
+export const REVIEW_KIND: Record<ReviewKind, string> = {
+  uncertain_duplicate: "Posible duplicado",
+  insufficient_evidence: "Evidencia insuficiente",
+  contradiction: "Reportes que se contradicen",
+  low_confidence: "Clasificación dudosa",
+  unknown_type: "Tipo desconocido",
+  no_compatible_unit: "Sin unidad compatible",
+  rejected_assignment: "Orden rechazada",
+  incompatible_assignment: "Orden incompatible",
+  provider_failure: "Falla del análisis",
+  out_of_coverage: "Fuera de cobertura",
 };
+
+/** Etiqueta de un tipo de ítem que llega como texto (p. ej. `openReviewKinds` de la lista); si no hay, el código. */
+export function reviewKindLabel(kind: string): string {
+  return (REVIEW_KIND as Record<string, string>)[kind] ?? kind;
+}
+
+export type ReviewActionName = ResolveAction["action"];
+
+export const REVIEW_ACTION: Record<ReviewActionName, string> = {
+  link: "Asociar a este incidente",
+  create_incident: "Crear incidente nuevo",
+  set_type: "Corregir tipo",
+  set_severity: "Corregir severidad",
+  allow_dispatch: "Permitir despacho",
+  // No se ofrece en el MVP (la API responde 400 action_not_available); está para que el registro sea exhaustivo.
+  reassign: "Reasignar",
+  retry: "Reintentar análisis",
+  dismiss: "Descartar",
+};
+
+export const SEVERITY: Record<"low" | "medium" | "high", string> = { low: "Baja", medium: "Media", high: "Alta" };
+
+/** Motivos estables con los que se abren los ítems (`review_items.reasons[].code`). */
+export const REVIEW_REASON: Record<string, string> = {
+  insufficient_evidence: "La evidencia no alcanza para confirmar el problema",
+  contradiction: "El texto y la foto no coinciden",
+  low_confidence: "La clasificación automática tiene baja confianza",
+  unknown_type: "No se pudo determinar el tipo de problema",
+  reports_contradict: "Los reportes del incidente se contradicen",
+  evaluation_disagrees_with_manual_link: "La evaluación no coincide con la asociación manual",
+  outside_territory: "La ubicación está fuera del territorio",
+  provider_failure: "Falló el análisis automático",
+  rejected_by_unit: "Rechazada por la cuadrilla",
+  cancelled_by_operator: "Cancelada por un operador",
+  unlinked_by_operator: "Un operador lo desasoció de su incidente",
+  location_changed: "Cambió la ubicación del incidente",
+  type_changed: "Cambió el tipo del incidente",
+  active_hazard_detected: "Se detectó peligro activo",
+  // Agrupación (compare-candidates): vienen como `<motivo>:<ref del candidato>`.
+  no_candidates: "Sin incidentes candidatos",
+  candidates_changed: "Los candidatos cambiaron durante el análisis",
+  candidates_truncated: "Hay más candidatos de los que se compararon",
+  uncertain: "No está claro si es el mismo problema que un candidato",
+  weak_same: "Parecido débil con un incidente candidato",
+  weak_different: "Diferencia débil con un incidente candidato",
+  object_conflict: "El objeto no coincide con un candidato",
+  place_conflict: "El lugar no coincide con un candidato",
+  time_conflict: "El momento no coincide con un candidato",
+};
+
+/** Motivo legible de un ítem: el código traducido (sin la referencia al candidato) y el texto libre si lo hay. */
+export function reviewReasonText(reason: Record<string, unknown>): string | null {
+  const code = typeof reason.code === "string" ? reason.code : null;
+  if (!code) return null;
+  const label = REVIEW_REASON[code] ?? REVIEW_REASON[code.split(":")[0]] ?? code;
+  const free = typeof reason.reason === "string" ? reason.reason.trim() : "";
+  return free ? `${label}: «${free}»` : label;
+}
+
+/** Incidentes candidatos de un `uncertain_duplicate`, de todas sus evidencias y sin repetir. */
+export function candidateIncidentIds(evidenceRefs: Record<string, unknown>[]): string[] {
+  const ids = new Set<string>();
+  for (const ref of evidenceRefs) {
+    const list = ref.candidate_incident_ids;
+    if (Array.isArray(list)) for (const id of list) if (typeof id === "string") ids.add(id);
+  }
+  return [...ids];
+}
+
+/** Incidente al que se refiere un ítem: el propio, o el de la orden (su evidencia lo nombra). Un reporte no tiene. */
+export function relatedIncidentId(item: Pick<ReviewItemView, "entityType" | "entityId" | "evidenceRefs">): string | null {
+  if (item.entityType === "incident") return item.entityId;
+  if (item.entityType === "assignment") {
+    const ref = item.evidenceRefs.find((r) => typeof r.incident_id === "string");
+    return ref ? (ref.incident_id as string) : null;
+  }
+  return null;
+}
+
+/** Enlace al detalle de un incidente (Tarea 14, Task 2). */
+export function incidentHref(incidentId: string, territorySlug: string): string {
+  return `/operacion/incidentes/${encodeURIComponent(incidentId)}?territory=${encodeURIComponent(territorySlug)}`;
+}
 
 /** Nombre de área legible: el GeoJSON trae mayúsculas («CORDON»); se muestra «Cordon». */
 export function areaDisplay(name: string | null | undefined): string | null {
