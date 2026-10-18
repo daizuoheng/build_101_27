@@ -53,15 +53,13 @@ const commands: Record<string, () => Promise<Command>> = {
   // Lleva las plantillas globales al texto del seed (los seeds nunca pisan filas); no toca las de territorio.
   "template-upgrade": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
-    const { upgradeTemplates } = await import("../seeds/template-upgrade");
-    const all = args.all === "true";
-    const keys = (args.keys ?? "").split(",").map((k) => k.trim()).filter(Boolean);
-    if (all === keys.length > 0) {
+    const { parseTemplateUpgradeArgs, upgradeTemplates } = await import("../seeds/template-upgrade");
+    const opts = parseTemplateUpgradeArgs(args);
+    if (!opts) {
       console.error("uso: template-upgrade (--keys <ask_location[,draft_ready,...]> | --all) [--dry-run]");
       return 2;
     }
-    const selection = all ? "all" : keys;
-    const dryRun = args["dry-run"] === "true";
+    const { keys: selection, dryRun } = opts;
     // Una clave mal escrita no deja aplicadas las demás a medias: primero se mira y, si hay desconocidas, no se escribe.
     let r = await upgradeTemplates(getPool(), { keys: selection, dryRun: true });
     if (!dryRun && !r.unknown.length) r = await upgradeTemplates(getPool(), { keys: selection });

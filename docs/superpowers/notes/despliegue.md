@@ -179,13 +179,14 @@ unset DATABASE_URL
 Las migraciones corren solas en el pre-deploy; los seeds no. Si el merge tocó `seeds/`, después del deploy, con
 `DATABASE_URL` de Supabase como en el paso 2:
 
-- `pnpm cli seed` agrega lo que falta (claves, tipos, políticas nuevas) y **nunca** pisa filas existentes. Una
-  plantilla nueva sin sembrar hace fallar `renderTemplate` (`TemplateMissingError`).
+- `pnpm cli seed` agrega lo que falta (claves, tipos, políticas nuevas) y no pisa la configuración existente (solo
+  reimporta barrios si cambió el archivo). Una plantilla nueva sin sembrar hace fallar `renderTemplate`
+  (`TemplateMissingError`).
 - Un texto cambiado en `seeds/templates.ts` no llega con `seed`. `pnpm cli template-upgrade --all --dry-run` lista las
   plantillas globales que difieren del seed (`actualizadas`) o faltan (`insertadas`) sin escribir nada;
   `pnpm cli template-upgrade --keys a,b` las aplica. Solo toca filas globales (`territory_id is null`): las
   personalizaciones por territorio quedan como están. Cada texto reemplazado deja un evento `template_upgraded` con
-  `previous_body` para volver atrás a mano. Una clave que no está en el seed hace salir con código 2 sin aplicar
+  `previous_body` para volver atrás a mano (`reset-demo` borra los eventos: anotar antes lo que importe). Una clave que no está en el seed hace salir con código 2 sin aplicar
   ninguna. Preferir `--keys` con las claves que cambió el PR antes que `--all`, que también revierte textos globales
   editados a mano en la base.
 - Una política cambiada en `seeds/policies.ts`: `pnpm cli policy-upgrade --kind <kind>` (versiona, no edita).

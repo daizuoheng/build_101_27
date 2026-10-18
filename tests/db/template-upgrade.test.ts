@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
-import { upgradeTemplates } from "../../seeds/template-upgrade";
+import { parseTemplateUpgradeArgs, upgradeTemplates } from "../../seeds/template-upgrade";
 import { templates } from "../../seeds/templates";
 import { territoryId } from "./fakes";
 import { resetDb, testDb } from "./setup";
@@ -38,5 +38,23 @@ describe("template-upgrade", () => {
     ]);
 
     expect(await upgradeTemplates(pool, { keys: "all" })).toMatchObject({ updated: [], inserted: [], unknown: [] });
+  });
+
+  it("los argumentos del CLI: una opción mal escrita no termina escribiendo en la base", () => {
+    expect(parseTemplateUpgradeArgs({ keys: "draft_ready, ask_location", "dry-run": "true" })).toEqual({
+      keys: ["draft_ready", "ask_location"],
+      dryRun: true,
+    });
+    expect(parseTemplateUpgradeArgs({ all: "true" })).toEqual({ keys: "all", dryRun: false });
+    for (const bad of <Record<string, string>[]>[
+      {},
+      { all: "true", keys: "draft_ready" },
+      { keys: "true" },
+      { all: "x" },
+      { all: "true", "dry-run=true": "true" },
+      { all: "true", dryrun: "true" },
+      { all: "true", "dry-run": "false" },
+    ])
+      expect(parseTemplateUpgradeArgs(bad)).toBeNull();
   });
 });

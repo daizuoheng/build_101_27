@@ -7,6 +7,22 @@ import { templates } from "./templates";
 export type TemplateUpgradeResult = { updated: string[]; inserted: string[]; unchanged: string[]; unknown: string[] };
 
 /**
+ * Opciones del CLI (`--keys a,b | --all`, `--dry-run`), o `null` si no son válidas. Estricto a propósito: el comando
+ * escribe por defecto, así que una opción mal escrita (`--dryrun`, `--dry-run=true`, `--dry-run false`) se rechaza
+ * en lugar de ignorarse y terminar aplicando.
+ */
+export function parseTemplateUpgradeArgs(args: Record<string, string>): { keys: string[] | "all"; dryRun: boolean } | null {
+  if (Object.keys(args).some((k) => !["keys", "all", "dry-run"].includes(k))) return null;
+  if (args["dry-run"] !== undefined && args["dry-run"] !== "true") return null;
+  if (args.all !== undefined && args.all !== "true") return null;
+  // `--keys` sin valor llega como "true".
+  const keys = args.keys === "true" ? [] : (args.keys ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+  const all = args.all === "true";
+  if (all === keys.length > 0 || (args.keys !== undefined && !keys.length)) return null;
+  return { keys: all ? "all" : keys, dryRun: args["dry-run"] === "true" };
+}
+
+/**
  * Lleva las plantillas globales (`territory_id is null`) de las claves pedidas al texto del seed: inserta las que
  * faltan y actualiza las que difieren en `body` o `variables`. `seedAll` nunca pisa filas; esto es el paso explícito
  * para cuando el seed cambió un texto. Nunca toca personalizaciones por territorio. Cada actualización deja un evento
