@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useSyncExternalStore } from "react";
-import { THEME_INIT_SCRIPT, THEME_KEY } from "./theme";
+import { applyThemeToDom, readTheme, THEME_INIT_SCRIPT } from "./theme";
 
 const noSubscribe = () => () => {};
 
@@ -13,17 +13,8 @@ const noSubscribe = () => () => {};
 export function ThemeInit() {
   const fromServer = useSyncExternalStore(noSubscribe, () => false, () => true);
   useLayoutEffect(() => {
-    let t: string | null = null;
-    try {
-      t = localStorage.getItem(THEME_KEY);
-    } catch {
-      /* almacenamiento bloqueado: queda el tema del sistema */
-    }
-    if (t !== "light" && t !== "dark") return;
-    const theme = t;
-    document.querySelectorAll<HTMLElement>(".ops").forEach((el) => {
-      el.dataset.theme = theme;
-    });
+    const t = readTheme();
+    if (t !== "system") applyThemeToDom(t);
   }, []);
   return fromServer ? <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} /> : null;
 }
