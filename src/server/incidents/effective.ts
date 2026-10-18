@@ -44,7 +44,7 @@ export async function latestAssessed(db: Db, incidentId: string): Promise<Assess
 type Row = Assessed & { territory_id: string; created_at: Date; priority_band: string; revision: number; area_name: string | null };
 
 /**
- * Valor efectivo = evaluado + correcciones vigentes, con prioridad por política. Escribe columnas, título y desglose;
+ * Valor efectivo = evaluado + correcciones vigentes, con prioridad por política. Escribe columnas y desglose (el título, solo con cambio);
  * sube la revisión y encola `plan` y `textgen` solo si cambió algo efectivo; bloquea la orden activa si cambió la capacidad
  * requerida (tipo o peligro activo nuevo). Llamar dentro de la transacción, con el incidente bloqueado.
  */
@@ -80,9 +80,11 @@ export async function recomputeEffective(
     ? (await db.query<{ name: string }>("select name from problem_types where id = $1", [effective.problemTypeId])).rows[0]?.name
     : null;
   const title = [typeName ?? "Problema sin clasificar", cur.area_name ? `— ${cur.area_name}` : null].filter(Boolean).join(" ");
+  // El título determinista es el respaldo; textgen lo reemplaza por revisión. Sin revisión nueva se conserva el que haya.
   const upd = await db.query<{ revision: number }>(
     `update incidents set problem_type_id = $2, severity = $3, active_hazard = $4, passage = $5, accessibility = $6,
-       priority_band = $7, priority_breakdown = $8, title = $9, revision = revision + $10, updated_at = now()
+       priority_band = $7, priority_breakdown = $8, title = case when $10 = 1 then $9 else title end,
+       revision = revision + $10, updated_at = now()
      where id = $1 returning revision`,
     [incidentId, effective.problemTypeId, effective.severity, effective.activeHazard, effective.passage, effective.accessibility,
       band, breakdown, title, changed ? 1 : 0],
