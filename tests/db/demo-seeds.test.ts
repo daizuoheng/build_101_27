@@ -104,6 +104,8 @@ describe("seeds de demo", () => {
     expect(after.filter((r) => r.slug !== DEMO_STAGE_UNIT)).toEqual(before.filter((r) => r.slug !== DEMO_STAGE_UNIT));
 
     await expect(refreshDemoPositions(pool, "montevideo", { near: { lon: -58.4, lat: -34.6 } })).rejects.toThrow("fuera de la cobertura");
+    // Un punto que cae en otro territorio (acá Montevideo) tampoco sirve para el territorio pedido.
+    await expect(refreshDemoPositions(pool, "demo-b", { near: { lon: -56.165, lat: -34.912 } })).rejects.toThrow("fuera de la cobertura");
     expect((await pos()).rows).toEqual(after);
   });
 });

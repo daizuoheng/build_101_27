@@ -83,27 +83,34 @@ const commands: Record<string, () => Promise<Command>> = {
   "refresh-demo-positions": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { refreshDemoPositions } = await import("../seeds/demo");
+    const usage = () => {
+      console.error("uso: refresh-demo-positions [--near <lat,lon>] [--watch <minutos, 1 a 25>]");
+      return 2;
+    };
     let near: { lon: number; lat: number } | undefined;
     if (args.near) {
-      const [lat, lon] = args.near.split(",").map(Number);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-        console.error("uso: refresh-demo-positions [--near <lat,lon>] [--watch <minutos>]");
-        return 2;
-      }
+      const parts = args.near.split(",").map((s) => s.trim());
+      const [lat, lon] = parts.map(Number);
+      if (parts.length !== 2 || parts.some((s) => s === "") || !Number.isFinite(lat) || !Number.isFinite(lon)) return usage();
       near = { lon, lat };
     }
-    const run = async () => {
-      const n = await refreshDemoPositions(getPool(), args.territory ?? "montevideo", { near });
-      console.log(`${new Date().toLocaleTimeString()} posiciones simuladas marcadas vigentes: ${n} unidad(es)${near ? `; cuadrilla de la demo en ${args.near}` : ""}`);
-    };
-    await run();
-    // Las posiciones vencen (planning.position_max_age_min): durante la demo se renuevan solas hasta Ctrl+C.
-    const every = Number(args.watch);
-    if (args.watch && every > 0) {
-      console.log(`renovando cada ${every} min; Ctrl+C para cortar`);
-      for (;;) {
-        await new Promise((r) => setTimeout(r, every * 60_000));
-        await run();
+    // Las posiciones vencen a los 30 min (planning.position_max_age_min del seed): el intervalo tiene que ser menor.
+    const every = args.watch ? Number(args.watch) : 0;
+    if (args.watch && !(Number.isInteger(every) && every >= 1 && every <= 25)) return usage();
+
+    const territory = args.territory ?? "montevideo";
+    const n = await refreshDemoPositions(getPool(), territory, { near });
+    console.log(`posiciones simuladas marcadas vigentes: ${n} unidad(es)${near ? `; cuadrilla de la demo en ${args.near}` : ""}`);
+    if (!every) return;
+    console.log(`renovando cada ${every} min; Ctrl+C para cortar`);
+    for (;;) {
+      await new Promise((r) => setTimeout(r, every * 60_000));
+      try {
+        const m = await refreshDemoPositions(getPool(), territory);
+        console.log(`${new Date().toLocaleTimeString()} posiciones renovadas: ${m} unidad(es)`);
+      } catch (e) {
+        // Un corte transitorio no corta la renovación: se reintenta en el próximo intervalo.
+        console.error(`${new Date().toLocaleTimeString()} no se pudo renovar (reintento en ${every} min):`, e instanceof Error ? e.message : e);
       }
     }
   },

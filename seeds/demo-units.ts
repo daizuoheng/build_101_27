@@ -1,4 +1,4 @@
-// Unidades de demo del piloto (ALCANCE §6): tres cuadrillas móviles y una oficina responsable de zona.
+// Unidades de demo del piloto (ALCANCE §6): la cuadrilla de la demo en vivo, tres cuadrillas móviles y una oficina responsable de zona.
 // Posiciones SIMULADAS (is_demo). La seed no les pone fecha: solo `refresh-demo-positions` las marca vigentes.
 
 export type DemoUnit = {

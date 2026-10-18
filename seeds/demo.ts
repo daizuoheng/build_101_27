@@ -65,7 +65,7 @@ export async function refreshDemoPositions(pool: Pool, territorySlug: string, op
   return withTx(async (c) => {
     if (opts.near) {
       const { lon, lat } = opts.near;
-      if (!(await locatePoint(c, lon, lat))) throw new Error(`(${lat}, ${lon}) está fuera de la cobertura de '${territorySlug}'`);
+      if ((await locatePoint(c, lon, lat))?.territorySlug !== territorySlug) throw new Error(`(${lat}, ${lon}) está fuera de la cobertura de '${territorySlug}'`);
       const moved = await c.query<{ id: string }>(
         `update response_units u set location = st_setsrid(st_makepoint($2, $3), 4326)::geography
          from territories t where t.id = u.territory_id and t.slug = $1 and u.is_demo and u.slug = $4
