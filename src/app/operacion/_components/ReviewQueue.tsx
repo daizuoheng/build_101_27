@@ -278,7 +278,7 @@ function ReviewCard({
   const [noteError, setNoteError] = useState(false);
   const [confirming, setConfirming] = useState<ResolveAction | null>(null);
   // Clave de idempotencia del intento en curso: se reutiliza si se reintenta lo mismo después de un error de red.
-  const attempt = useRef<{ signature: string; key: string } | null>(null);
+  const attempt = useRef<{ signature: string; body: ResolveBody } | null>(null);
   const outcomeUnknown = useRef(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -303,6 +303,8 @@ function ReviewCard({
   /** La nota obligatoria se valida al pedir y otra vez al enviar: pudo borrarse mientras se mostraba la confirmación. */
   function missingNote(resolution: ResolveAction): boolean {
     if (!NEEDS_NOTE.has(resolution.action) || note.trim().length >= NOTE_MIN) return false;
+    // Un reintento tras resultado desconocido reenvía el cuerpo original, que ya traía su nota.
+    if (attempt.current?.signature === JSON.stringify(resolution)) return false;
     setConfirming(null);
     setNoteError(true);
     setError(`Para «${REVIEW_ACTION[resolution.action]}» escribí una nota de al menos ${NOTE_MIN} caracteres.`);
@@ -335,9 +337,14 @@ function ReviewCard({
     setError(null);
     setNoteError(false);
     const trimmed = note.trim();
-    const signature = JSON.stringify([resolution, trimmed]);
-    if (attempt.current?.signature !== signature) attempt.current = { signature, key: newIdempotencyKey() };
-    const body: ResolveBody = { resolution, idempotencyKey: attempt.current.key, ...(trimmed ? { note: trimmed } : {}) };
+    // Un intento solo sobrevive a un resultado desconocido (red, timeout, 5xx). Reintentar la misma acción reenvía el
+    // mismo cuerpo con la misma clave, aunque la nota se haya editado: el primero pudo aplicarse y no debe duplicarse.
+    const signature = JSON.stringify(resolution);
+    if (attempt.current?.signature !== signature) {
+      const key = newIdempotencyKey();
+      attempt.current = { signature, body: { resolution, idempotencyKey: key, ...(trimmed ? { note: trimmed } : {}) } };
+    }
+    const body = attempt.current.body;
     setBusy(true);
     try {
       await api<ResolveResult>(`/api/operacion/review/${encodeURIComponent(item.id)}/resolve`, {
@@ -353,18 +360,25 @@ function ReviewCard({
       const unknownOutcome = !http || http.status === 0 || http.status >= 500;
       if (http?.status === 409 && http.code === "review_item_closed") {
         attempt.current = null;
-        // Si un intento anterior quedó sin respuesta, pudo haber sido el propio y no otro operador.
+        // Si algún intento anterior de esta tarjeta quedó sin respuesta, pudo haberse aplicado y cerrado el ítem (con esa
+        // u otra clave): no se afirma que fue otro operador.
         onDone(item, outcomeUnknown.current ? `Ya estaba resuelto (puede que tu intento anterior se haya aplicado): ${item.title}` : `Otro operador ya lo resolvió: ${item.title}`);
         return;
       }
-      if (http?.status === 404) {
+      // Solo el 404 de la API (`not_found`: el ítem no existe o es de otro territorio) saca la tarjeta. Un 404 sin ese
+      // código (ruta inexistente, proxy) es un error más y el operador puede reintentar.
+      if (http?.status === 404 && http.code === "not_found") {
         attempt.current = null;
         onDone(item, `Este ítem ya no está en la cola: ${item.title}`);
         return;
       }
       if (unknownOutcome) outcomeUnknown.current = true;
       else attempt.current = null;
-      setError(unknownOutcome ? `${errorMessage(err)} Podés reintentar: la acción no se aplica dos veces.` : errorMessage(err));
+      setError(
+        unknownOutcome
+          ? `${errorMessage(err)} Podés reintentar «${REVIEW_ACTION[resolution.action]}»: se reenvía igual que antes (con la misma nota) y no se aplica dos veces.`
+          : errorMessage(err),
+      );
       // Un 409 de otro tipo (el incidente cambió o se cerró): la cola se recarga para mostrar el estado actual.
       if (http?.status === 409) onStale();
     } finally {

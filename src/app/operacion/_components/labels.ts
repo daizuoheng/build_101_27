@@ -71,6 +71,9 @@ export const REVIEW_REASON: Record<string, string> = {
   active_hazard_detected: "Se detectó peligro activo",
   // Agrupación (compare-candidates): vienen como `<motivo>:<ref del candidato>`.
   no_candidates: "Sin incidentes candidatos",
+  all_different: "Distinto de todos los incidentes candidatos",
+  multiple_same: "Coincide con más de un incidente candidato",
+  same_incident: "Coincide con un incidente candidato",
   candidates_changed: "Los candidatos cambiaron durante el análisis",
   candidates_truncated: "Hay más candidatos de los que se compararon",
   uncertain: "No está claro si es el mismo problema que un candidato",

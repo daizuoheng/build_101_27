@@ -23,6 +23,15 @@ describe("etiquetas de la cola de revisión", () => {
     expect(reviewReasonText({})).toBeNull();
   });
 
+  it("todos los motivos de la agrupación (compare-candidates) tienen texto", () => {
+    const codes = [
+      "no_candidates", "all_different", "candidates_truncated", "candidates_changed",
+      "uncertain:c1", "weak_different:c1", "weak_same:c1", "multiple_same:c1,c2", "same_incident:c1",
+      "object_conflict:c1", "place_conflict:c1", "time_conflict:c1",
+    ];
+    for (const code of codes) expect(reviewReasonText({ code }), code).not.toBe(code);
+  });
+
   it("junta los candidatos de todas las evidencias sin repetir", () => {
     const refs = [
       { report_id: "r", candidate_incident_ids: ["a", "b"] },
