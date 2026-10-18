@@ -13,8 +13,23 @@ export type DemoUnit = {
   zones?: { areaExternalIds: string[]; problemTypes: string[]; precedence: number };
 };
 
+/**
+ * Cuadrilla de la demo en vivo: atiende todo tipo que se despacha por distancia, así la orden del reporte de la demo
+ * le llega a ella sea cual sea la categoría. `refresh-demo-positions --near lat,lon` la ubica donde se hace la demo.
+ */
+export const DEMO_STAGE_UNIT = "cuadrilla-demo";
+
 export const demoUnits: Record<string, DemoUnit[]> = {
   montevideo: [
+    {
+      slug: DEMO_STAGE_UNIT,
+      name: "Cuadrilla Respuesta Rápida (demo)",
+      unitKind: "mobile_crew",
+      capacity: 3,
+      capabilities: ["limpieza", "vialidad", "fuego", "poda", "señalizacion", "drenaje"],
+      position: { lon: -56.1882, lat: -34.9058 }, // centro del territorio, hasta que `--near` la mueva
+      serviceRadiusM: 3000,
+    },
     {
       slug: "cuadrilla-limpieza",
       name: "Cuadrilla Limpieza (demo)",

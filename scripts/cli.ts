@@ -78,13 +78,34 @@ const commands: Record<string, () => Promise<Command>> = {
     const r = await seedDemo(getPool(), args.territory ?? "montevideo");
     console.log(`unidades creadas: ${r.unitsCreated.join(", ") || "ninguna (ya existían)"}`);
     console.log(`usuarios creados: ${r.usersCreated.join(", ") || "ninguno (ya existían)"}`);
-    console.log("posiciones de demo sin fecha: correr `pnpm cli refresh-demo-positions` antes de la demo");
+    console.log("posiciones de demo sin fecha: correr `pnpm cli refresh-demo-positions --near <lat,lon> --watch 10` antes de la demo");
   },
   "refresh-demo-positions": async () => async (args) => {
     const { getPool } = await import("../src/server/db/pool");
     const { refreshDemoPositions } = await import("../seeds/demo");
-    const n = await refreshDemoPositions(getPool(), args.territory ?? "montevideo");
-    console.log(`posiciones simuladas marcadas vigentes: ${n} unidad(es)`);
+    let near: { lon: number; lat: number } | undefined;
+    if (args.near) {
+      const [lat, lon] = args.near.split(",").map(Number);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        console.error("uso: refresh-demo-positions [--near <lat,lon>] [--watch <minutos>]");
+        return 2;
+      }
+      near = { lon, lat };
+    }
+    const run = async () => {
+      const n = await refreshDemoPositions(getPool(), args.territory ?? "montevideo", { near });
+      console.log(`${new Date().toLocaleTimeString()} posiciones simuladas marcadas vigentes: ${n} unidad(es)${near ? `; cuadrilla de la demo en ${args.near}` : ""}`);
+    };
+    await run();
+    // Las posiciones vencen (planning.position_max_age_min): durante la demo se renuevan solas hasta Ctrl+C.
+    const every = Number(args.watch);
+    if (args.watch && every > 0) {
+      console.log(`renovando cada ${every} min; Ctrl+C para cortar`);
+      for (;;) {
+        await new Promise((r) => setTimeout(r, every * 60_000));
+        await run();
+      }
+    }
   },
   "reset-demo": async () => async (args) => {
     if (args.yes !== "true") {
