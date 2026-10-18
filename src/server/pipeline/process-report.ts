@@ -8,7 +8,7 @@ import { getReport, type ReportRow } from "../intake/drafts";
 import { evaluateRevision, type IntakeDeps } from "../intake/orchestrator";
 import type { StoredEvaluation } from "../intake/evaluations";
 import { indicatesActiveHazard } from "../intake/branches";
-import type { Job } from "../jobs/queue";
+import { enqueue, type Job } from "../jobs/queue";
 import { openReviewItem, type ReviewKind } from "../review/items";
 import type { GroupingVerdict } from "../ai/jev/compare-candidates";
 import { applyGrouping, findCandidates, prepareGrouping, sameCandidates, type GroupingPlan } from "./group";
@@ -59,6 +59,16 @@ async function writeOutcome(c: Db, reportId: string, ev: StoredEvaluation, plan:
   const finish = async (outcome: string, data: Record<string, unknown> = {}) => {
     await c.query("update reports set processing = 'done', outcome = $2, updated_at = now() where id = $1", [r.id, outcome]);
     await appendEvent(c, { entityType: "report", entityId: r.id, kind: "processed", actorType: "system", data: { outcome, evaluation_id: ev.id, ...data } });
+    // Un incidente nuevo o una fuente nueva (también al reprocesar un vínculo existente): plan del territorio en el acto,
+    // sin esperar al periódico. Un pedido por reporte; `planHandler` junta los pendientes en una sola corrida.
+    // El territorio sale del incidente: es el que se planifica, aunque el reporte no tenga territorio propio.
+    if (typeof data.incident_id === "string") {
+      const territoryId = (await c.query<{ territory_id: string }>("select territory_id from incidents where id = $1", [data.incident_id])).rows[0].territory_id;
+      await enqueue(c, {
+        kind: "plan", entityType: "territory", entityId: territoryId, entityRevision: 0, territoryId,
+        payload: { trigger: "report" }, dedupeSuffix: `report:${r.id}`,
+      });
+    }
     return true;
   };
 

@@ -4,20 +4,17 @@ import type { Pool } from "pg";
 import { seedAll } from "../../seeds";
 import { policies } from "../../seeds/policies";
 import { withTx } from "@/server/db/tx";
-import type { JevCall } from "@/server/ai/jev/client";
+import type { JevCall, JevClient } from "@/server/ai/jev/client";
 import { EvaluationPolicy } from "@/server/config/policies";
-import { appendCitizenMessage, createDraft, setLocation } from "@/server/intake/drafts";
-import { confirmReport } from "@/server/intake/confirm";
 import { runOnce } from "@/server/jobs/worker-loop";
 import { handlers } from "@/server/jobs/handlers";
 import { linkReport } from "@/server/incidents/links";
 import { applyOverrides, mergeAssessment, removeOverride, setOverride, type Assessed } from "@/server/incidents/overrides";
 import type { IncidentAssessmentResult } from "@/server/ai/jev/assess-incident";
 import { DomainError } from "@/server/errors";
-import { fakeAnswers, fakeJev, newSession, territoryId, testDeps } from "./fakes";
+import { confirmedReport, drain as drainJobs, fakeAnswers, fakeJev, territoryId, testDeps } from "./fakes";
 import { resetDb, testDb } from "./setup";
 
-const P = { lon: -56.1993, lat: -34.9068 };
 const ch = (choice: string, p = 0.95) => ({ type: "choice" as const, choice, confidence: 0.9, probabilities: { [choice]: p } });
 const isAssess = (call: JevCall) => "evolution" in call.questions;
 const operator = { type: "operator" as const, id: "00000000-0000-4000-8000-0000000000aa" };
@@ -42,24 +39,9 @@ function jevAssess(assess: Record<string, unknown> = {}, onAssess?: () => Promis
 const assessCalls = (jev: ReturnType<typeof fakeJev>) => jev.calls.filter(isAssess).length;
 const downJev = () => ({ systemOne: async () => { throw new Error("Jev caído"); } });
 
-async function confirmedReport(pool: Pool, t: string, text = "Hay un pozo grande en la calle") {
-  const s = await newSession(pool);
-  const id = await withTx((c) => createDraft(c, { sessionId: s, territoryId: t }), pool);
-  await withTx((c) => appendCitizenMessage(c, { reportId: id, sessionId: s, clientMessageId: "msg-00000001", body: text }), pool);
-  await withTx((c) => setLocation(c, { reportId: id, sessionId: s, ...P, source: "map" }), pool);
-  await withTx((c) => confirmReport(c, { reportId: id, sessionId: s, idempotencyKey: "key-00000001" }), pool);
-  return id;
-}
-
 const one = async (pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params)).rows[0];
-const drain = async (pool: Pool, jev: ReturnType<typeof fakeJev> | ReturnType<typeof downJev>) => {
-  // Procesa todo lo procesable (los jobs `plan` todavía no tienen handler: se ignoran acá).
-  for (let i = 0; i < 10; i++) {
-    const next = await one(pool, "select kind from jobs where status = 'pending' and kind <> 'plan' and run_after <= now() order by created_at limit 1");
-    if (!next) return;
-    await runOnce(testDeps(pool, jev), handlers, { workerId: "test" });
-  }
-};
+// Estos tests miden la reevaluación: el drenaje se detiene cuando solo quedan `plan`/`dispatch` (sin unidades no despachan nada).
+const drain = (pool: Pool, jev: JevClient) => drainJobs(pool, jev, { skip: ["plan", "dispatch"] });
 const revisionOf = async (pool: Pool, id: string) => (await one(pool, "select revision from incidents where id = $1", [id])).revision as number;
 
 async function singleReportIncident(pool: Pool, t: string, jev: ReturnType<typeof fakeJev>) {
@@ -225,7 +207,8 @@ describe("assess_incident y correcciones", () => {
     });
     const incidentId = await incidentWithTwoReports(pool, t, jev);
     const job = await one(pool, "select id from jobs where kind = 'assess_incident' and status = 'pending'");
-    await pool.query("update jobs set status = 'done' where kind = 'textgen'"); // los textos de la revisión 1 no son lo que se mide
+    // Los textos de la revisión 1 y el plan del reporte no son lo que se mide: el próximo job tiene que ser la reevaluación.
+    await pool.query("update jobs set status = 'done' where kind in ('textgen', 'plan')");
     await runOnce(testDeps(pool, jev), handlers, { workerId: "test" });
     expect((await one(pool, "select status from jobs where id = $1", [job.id])).status).toBe("done");
     expect((await one(pool, "select count(*)::int as n from incident_assessments where incident_id = $1 and ai_run_id is not null and incident_revision > 1", [incidentId])).n).toBe(0);
