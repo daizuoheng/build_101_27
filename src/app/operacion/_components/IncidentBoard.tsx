@@ -96,7 +96,16 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    const run = () => void load(ctrl.signal);
+    // Un tick no se superpone a una carga en curso: con el backend más lento que el intervalo los pedidos no se apilan,
+    // y un pedido nuevo que falla rápido no tapa con el aviso de error al anterior que todavía puede responder bien.
+    let inFlight = false;
+    const run = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void load(ctrl.signal).finally(() => {
+        inFlight = false;
+      });
+    };
     const first = setTimeout(run, 0);
     const t = setInterval(run, REFRESH_MS);
     return () => {
