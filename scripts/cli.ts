@@ -29,11 +29,18 @@ const commands: Record<string, () => Promise<Command>> = {
   seed: async () => async () => {
     const { getPool } = await import("../src/server/db/pool");
     const { seedAll } = await import("../seeds");
+    const { seedSpecializedUnits } = await import("../seeds/specialized-units");
     await seedAll(getPool());
+    const unitsCreated = await seedSpecializedUnits(getPool());
     const { rows } = await getPool().query(`select
       (select count(*) from problem_types)::int as tipos, (select count(*) from policy_versions where active)::int as politicas,
       (select count(*) from message_templates)::int as plantillas, (select count(*) from areas)::int as areas`);
-    console.log("seed ok", rows[0]);
+    console.log("seed ok", { ...rows[0], unitsCreated });
+  },
+  "seed-units": async () => async (args) => {
+    const { getPool } = await import("../src/server/db/pool");
+    const { seedSpecializedUnits } = await import("../seeds/specialized-units");
+    console.log("cuadrillas creadas", await seedSpecializedUnits(getPool(), args.territory ?? "montevideo"));
   },
   "smoke-jev": async () => (await import("./smoke-jev")).smokeJev,
   "smoke-llm": async () => (await import("./smoke-llm")).smokeLlm,
