@@ -53,6 +53,20 @@ describe("seeds de demo", () => {
     for (const u of rows) expect(await bcrypt.compare(DEMO_PASSWORD, u.password_hash)).toBe(true);
   });
 
+  it("no le cambia la contraseña a una cuenta con username de demo que apunta a otra unidad", async () => {
+    const pool = await testDb();
+    await seedDemo(pool, "montevideo");
+    const old = await bcrypt.hash("vieja", 4);
+    await pool.query(
+      `update internal_users set password_hash = $1, response_unit_id = (select id from response_units where slug <> $2 limit 1)
+       where username = $3`,
+      [old, DEMO_STAGE_UNIT, `unidad.${DEMO_STAGE_UNIT}`],
+    );
+    await seedDemo(pool, "montevideo");
+    const { rows } = await pool.query("select password_hash from internal_users where username = $1", [`unidad.${DEMO_STAGE_UNIT}`]);
+    expect(rows[0].password_hash).toBe(old);
+  });
+
   it("capacidades, responsabilidad por zona y posiciones dentro de la cobertura", async () => {
     const pool = await testDb();
     await seedDemo(pool, "montevideo");

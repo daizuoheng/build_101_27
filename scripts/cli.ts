@@ -77,7 +77,7 @@ const commands: Record<string, () => Promise<Command>> = {
     const { seedDemo } = await import("../seeds/demo");
     const r = await seedDemo(getPool(), args.territory ?? "montevideo");
     console.log(`unidades creadas: ${r.unitsCreated.join(", ") || "ninguna (ya existían)"}`);
-    console.log(`usuarios creados: ${r.usersCreated.join(", ") || "ninguno (ya existían)"}`);
+    console.log(`usuarios creados: ${r.usersCreated.join(", ") || "ninguno (ya existían)"}; todas las cuentas de demo quedan con contraseña 'test'`);
     console.log("posiciones de demo sin fecha: correr `pnpm cli refresh-demo-positions --near <lat,lon> --watch 10` antes de la demo");
   },
   "refresh-demo-positions": async () => async (args) => {

@@ -7,7 +7,8 @@ export const DEMO_PASSWORD = "test";
 /**
  * Cuentas internas de demo: operador del territorio y un usuario por unidad de demo, todas con `DEMO_PASSWORD`.
  * Inserta lo ausente por username y a las existentes les vuelve a poner `DEMO_PASSWORD` (las sembradas antes con
- * otra contraseña quedan alineadas). Devuelve solo las creadas. Llamar dentro de la transacción del seed.
+ * otra contraseña quedan alineadas), solo si siguen siendo la misma cuenta de demo (rol y territorio/unidad); una
+ * cuenta con ese username pero otro destino no se toca. Devuelve solo las creadas. Llamar dentro de la transacción.
  */
 export async function seedDemoUsers(db: Db, territorySlug: string): Promise<string[]> {
   const t = await db.query<{ id: string }>("select id from territories where slug = $1", [territorySlug]);
@@ -21,6 +22,7 @@ export async function seedDemoUsers(db: Db, territorySlug: string): Promise<stri
   const res = await db.query<{ inserted: boolean }>(
     `insert into internal_users (username, password_hash, role, territory_id) values ($1, $2, 'operator', $3)
      on conflict (username) do update set password_hash = excluded.password_hash
+       where internal_users.role = 'operator' and internal_users.territory_id = excluded.territory_id
      returning (xmax = 0) as inserted`,
     [username, hash, territoryId],
   );
@@ -32,6 +34,7 @@ export async function seedDemoUsers(db: Db, territorySlug: string): Promise<stri
     const r = await db.query<{ inserted: boolean }>(
       `insert into internal_users (username, password_hash, role, territory_id, response_unit_id) values ($1, $2, 'unit', $3, $4)
        on conflict (username) do update set password_hash = excluded.password_hash
+         where internal_users.role = 'unit' and internal_users.response_unit_id = excluded.response_unit_id
        returning (xmax = 0) as inserted`,
       [name, hash, territoryId, u.id],
     );

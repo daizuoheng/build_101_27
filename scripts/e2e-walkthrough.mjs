@@ -71,4 +71,5 @@ const DEMO_PASSWORD = "test"; // la de seeds/demo-users.ts
 await call("/api/auth/login", { method: "POST", json: { username: "operador.montevideo", password: DEMO_PASSWORD } });
 const list = await call("/api/operacion/incidents?territory=montevideo&sort=recent");
 const inc = list.body.incidents[0];
+if (!inc) throw new Error("operación no ve ningún incidente");
 console.log(`\noperación ve ${list.body.incidents.length} incidente(s); el más reciente:\n  ${inc.title} · prioridad ${inc.priorityBand} · ${inc.status} · ${inc.area?.name} · reportes ${inc.reportCount} · revisión ${JSON.stringify(inc.openReviewKinds)}`);
