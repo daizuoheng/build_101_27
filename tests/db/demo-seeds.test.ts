@@ -104,6 +104,11 @@ describe("seeds de demo", () => {
     expect(after.filter((r) => r.slug !== DEMO_STAGE_UNIT)).toEqual(before.filter((r) => r.slug !== DEMO_STAGE_UNIT));
 
     await expect(refreshDemoPositions(pool, "montevideo", { near: { lon: -58.4, lat: -34.6 } })).rejects.toThrow("fuera de la cobertura");
+    // Demo en vivo: solo la cuadrilla de la demo queda vigente; las demás móviles vencen y no compiten por la orden.
+    expect(await refreshDemoPositions(pool, "montevideo", { stageOnly: true })).toBe(1);
+    const fresh = await pool.query("select slug from response_units where location_updated_at is not null");
+    expect(fresh.rows.map((r) => r.slug)).toEqual([DEMO_STAGE_UNIT]);
+
     // Un punto que cae en otro territorio (acá Montevideo) tampoco sirve para el territorio pedido.
     await expect(refreshDemoPositions(pool, "demo-b", { near: { lon: -56.165, lat: -34.912 } })).rejects.toThrow("fuera de la cobertura");
     expect((await pos()).rows).toEqual(after);

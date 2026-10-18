@@ -99,14 +99,16 @@ const commands: Record<string, () => Promise<Command>> = {
     if (args.watch && !(Number.isInteger(every) && every >= 1 && every <= 25)) return usage();
 
     const territory = args.territory ?? "montevideo";
-    const n = await refreshDemoPositions(getPool(), territory, { near });
-    console.log(`posiciones simuladas marcadas vigentes: ${n} unidad(es)${near ? `; cuadrilla de la demo en ${args.near}` : ""}`);
+    // Con --near la demo es en vivo: solo la cuadrilla de la demo queda vigente, también en cada renovación.
+    const stageOnly = !!near;
+    const n = await refreshDemoPositions(getPool(), territory, { near, stageOnly });
+    console.log(`posiciones simuladas marcadas vigentes: ${n} unidad(es)${near ? `; solo la cuadrilla de la demo, en ${args.near}` : ""}`);
     if (!every) return;
     console.log(`renovando cada ${every} min; Ctrl+C para cortar`);
     for (;;) {
       await new Promise((r) => setTimeout(r, every * 60_000));
       try {
-        const m = await refreshDemoPositions(getPool(), territory);
+        const m = await refreshDemoPositions(getPool(), territory, { stageOnly });
         console.log(`${new Date().toLocaleTimeString()} posiciones renovadas: ${m} unidad(es)`);
       } catch (e) {
         // Un corte transitorio no corta la renovación: se reintenta en el próximo intervalo.
