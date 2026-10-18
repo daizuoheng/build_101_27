@@ -413,7 +413,7 @@ function ReviewCard({
           <h4 className="font-semibold">{targets.source === "previous" ? "Incidente del que se desasoció" : "Incidentes candidatos"}</h4>
           <ul className="mt-1 flex flex-col gap-1.5">
             {candidates.map((cid) => (
-              <li key={cid} className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-surface-2 px-3 py-1.5">
+              <li key={cid} className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r-md)] bg-surface-2 px-3 py-1.5">
                 <Link href={incidentHref(cid, territorySlug)} className="inline-flex min-h-11 items-center font-medium text-accent hover:underline">
                   {incidentName(cid, titles)}
                 </Link>
@@ -498,7 +498,7 @@ function ReviewCard({
         )}
 
         {confirming && (
-          <div role="group" aria-labelledby={`${uid}-confirm`} className="flex flex-wrap items-center gap-2 rounded-[10px] bg-warn-soft px-3 py-2">
+          <div role="group" aria-labelledby={`${uid}-confirm`} className="flex flex-wrap items-center gap-2 rounded-[var(--r-md)] bg-warn-soft px-3 py-2">
             <span id={`${uid}-confirm`} className="font-medium">{confirmText(confirming)}</span>
             <button ref={confirmRef} type="button" className="btn btn-primary" disabled={busy} onClick={() => void submit(confirming)}>
               Sí, {REVIEW_ACTION[confirming.action].toLocaleLowerCase("es")}
@@ -510,7 +510,7 @@ function ReviewCard({
         )}
 
         {busy && <p className="text-ink-2" aria-hidden>Aplicando…</p>}
-        {error && <p id={errorId} role="alert" className="rounded-[10px] bg-danger-soft px-3 py-2 text-danger">{error}</p>}
+        {error && <p id={errorId} role="alert" className="rounded-[var(--r-md)] bg-danger-soft px-3 py-2 text-danger">{error}</p>}
       </div>
     </li>
   );
