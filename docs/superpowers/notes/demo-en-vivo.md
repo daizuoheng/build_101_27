@@ -24,11 +24,28 @@ node_modules/.bin/next start --port 3000 & pnpm worker
 - `--near` tiene que caer en Montevideo y cerca de la dirección que se va a reportar (la cuadrilla atiende en un radio
   de 3 km). Las demás cuadrillas móviles quedan vencidas para que ninguna le gane la orden.
 - Alumbrado no sirve para la demo: va por zona a la oficina, no a la cuadrilla.
-- Celulares por la red local (`http://192.168…`): el navegador bloquea la geolocalización fuera de HTTPS. El ciudadano
-  tiene que escribir la dirección (por ejemplo «18 de Julio y Ejido») y confirmar el pin con «Sí, es ahí».
+- **Dónde correrla.** Lo mejor es el despliegue con https (Railway): ahí funciona todo, también desde los celulares.
+  En una máquina local, `localhost` sirve para las pantallas de esa misma máquina. Para celulares por la red local
+  (`http://192.168…`), ver el plan B de abajo: con `next start` por http, las cookies `secure` impiden iniciar sesión
+  y el ciudadano pierde su borrador.
+- Por http en la red local, el navegador bloquea la geolocalización. El ciudadano tiene que escribir la dirección (por
+  ejemplo «18 de Julio y Ejido») y confirmar el pin con «Sí, es ahí».
 - La cuadrilla escucha un tono y siente una vibración cuando llega la orden, solo si tocó la pantalla al menos una vez
   después de abrir `/unidad`: los navegadores bloquean el audio sin ese toque. El resaltado y el título de la pestaña
   funcionan igual.
+
+### Plan B: celulares por la red local, sin https
+
+```bash
+ipconfig getifaddr en0 || ipconfig getifaddr en1          # IP de la máquina en la red, p. ej. 192.168.1.78
+# reemplaza la última línea de arriba (`next start … & pnpm worker`): un solo servidor y un solo worker
+ALLOWED_DEV_ORIGINS=192.168.1.78 node_modules/.bin/next dev --port 3000 & pnpm worker
+# en los celulares: http://192.168.1.78:3000/reportar/montevideo, /login (operador y cuadrilla)
+```
+
+Se usa `next dev` porque en desarrollo las cookies no son `secure`. Muestra el indicador de Next abajo a la izquierda y
+la primera carga de cada pantalla tarda unos segundos: abrir las tres pantallas antes de empezar. Verificado el 18 oct
+con el recorrido en navegador contra la IP local: pasaron los tres actos.
 
 ## Verificar de punta a punta
 

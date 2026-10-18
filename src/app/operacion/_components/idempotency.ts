@@ -1,7 +1,8 @@
 import { HttpError } from "@/app/_components/http";
+import { newClientId } from "@/app/_components/ids";
 
 /** Clave de idempotencia (ver `newClientId`: también sirve fuera de contexto seguro). */
-export { newClientId as newIdempotencyKey } from "@/app/_components/ids";
+export const newIdempotencyKey = newClientId;
 
 /**
  * Qué se sabe de un pedido que falló. Solo un 4xx dice que el servidor no lo aplicó. Un error de red, un corte
