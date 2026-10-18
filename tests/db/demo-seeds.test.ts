@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
 import { refreshDemoPositions, resetDemo, seedDemo } from "../../seeds/demo";
-import { DEMO_STAGE_UNIT } from "../../seeds/demo-units";
+import { DEMO_STAGE_UNIT, demoUnits } from "../../seeds/demo-units";
 import { DEMO_PASSWORD } from "../../seeds/demo-users";
 import { locatePoint } from "@/server/geo/locate";
 import { allowedActions } from "@/shared/contracts/assignment";
@@ -40,11 +40,16 @@ describe("seeds de demo", () => {
     expect(left.rows[0]).toEqual({ units: 0, caps: 0, users: 0, events: 0 });
   });
 
-  it("todas las cuentas de demo entran con la contraseña de demo", async () => {
+  it("todas las cuentas de demo entran con la contraseña de demo, también las sembradas antes con otra", async () => {
     const pool = await testDb();
     await seedDemo(pool, "montevideo");
-    const { rows } = await pool.query<{ username: string; password_hash: string }>("select username, password_hash from internal_users");
-    expect(rows).toHaveLength(6);
+    const old = await bcrypt.hash("vieja", 4);
+    await pool.query("update internal_users set password_hash = $1", [old]);
+
+    const again = await seedDemo(pool, "montevideo");
+    expect(again.usersCreated).toEqual([]);
+    const { rows } = await pool.query<{ password_hash: string }>("select password_hash from internal_users");
+    expect(rows).toHaveLength(demoUnits.montevideo.length + 1);
     for (const u of rows) expect(await bcrypt.compare(DEMO_PASSWORD, u.password_hash)).toBe(true);
   });
 

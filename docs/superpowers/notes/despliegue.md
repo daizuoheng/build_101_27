@@ -97,7 +97,8 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 | `SESSION_SECRET` | ✓ | — | ≥ 32 caracteres aleatorios (`openssl rand -hex 32`). Secreto. |
 
 `PORT` y `NODE_ENV` los pone Railway/Railpack. Las cuentas de demo que crea `seed-demo` (`operador.<territorio>`,
-`unidad.<slug>`) tienen todas la contraseña `test` (`DEMO_PASSWORD` en `seeds/demo-users.ts`); no hay variable.
+`unidad.<slug>`) tienen todas la contraseña `test` (`DEMO_PASSWORD` en `seeds/demo-users.ts`); no hay variable. Volver a
+correr `seed-demo` sobre una base ya sembrada les vuelve a poner `test`.
 
 En `.railway/railway.ts` los secretos están como `preserve()`: el archivo declara la variable y el valor se carga en
 Railway, nunca en el repo. La documentación de Railway define `preserve()` como "conservar el valor que ya está en
