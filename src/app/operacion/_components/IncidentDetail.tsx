@@ -99,6 +99,13 @@ function valueLabel(field: OverrideField, value: unknown, data: Detail): string 
   return loc?.text ?? (loc ? `${loc.lat?.toFixed(5)}, ${loc.lon?.toFixed(5)}` : "—");
 }
 
+/**
+ * Todo pedido del detalle tiene tope de tiempo, también las acciones: sin él, uno colgado deja `busy` y los botones
+ * deshabilitados para siempre. Un pedido cortado llega como error de red, así que su clave de reintento se conserva
+ * (pudo haberse aplicado).
+ */
+const timed = (signal?: AbortSignal) => withTimeout(signal ?? new AbortController().signal);
+
 const when = (iso: string) => new Date(iso).toLocaleString("es-UY", { dateStyle: "short", timeStyle: "short" });
 
 export function IncidentDetail({ incidentId, territorySlug }: { incidentId: string; territorySlug: string }) {
@@ -118,7 +125,7 @@ export function IncidentDetail({ incidentId, territorySlug }: { incidentId: stri
     const id = ++latest.current;
     const stale = () => signal?.aborted || id !== latest.current;
     try {
-      const d = await api<Detail>(`/api/operacion/incidents/${encodeURIComponent(incidentId)}`, { signal: signal ? withTimeout(signal) : undefined });
+      const d = await api<Detail>(`/api/operacion/incidents/${encodeURIComponent(incidentId)}`, { signal: timed(signal) });
       if (stale()) return;
       setData(d);
       setMissing(false);
@@ -191,17 +198,18 @@ export function IncidentDetail({ incidentId, territorySlug }: { incidentId: stri
     act(`set:${JSON.stringify(override)}:${reason}`, revision, (key, expectedRevision) =>
       api<OverrideResult>(`${base}/overrides`, {
         method: "POST",
+        signal: timed(),
         json: { override, reason, expectedRevision, idempotencyKey: key } satisfies SetOverrideBody,
       }), done);
   const removeOverride = (field: OverrideField) =>
-    act(`remove:${field}`, revision, (key) => api(`${base}/overrides/${field}`, { method: "DELETE", json: { idempotencyKey: key } }), `Se quitó la corrección de ${FIELD[field].toLowerCase()}.`);
+    act(`remove:${field}`, revision, (key) => api(`${base}/overrides/${field}`, { method: "DELETE", signal: timed(), json: { idempotencyKey: key } }), `Se quitó la corrección de ${FIELD[field].toLowerCase()}.`);
   const unlink = (reportId: string, reason: string) =>
-    act(`unlink:${reportId}:${reason}`, revision, (key) => api(`${base}/links`, { method: "POST", json: { action: "unlink", reportId, reason, idempotencyKey: key } }), "Reporte desasociado. Quedó en la cola de revisión para asociarlo o crear su incidente.");
+    act(`unlink:${reportId}:${reason}`, revision, (key) => api(`${base}/links`, { method: "POST", signal: timed(), json: { action: "unlink", reportId, reason, idempotencyKey: key } }), "Reporte desasociado. Quedó en la cola de revisión para asociarlo o crear su incidente.");
   const assignmentAction = (action: AssignmentAction) => {
     const a = data?.activeAssignment;
     if (!a) return Promise.resolve(false);
     return act(`assignment:${a.id}:${action}`, a.version, (key, expectedVersion) =>
-      api(`/api/operacion/assignments/${a.id}`, { method: "POST", json: { action, expectedVersion, idempotencyKey: key } }),
+      api(`/api/operacion/assignments/${a.id}`, { method: "POST", signal: timed(), json: { action, expectedVersion, idempotencyKey: key } }),
       action === "complete" ? "Orden completada." : "Orden cancelada.");
   };
 
