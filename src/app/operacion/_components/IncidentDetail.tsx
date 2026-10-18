@@ -8,6 +8,7 @@ import type { OverrideField, OverrideValue, SetOverrideBody } from "@/shared/con
 import type { IncidentDetailResponse, OverrideResult } from "@/shared/contracts/incident-detail";
 import { HttpError, api, errorMessage, withTimeout } from "@/app/_components/http";
 import { Icon } from "./Icons";
+import { newIdempotencyKey } from "./idempotency";
 import { ASSIGNMENT_STATUS, PRIORITY, REVIEW_KIND, STATUS, areaDisplay, shortCode } from "./labels";
 import { OpsHeader, PriorityBadge } from "./OpsShell";
 
@@ -72,16 +73,17 @@ const CLOSED = new Set(["resolved", "archived"]);
  * servidor no la aplica dos veces); cualquier otra respuesta la descarta. `version` (la revisión o versión que vio el
  * operador) se congela con la clave: si el pedido perdido sí se aplicó y el polling trajo la revisión nueva, el
  * reintento manda el mismo pedido y el servidor lo reconoce, en vez de aplicarlo otra vez con la revisión nueva.
+ * Un éxito descarta solo la clave de esa acción: la de otra acción con resultado incierto (cortada a mitad) se
+ * conserva, porque su reintento tiene que seguir siendo «el mismo pedido».
  */
 function useAttemptKeys() {
   const keys = useRef(new Map<string, { key: string; version: number }>());
   return useCallback(async <T,>(signature: string, version: number, run: (key: string, version: number) => Promise<T>): Promise<T> => {
-    const attempt = keys.current.get(signature) ?? { key: crypto.randomUUID(), version };
+    const attempt = keys.current.get(signature) ?? { key: newIdempotencyKey(), version };
     keys.current.set(signature, attempt);
     try {
       const r = await run(attempt.key, attempt.version);
-      // Cualquier acción aplicada cambia el estado: una clave guardada de un intento anterior ya no es «el mismo pedido».
-      keys.current.clear();
+      keys.current.delete(signature);
       return r;
     } catch (err) {
       // Solo una respuesta del servidor dice que el pedido no se aplicó. Un error de red, o un corte mientras se leía
