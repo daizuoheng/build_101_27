@@ -4,7 +4,7 @@
 
 **Tesis:** el triage de avisos ciudadanos no escala con personas (miles por día) y no se resuelve con reglas fijas (texto libre, fotos, el mismo problema contado de diez maneras). La IA interpreta y agrupa; las reglas, explícitas y auditables, ordenan y asignan.
 
-Formato build 101: **4:00 en total para pitch y demo** + preguntas del jurado (3 min según la consigna; confirmar si eso también cambió).
+Formato build 101: **4:00 en total para pitch y demo** + **2:00 de preguntas del jurado**.
 Lo que va entre *[corchetes]* es lo que pasa en pantalla, no se lee.
 
 ## La demo: tres pantallas, nadie toca la del medio
@@ -130,7 +130,7 @@ Procedimiento completo y comandos: `docs/superpowers/notes/demo-en-vivo.md` (en 
 
 ## Preguntas del jurado
 
-Son 3 minutos: entran 4 a 6 preguntas. **Cómo responder:** primero la respuesta en una frase, después un dato o un ejemplo, y cortar (~20 s). Si no sabés, decilo y decí cómo lo medirían. Las técnicas profundas las toma alguien del equipo.
+Son 2 minutos: entran **3 o 4 preguntas**, a unos 30 s cada una contando lo que tarda el juez en preguntar. **Cómo responder:** la primera frase de la respuesta y un dato, y cortar (~15 s). Las respuestas de abajo son la versión completa: el resto queda para si repreguntan. Si piden probar un caso propio (pregunta 2), eso solo se lleva ~45 s: vale la pena, pero narrar corto mientras corre. Si no sabés, decilo y decí cómo lo medirían. Las técnicas profundas las toma alguien del equipo.
 
 **Alcance declarado** (decirlo si el jurado quiere probar un caso propio): Montevideo, avisos de espacio público de los 10 tipos del catálogo — bache, basura acumulada, accesibilidad obstruida, contenedor dañado, contenedor con fuego, vereda rota, cartelería, alumbrado, árbol o rama caída, desagüe obstruido. Lo que queda afuera no se inventa: va a revisión.
 
