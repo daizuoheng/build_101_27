@@ -360,7 +360,8 @@ describe("assess_incident y correcciones", () => {
   it("una reevaluación sin cambios efectivos conserva el título que copió textgen", async () => {
     const jev = jevAssess(); // mismas respuestas que la evaluación del reporte: nada efectivo cambia
     const incidentId = await incidentWithTwoReports(pool, t, jev);
-    await pool.query("update jobs set status = 'done' where kind = 'textgen'"); // el de la revisión 1, ya corrido
+    // Los textos de la revisión 1 y el plan de los reportes no son lo que se mide: el próximo job tiene que ser la reevaluación.
+    await pool.query("update jobs set status = 'done' where kind in ('textgen', 'plan')");
     const rev = await revisionOf(pool, incidentId);
     await pool.query("update incidents set title = 'Título de textgen' where id = $1", [incidentId]);
     // Solo el assess_incident pendiente: el textgen que encola después escribiría su propio título y taparía lo que se mide.
