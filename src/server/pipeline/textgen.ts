@@ -1,7 +1,8 @@
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { getActivePolicy, type TextgenPolicy } from "../config/policies";
 import type { Db } from "../db/pool";
-import { generateText, type TextDeps, type TextInput, type TextPurpose } from "../ai/llm/generate-text";
+import { withTx } from "../db/tx";
+import { generateText, type GeneratedText, type TextDeps, type TextInput, type TextPurpose } from "../ai/llm/generate-text";
 import { enqueue, type Job } from "../jobs/queue";
 
 const PURPOSES: TextPurpose[] = ["title", "summary", "explain_priority"];
@@ -99,17 +100,33 @@ export function textInputs(inc: Omit<IncidentRow, "status">, reports: { id: stri
 }
 
 /**
+ * Copia título y resumen a `incidents.title` / `incidents.summary`, que leen la consola del operador y la bandeja de la
+ * unidad. Solo si la revisión sigue siendo la redactada y el incidente no se archivó: si subió mientras tanto, el job
+ * de la revisión nueva escribe los suyos. Bloquea la fila para que una revisión nueva no se cuele entre el chequeo y
+ * la escritura.
+ */
+async function applyTexts(pool: Pool, incidentId: string, revision: number, texts: { title: string; summary: string }): Promise<boolean> {
+  return withTx(async (c) => {
+    const cur = (await c.query<{ revision: number; status: string }>("select revision, status from incidents where id = $1 for update", [incidentId])).rows[0];
+    if (!cur || cur.revision !== revision || cur.status === "archived") return false;
+    await c.query("update incidents set title = $2, summary = $3, updated_at = now() where id = $1", [incidentId, texts.title, texts.summary]);
+    return true;
+  }, pool);
+}
+
+/**
  * Handler `textgen`: título, resumen y explicación de prioridad de una revisión del incidente.
  * Si la revisión cambió (antes o durante la redacción), descarta: la revisión nueva trae su propio job.
  * Una falla del LLM cae a plantilla; solo fallan el job los errores de base o de política.
+ * Sin descarte, deja título y resumen en las columnas del incidente (`applied`).
  */
 export async function runTextgen(
   deps: TextDeps,
   job: Job,
-): Promise<{ discarded: boolean; sources: Partial<Record<TextPurpose, string>>; fallbacks: Partial<Record<TextPurpose, string>> }> {
+): Promise<{ discarded: boolean; applied: boolean; sources: Partial<Record<TextPurpose, string>>; fallbacks: Partial<Record<TextPurpose, string>> }> {
   const inc = await loadIncident(deps.pool, job.entity_id);
   // Archivado (sin reportes activos): ya no se muestra al operador, no se gasta LLM en él.
-  if (!inc || inc.revision !== job.entity_revision || inc.status === "archived") return { discarded: true, sources: {}, fallbacks: {} };
+  if (!inc || inc.revision !== job.entity_revision || inc.status === "archived") return { discarded: true, applied: false, sources: {}, fallbacks: {} };
   const policy = (await getActivePolicy(deps.pool, inc.territory_id, "textgen")).config;
   const inputs = textInputs(inc, await reportReferences(deps.pool, inc.id, policy.max_references), policy);
   // La explicación depende además de la banda, que `plan` puede promover por antigüedad sin subir la revisión: si
@@ -123,8 +140,12 @@ export async function runTextgen(
   const failed = settled.find((r) => r.status === "rejected");
   if (failed) throw failed.reason;
   const results = settled.flatMap((r, i) => (r.status === "fulfilled" ? [[PURPOSES[i], r.value] as const] : []));
+  const discarded = results.some(([, r]) => r.discarded);
+  const byPurpose = Object.fromEntries(results) as Record<TextPurpose, GeneratedText>;
+  const applied = !discarded && (await applyTexts(deps.pool, inc.id, job.entity_revision, { title: byPurpose.title.body, summary: byPurpose.summary.body }));
   return {
-    discarded: results.some(([, r]) => r.discarded),
+    discarded,
+    applied,
     sources: Object.fromEntries(results.map(([p, r]) => [p, r.source])),
     // Por qué cayó a plantilla (textgen apagado, sin cliente, salida inválida) para el log del worker. Un propósito
     // determinista por llm_purposes no es un fallo y no aparece acá.

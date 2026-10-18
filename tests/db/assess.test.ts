@@ -373,4 +373,17 @@ describe("assess_incident y correcciones", () => {
     expect((await one(pool, "select status from review_items where id = $1", [item.id])).status).toBe("dismissed");
     expect((await one(pool, "select count(*)::int as n from jobs where kind = 'plan' and dedupe_key like '%closed:%'")).n).toBe(1);
   });
+
+  it("una reevaluación sin cambios efectivos conserva el título que copió textgen", async () => {
+    const jev = jevAssess(); // mismas respuestas que la evaluación del reporte: nada efectivo cambia
+    const incidentId = await incidentWithTwoReports(pool, t, jev);
+    await pool.query("update jobs set status = 'done' where kind = 'textgen'"); // el de la revisión 1, ya corrido
+    const rev = await revisionOf(pool, incidentId);
+    await pool.query("update incidents set title = 'Título de textgen' where id = $1", [incidentId]);
+    // Solo el assess_incident pendiente: el textgen que encola después escribiría su propio título y taparía lo que se mide.
+    await runOnce(testDeps(pool, jev), handlers, { workerId: "test" });
+    expect(assessCalls(jev)).toBe(1);
+    expect(await revisionOf(pool, incidentId)).toBe(rev);
+    expect((await one(pool, "select title from incidents where id = $1", [incidentId])).title).toBe("Título de textgen");
+  });
 });
