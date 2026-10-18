@@ -1,7 +1,9 @@
+import bcrypt from "bcryptjs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedAll } from "../../seeds";
 import { refreshDemoPositions, resetDemo, seedDemo } from "../../seeds/demo";
 import { DEMO_STAGE_UNIT } from "../../seeds/demo-units";
+import { DEMO_PASSWORD } from "../../seeds/demo-users";
 import { locatePoint } from "@/server/geo/locate";
 import { allowedActions } from "@/shared/contracts/assignment";
 import { resetDb, testDb } from "./setup";
@@ -38,17 +40,12 @@ describe("seeds de demo", () => {
     expect(left.rows[0]).toEqual({ units: 0, caps: 0, users: 0, events: 0 });
   });
 
-  it("falla antes de escribir si falta la contraseña de unidad", async () => {
+  it("todas las cuentas de demo entran con la contraseña de demo", async () => {
     const pool = await testDb();
-    const saved = process.env.DEMO_UNIT_PASSWORD;
-    delete process.env.DEMO_UNIT_PASSWORD;
-    try {
-      await expect(seedDemo(pool, "montevideo")).rejects.toThrow("DEMO_UNIT_PASSWORD");
-    } finally {
-      process.env.DEMO_UNIT_PASSWORD = saved;
-    }
-    const left = await pool.query("select (select count(*) from response_units)::int as units, (select count(*) from internal_users)::int as users");
-    expect(left.rows[0]).toEqual({ units: 0, users: 0 });
+    await seedDemo(pool, "montevideo");
+    const { rows } = await pool.query<{ username: string; password_hash: string }>("select username, password_hash from internal_users");
+    expect(rows).toHaveLength(6);
+    for (const u of rows) expect(await bcrypt.compare(DEMO_PASSWORD, u.password_hash)).toBe(true);
   });
 
   it("capacidades, responsabilidad por zona y posiciones dentro de la cobertura", async () => {

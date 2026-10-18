@@ -96,8 +96,8 @@ Estado al 17 oct 2026: **preparado, no desplegado**. Las cuentas de Railway y Su
 | `NOMINATIM_USER_AGENT` | ✓ | ✓ | Identificable, con contacto del equipo (política de uso de Nominatim). |
 | `SESSION_SECRET` | ✓ | — | ≥ 32 caracteres aleatorios (`openssl rand -hex 32`). Secreto. |
 
-`PORT` y `NODE_ENV` los pone Railway/Railpack. Las contraseñas de demo (`DEMO_OPERATOR_PASSWORD`, `DEMO_UNIT_PASSWORD`)
-**no** van en Railway: solo las usa `seed-demo`, que se corre desde una máquina del equipo.
+`PORT` y `NODE_ENV` los pone Railway/Railpack. Las cuentas de demo que crea `seed-demo` (`operador.<territorio>`,
+`unidad.<slug>`) tienen todas la contraseña `test` (`DEMO_PASSWORD` en `seeds/demo-users.ts`); no hay variable.
 
 En `.railway/railway.ts` los secretos están como `preserve()`: el archivo declara la variable y el valor se carga en
 Railway, nunca en el repo. La documentación de Railway define `preserve()` como "conservar el valor que ya está en
@@ -137,7 +137,7 @@ si no se declara, el siguiente `apply` la marca para borrar.
 export DATABASE_URL='postgresql://postgres.<ref>:<password>@<pooler-host>:5432/postgres'
 pnpm cli migrate
 pnpm cli seed                                   # catálogo, políticas, plantillas, Montevideo y sus barrios
-DEMO_OPERATOR_PASSWORD=… DEMO_UNIT_PASSWORD=… pnpm cli seed-demo
+pnpm cli seed-demo                              # cuentas de demo con contraseña `test`
 pnpm cli policy-upgrade --kind grouping         # no-op en una base recién sembrada; versiona si la activa difiere del seed
 pnpm cli refresh-demo-positions                 # antes de cada demo: las posiciones vencen por política
 unset DATABASE_URL
@@ -170,8 +170,7 @@ unset DATABASE_URL
    objeto debe dar error (bucket privado).
 4. En la Mac, `https://<dominio>/login` con la cuenta de operador de demo → `/operacion`: el incidente aparece con
    barrio y prioridad. En los logs del worker: `✓ process_report …`.
-5. Desde la máquina del equipo: `node --env-file=.env.local scripts/e2e-walkthrough.mjs https://<dominio>`
-   (necesita `DEMO_OPERATOR_PASSWORD`).
+5. Desde la máquina del equipo: `node --env-file=.env.local scripts/e2e-walkthrough.mjs https://<dominio>`.
 6. Redeploy del worker con un job en curso: en los logs debe aparecer `worker detenido` (apagado limpio).
 
 ## Seeds después de un merge

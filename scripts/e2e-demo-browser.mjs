@@ -18,7 +18,7 @@ const flag = (name) => {
 const headed = args.includes("--headed") ? (args.splice(args.indexOf("--headed"), 1), true) : false;
 const out = flag("--out") ?? "e2e-shots";
 const base = args[0] ?? "http://localhost:3100";
-if (!process.env.DEMO_OPERATOR_PASSWORD || !process.env.DEMO_UNIT_PASSWORD) throw new Error("faltan DEMO_OPERATOR_PASSWORD / DEMO_UNIT_PASSWORD");
+const DEMO_PASSWORD = "test"; // la de seeds/demo-users.ts
 const text = "Hay un contenedor de basura prendido fuego en 18 de Julio y Ejido, sale mucho humo negro";
 await mkdir(out, { recursive: true });
 
@@ -52,7 +52,7 @@ try {
   const opsCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "es-UY" });
   const ops = await opsCtx.newPage();
   watch(ops, "operacion");
-  await login(ops, "operador.montevideo", process.env.DEMO_OPERATOR_PASSWORD);
+  await login(ops, "operador.montevideo", DEMO_PASSWORD);
   await ops.goto(`${base}/operacion?territory=montevideo`);
   await ops.getByRole("region", { name: "Resumen" }).waitFor({ timeout: 30_000 });
   // Total de la bandeja ("Bandeja priorizada (N de M)"); el texto del tipo también aparece en el filtro.
@@ -63,7 +63,7 @@ try {
   const unitCtx = await browser.newContext({ ...phone, geolocation: { latitude: -34.9058, longitude: -56.1882 }, permissions: ["geolocation"] });
   const unit = await unitCtx.newPage();
   watch(unit, "unidad");
-  await login(unit, "unidad.cuadrilla-demo", process.env.DEMO_UNIT_PASSWORD);
+  await login(unit, "unidad.cuadrilla-demo", DEMO_PASSWORD);
   await unit.goto(`${base}/unidad`);
   await unit.getByText("No tenés órdenes activas").waitFor({ timeout: 30_000 });
   check(true, "consola y bandeja abiertas, la cuadrilla sin órdenes");

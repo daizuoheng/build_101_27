@@ -3,17 +3,16 @@ import { withTx } from "../src/server/db/tx";
 import { appendEvent } from "../src/server/events/append";
 import { locatePoint } from "../src/server/geo/locate";
 import { DEMO_STAGE_UNIT, demoUnits } from "./demo-units";
-import { demoPasswords, seedDemoUsers } from "./demo-users";
+import { seedDemoUsers } from "./demo-users";
 
 /**
- * Unidades y usuarios de demo, atómico: todo o nada en una transacción, y las contraseñas se validan antes.
+ * Unidades y usuarios de demo, atómico: todo o nada en una transacción.
  * Idempotente por (territorio, slug): nunca cambia capacidad, estado ni posición de una unidad existente
  * (eso es operación). Sin fecha de posición: ver `refreshDemoPositions`.
  */
 export async function seedDemo(pool: Pool, territorySlug: string): Promise<{ unitsCreated: string[]; usersCreated: string[] }> {
   const units = demoUnits[territorySlug];
   if (!units) throw new Error(`no hay unidades de demo para '${territorySlug}'`);
-  const passwords = demoPasswords();
   return withTx(async (c) => {
     const t = await c.query<{ id: string }>("select id from territories where slug = $1", [territorySlug]);
     if (!t.rows[0]) throw new Error(`territorio inexistente: ${territorySlug} (correr seed primero)`);
@@ -52,7 +51,7 @@ export async function seedDemo(pool: Pool, territorySlug: string): Promise<{ uni
       }
       await appendEvent(c, { entityType: "response_unit", entityId: unitId, kind: "demo_seeded", actorType: "system" });
     }
-    const usersCreated = await seedDemoUsers(c, territorySlug, passwords);
+    const usersCreated = await seedDemoUsers(c, territorySlug);
     return { unitsCreated: created, usersCreated };
   }, pool);
 }

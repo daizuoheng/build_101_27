@@ -15,9 +15,7 @@ const photo = flag("--photo");
 const text = flag("--text") ?? "Hay un contenedor de basura prendido fuego en 18 de Julio y Ejido, sale mucho humo negro";
 const base = args[0] ?? "http://localhost:3100";
 const UNIT_USER = "unidad.cuadrilla-demo";
-const operatorPassword = process.env.DEMO_OPERATOR_PASSWORD;
-const unitPassword = process.env.DEMO_UNIT_PASSWORD;
-if (!operatorPassword || !unitPassword) throw new Error("faltan DEMO_OPERATOR_PASSWORD / DEMO_UNIT_PASSWORD");
+const DEMO_PASSWORD = "test"; // la de seeds/demo-users.ts
 
 const t0 = Date.now();
 const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
@@ -141,7 +139,7 @@ check(tracking.processing === "done", `worker procesó el reporte en ${((Date.no
 // --- Acto 2: la consola de la Intendencia ve el incidente sin tocar nada ---
 console.log(`\n[acto 2] operador en ${base}/operacion`);
 const operator = client();
-await operator("/api/auth/login", { method: "POST", json: { username: "operador.montevideo", password: operatorPassword } });
+await operator("/api/auth/login", { method: "POST", json: { username: "operador.montevideo", password: DEMO_PASSWORD } });
 const incident = await waitFor("incidente nuevo en /operacion (si el reporte se agrupó con uno anterior, correr reset-demo)", async () => {
   const list = await operator("/api/operacion/incidents?territory=montevideo&sort=recent");
   const created = list.body.incidents.filter((i) => Date.parse(i.createdAt) >= serverStart);
@@ -157,7 +155,7 @@ console.log(`  plan: ${JSON.stringify(plan.body).slice(0, 300)}…`);
 // --- Acto 3: la orden le llega sola a la cuadrilla ---
 console.log(`\n[acto 3] cuadrilla en ${base}/unidad (${UNIT_USER})`);
 const unit = client();
-await unit("/api/auth/login", { method: "POST", json: { username: UNIT_USER, password: unitPassword } });
+await unit("/api/auth/login", { method: "POST", json: { username: UNIT_USER, password: DEMO_PASSWORD } });
 const order = await waitFor("orden en /unidad", async () => {
   const inbox = await unit("/api/unidad/assignments");
   return inbox.body.assignments?.find((a) => a.incident.id === incident.id) ?? null;

@@ -67,10 +67,7 @@ for (let i = 0; i < 30; i++) {
 }
 console.log(`seguimiento: ${JSON.stringify(r.body.tracking)}`);
 
-const operatorPassword = process.env.DEMO_OPERATOR_PASSWORD;
-if (operatorPassword) {
-  await call("/api/auth/login", { method: "POST", json: { username: "operador.montevideo", password: operatorPassword } });
-  const list = await call("/api/operacion/incidents?territory=montevideo&sort=recent");
-  const inc = list.body.incidents[0];
-  console.log(`\noperación ve ${list.body.incidents.length} incidente(s); el más reciente:\n  ${inc.title} · prioridad ${inc.priorityBand} · ${inc.status} · ${inc.area?.name} · reportes ${inc.reportCount} · revisión ${JSON.stringify(inc.openReviewKinds)}`);
-}
+await call("/api/auth/login", { method: "POST", json: { username: "operador.montevideo", password: "test" } }); // seeds/demo-users.ts
+const list = await call("/api/operacion/incidents?territory=montevideo&sort=recent");
+const inc = list.body.incidents[0];
+console.log(`\noperación ve ${list.body.incidents.length} incidente(s); el más reciente:\n  ${inc.title} · prioridad ${inc.priorityBand} · ${inc.status} · ${inc.area?.name} · reportes ${inc.reportCount} · revisión ${JSON.stringify(inc.openReviewKinds)}`);

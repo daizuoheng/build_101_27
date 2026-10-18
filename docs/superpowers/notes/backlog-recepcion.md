@@ -29,7 +29,7 @@ Pendientes que quedaron abiertos en `feat/llm-recepcion`. Cada uno dice de quié
 ## Entorno y documentación
 
 - [ ] `pnpm typecheck` en un clon nuevo falla con `RouteContext` hasta correr `pnpm next typegen`. Proponer al Núcleo agregarlo al script `typecheck` o a `postinstall`.
-- [ ] Variables vacías en `.env.local` (por ejemplo `TYPESAFE_API_KEY=`) tapan las de `.env`, porque `.env.local` se carga primero. Avisar en el HANDOFF o comentar esas líneas en `.env.example`. Lo mismo pasa con `DEMO_*_PASSWORD` distintas entre los dos archivos: las cuentas de demo quedan con la contraseña de la primera seed y no se actualizan.
+- [ ] Variables vacías en `.env.local` (por ejemplo `TYPESAFE_API_KEY=`) tapan las de `.env`, porque `.env.local` se carga primero. Avisar en el HANDOFF o comentar esas líneas en `.env.example`.
 
 ## Canal WhatsApp (roadmap)
 

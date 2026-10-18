@@ -10,7 +10,7 @@ Actualizado: 17 de octubre de 2026 (segunda sesión). Workspace: `/Users/fededal
 
 Falta: despliegue (esperando cuentas de Supabase y Railway), agrupación (T9, en curso), reevaluación y overrides (T10), planificador (T11), despacho y bandeja de unidad (T12), cola de revisión (T14) y textos generados (T15).
 
-Para arrancar en local: `pnpm install && pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`. `.env` lleva las claves de Jev y DeepSeek. `.env.local` lleva `DATABASE_URL`, `SESSION_SECRET` y `DEMO_*_PASSWORD` (ver `.env.example`).
+Para arrancar en local: `pnpm install && pnpm cli migrate && pnpm cli seed && pnpm cli seed-demo`, después `pnpm dev` y `pnpm worker`. `.env` lleva las claves de Jev y DeepSeek. `.env.local` lleva `DATABASE_URL` y `SESSION_SECRET` (ver `.env.example`). Las cuentas de demo (`operador.montevideo`, `unidad.<slug>`) entran con contraseña `test`.
 
 Ojo: el hook de `rtk` reescribe `git` y choca con la protección del worktree; dentro del worktree usar `/usr/bin/git`.
 

@@ -70,8 +70,6 @@ async function setupAssignment() {
 
 describe("bandeja de unidad", () => {
   beforeEach(async () => {
-    process.env.DEMO_OPERATOR_PASSWORD ??= "test-operador";
-    process.env.DEMO_UNIT_PASSWORD ??= "test-unidad";
     const pool = await testDb();
     await resetDb(pool);
     await seedAll(pool);

@@ -96,8 +96,6 @@ const session = (f: Fixture, territory = f.mvd): InternalSession => ({ userId: f
 
 describe("detalle del incidente para el operador", () => {
   beforeEach(async () => {
-    process.env.DEMO_OPERATOR_PASSWORD ??= "test-operador";
-    process.env.DEMO_UNIT_PASSWORD ??= "test-unidad";
     const pool = await testDb();
     h.pool = pool;
     h.session = null;
