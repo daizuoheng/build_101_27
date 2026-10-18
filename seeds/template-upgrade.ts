@@ -7,19 +7,29 @@ import { templates } from "./templates";
 export type TemplateUpgradeResult = { updated: string[]; inserted: string[]; unchanged: string[]; unknown: string[] };
 
 /**
- * Opciones del CLI (`--keys a,b | --all`, `--dry-run`), o `null` si no son válidas. Estricto a propósito: el comando
- * escribe por defecto, así que una opción mal escrita (`--dryrun`, `--dry-run=true`, `--dry-run false`) se rechaza
- * en lugar de ignorarse y terminar aplicando.
+ * Opciones del CLI (`--keys a,b | --all`, `--dry-run`) sobre los tokens crudos de `argv`, o `null` si no son válidas.
+ * Estricto a propósito: el comando escribe por defecto, así que cualquier token que no sea exactamente una de esas
+ * opciones (`-dry-run`, `--dryrun`, `--dry-run=true`, `--dry-run false`, un flag repetido) se rechaza en lugar de
+ * ignorarse y terminar aplicando. No usa el `parseArgs` genérico del CLI, que descarta lo que no empieza con `--` y se
+ * queda con el último valor de un flag repetido.
  */
-export function parseTemplateUpgradeArgs(args: Record<string, string>): { keys: string[] | "all"; dryRun: boolean } | null {
-  if (Object.keys(args).some((k) => !["keys", "all", "dry-run"].includes(k))) return null;
-  if (args["dry-run"] !== undefined && args["dry-run"] !== "true") return null;
-  if (args.all !== undefined && args.all !== "true") return null;
-  // `--keys` sin valor llega como "true".
-  const keys = args.keys === "true" ? [] : (args.keys ?? "").split(",").map((k) => k.trim()).filter(Boolean);
-  const all = args.all === "true";
-  if (all === keys.length > 0 || (args.keys !== undefined && !keys.length)) return null;
-  return { keys: all ? "all" : keys, dryRun: args["dry-run"] === "true" };
+export function parseTemplateUpgradeArgs(argv: string[]): { keys: string[] | "all"; dryRun: boolean } | null {
+  let keys: string[] | undefined;
+  let all = false;
+  let dryRun = false;
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (tok === "--all" && !all) all = true;
+    else if (tok === "--dry-run" && !dryRun) dryRun = true;
+    else if (tok === "--keys" && keys === undefined) {
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("-")) return null;
+      keys = value.split(",").map((k) => k.trim()).filter(Boolean);
+      if (!keys.length) return null;
+    } else return null;
+  }
+  if (all === (keys !== undefined)) return null;
+  return { keys: all ? "all" : keys!, dryRun };
 }
 
 /**

@@ -51,10 +51,11 @@ const commands: Record<string, () => Promise<Command>> = {
     }
   },
   // Lleva las plantillas globales al texto del seed (los seeds nunca pisan filas); no toca las de territorio.
-  "template-upgrade": async () => async (args) => {
+  "template-upgrade": async () => async () => {
     const { getPool } = await import("../src/server/db/pool");
     const { parseTemplateUpgradeArgs, upgradeTemplates } = await import("../seeds/template-upgrade");
-    const opts = parseTemplateUpgradeArgs(args);
+    // Tokens crudos (después de `cli.ts template-upgrade`): el parseArgs genérico perdería un flag mal escrito.
+    const opts = parseTemplateUpgradeArgs(process.argv.slice(3));
     if (!opts) {
       console.error("uso: template-upgrade (--keys <ask_location[,draft_ready,...]> | --all) [--dry-run]");
       return 2;

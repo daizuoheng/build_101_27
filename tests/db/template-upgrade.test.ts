@@ -41,20 +41,30 @@ describe("template-upgrade", () => {
   });
 
   it("los argumentos del CLI: una opción mal escrita no termina escribiendo en la base", () => {
-    expect(parseTemplateUpgradeArgs({ keys: "draft_ready, ask_location", "dry-run": "true" })).toEqual({
+    expect(parseTemplateUpgradeArgs(["--keys", "draft_ready, ask_location", "--dry-run"])).toEqual({
       keys: ["draft_ready", "ask_location"],
       dryRun: true,
     });
-    expect(parseTemplateUpgradeArgs({ all: "true" })).toEqual({ keys: "all", dryRun: false });
-    for (const bad of <Record<string, string>[]>[
-      {},
-      { all: "true", keys: "draft_ready" },
-      { keys: "true" },
-      { all: "x" },
-      { all: "true", "dry-run=true": "true" },
-      { all: "true", dryrun: "true" },
-      { all: "true", "dry-run": "false" },
+    expect(parseTemplateUpgradeArgs(["--dry-run", "--all"])).toEqual({ keys: "all", dryRun: true });
+    expect(parseTemplateUpgradeArgs(["--all"])).toEqual({ keys: "all", dryRun: false });
+    // Se validan los tokens crudos: el parseArgs genérico del CLI descarta lo que no empieza con `--` y se queda con el
+    // último valor de un flag repetido, así que un `-dry-run` mal escrito llegaría como si no estuviera.
+    for (const bad of [
+      [],
+      ["--all", "--keys", "draft_ready"],
+      ["--keys"],
+      ["--keys", "--dry-run"],
+      ["--all", "x"],
+      ["--all", "--dry-run=true"],
+      ["--all", "--dryrun"],
+      ["--all", "--dry-run", "false"],
+      ["--keys", "draft_ready", "-dry-run"],
+      ["--keys", "draft_ready", "dry-run"],
+      ["--keys", "draft_ready", "ask_location"],
+      ["--all", "--all"],
+      ["--keys", "a", "--keys", "b"],
+      ["--all", "--dry-run", "--dry-run"],
     ])
-      expect(parseTemplateUpgradeArgs(bad)).toBeNull();
+      expect(parseTemplateUpgradeArgs(bad), bad.join(" ")).toBeNull();
   });
 });
