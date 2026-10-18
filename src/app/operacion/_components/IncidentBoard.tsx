@@ -259,7 +259,7 @@ function IncidentRow({
   const area = areaDisplay(item.area?.name);
   const place = [area ? `${areaLabel} ${area}` : `${areaLabel} sin determinar`, item.locationText].filter(Boolean).join(" · ");
   return (
-    <li id={`inc-${item.id}`} className="ops-item px-4 py-3.5" data-selected={selected}>
+    <li id={`inc-${item.id}`} className="ops-item px-4 py-3.5" data-selected={selected} aria-current={selected ? "true" : undefined}>
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <PriorityBadge band={item.priorityBand} />
@@ -270,7 +270,7 @@ function IncidentRow({
         <span className="text-ink-2">Hace {age(item.createdAt, now)}</span>
       </div>
       <h3 className="text-lg font-semibold leading-snug">
-        <Link href={incidentHref(item.id, territorySlug)} className="ops-item-action text-left hover:underline">
+        <Link href={incidentHref(item.id, territorySlug)} className="ops-item-action hover:underline">
           {item.title}
         </Link>
       </h3>

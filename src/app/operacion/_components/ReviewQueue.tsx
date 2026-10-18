@@ -20,11 +20,23 @@ const NOTE_MIN = 3;
 const NOTE_MAX = 500;
 
 type ResolveResult = { reviewItemId: string; status: string; replayed: boolean };
+
+const QUEUE_HEADING_ID = "cola-revision";
+const cardTitleId = (itemId: string) => `revision-${itemId}`;
+
+/** Clave de idempotencia. `crypto.randomUUID` solo existe en contexto seguro (https o localhost); afuera, una equivalente. */
+function newIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
 type Titles = ReadonlyMap<string, string>;
 
 const NEEDS_NOTE: ReadonlySet<ReviewActionName> = new Set(["dismiss", "set_severity", "set_type"]);
 const NEEDS_CONFIRM: ReadonlySet<ReviewActionName> = new Set(["dismiss", "create_incident"]);
 const SEVERITIES = ["low", "medium", "high"] as const;
+/** Acciones que se resuelven desde la cola. */
+const QUEUE_ACTIONS: ReadonlySet<ReviewActionName> = new Set(["link", "create_incident", "set_severity", "allow_dispatch", "retry", "dismiss"]);
 
 function incidentName(id: string, titles: Titles): string {
   const t = titles.get(id);
@@ -121,15 +133,24 @@ export function ReviewQueue({ territorySlug }: { territorySlug: string }) {
   useEffect(() => {
     const ctrl = new AbortController();
     // Un tick no se superpone a una carga en curso: con el backend más lento que el intervalo los pedidos no se apilan.
+    // Un refresco pedido a mano (después de resolver o de un 409) no se pierde: si hay una carga en curso, corre al terminar.
     let inFlight = false;
-    const run = () => {
-      if (inFlight) return;
+    let again = false;
+    const run = (explicit = false) => {
+      if (inFlight) {
+        again ||= explicit;
+        return;
+      }
       inFlight = true;
       void load(ctrl.signal).finally(() => {
         inFlight = false;
+        if (again && !ctrl.signal.aborted) {
+          again = false;
+          run();
+        }
       });
     };
-    refresh.current = run;
+    refresh.current = () => run(true);
     const first = setTimeout(run, 0);
     const t = setInterval(run, REFRESH_MS);
     return () => {
@@ -140,13 +161,29 @@ export function ReviewQueue({ territorySlug }: { territorySlug: string }) {
     };
   }, [load]);
 
+  const items = (data?.items ?? []).filter((i) => !hidden.has(i.id));
+
+  // Al sacar una tarjeta (o cerrar el aviso) el foco va a la siguiente, o al título de la cola si era la última:
+  // con teclado o lector de pantalla no se vuelve a empezar desde arriba después de cada decisión.
+  const pendingFocus = useRef<string | null>(null);
+  const visibleIds = useRef<string[]>([]);
+  useEffect(() => {
+    visibleIds.current = items.map((i) => i.id);
+    const target = pendingFocus.current;
+    if (!target) return;
+    pendingFocus.current = null;
+    document.getElementById(target)?.focus();
+  });
+
   const hide = useCallback((item: ReviewItemView, message: string) => {
+    const ids = visibleIds.current;
+    const next = ids[ids.indexOf(item.id) + 1] ?? ids[ids.indexOf(item.id) - 1];
+    pendingFocus.current = next && next !== item.id ? cardTitleId(next) : QUEUE_HEADING_ID;
     setHidden((h) => new Set(h).add(item.id));
     setNotice(message);
     refresh.current();
   }, []);
 
-  const items = (data?.items ?? []).filter((i) => !hidden.has(i.id));
   const urgent = items.filter((i) => i.priorityBand === "high" || i.activeHazard).length;
   const oldest = items.reduce<ReviewItemView | null>((o, i) => (!o || i.createdAt < o.createdAt ? i : o), null);
   const now = updatedAt ?? 0;
@@ -161,7 +198,14 @@ export function ReviewQueue({ territorySlug }: { territorySlug: string }) {
           {notice && (
             <p className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius)] bg-info-soft px-3 py-2">
               <span>{notice}</span>
-              <button type="button" className="btn ops-btn-ghost" onClick={() => setNotice(null)}>
+              <button
+                type="button"
+                className="btn ops-btn-ghost"
+                onClick={() => {
+                  pendingFocus.current = QUEUE_HEADING_ID;
+                  setNotice(null);
+                }}
+              >
                 Cerrar aviso
               </button>
             </p>
@@ -181,10 +225,11 @@ export function ReviewQueue({ territorySlug }: { territorySlug: string }) {
           />
         </section>
 
-        <section aria-labelledby="cola-revision" className="flex flex-col gap-2.5">
-          <h2 id="cola-revision" className="ops-eyebrow px-1">
+        <section aria-labelledby={QUEUE_HEADING_ID} className="flex flex-col gap-2.5">
+          <h2 id={QUEUE_HEADING_ID} tabIndex={-1} className="ops-eyebrow px-1">
             Ítems abiertos, de más a menos urgente{data ? ` (${items.length})` : ""}
           </h2>
+          {!data && !error && <p className="card p-4 text-ink-2">Cargando la cola…</p>}
           {data && items.length === 0 && (
             <div className="card p-6 text-center">
               <p className="text-lg font-bold">No hay nada para revisar</p>
@@ -225,13 +270,18 @@ function ReviewCard({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState(false);
   const [confirming, setConfirming] = useState<ResolveAction | null>(null);
   // Clave de idempotencia del intento en curso: se reutiliza si se reintenta lo mismo después de un error de red.
   const attempt = useRef<{ signature: string; key: string } | null>(null);
   const outcomeUnknown = useRef(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   const uid = useId();
+  const titleId = cardTitleId(item.id);
+  const errorId = `${uid}-error`;
 
   useEffect(() => {
     if (confirming) confirmRef.current?.focus();
@@ -241,28 +291,47 @@ function ReviewCard({
   const incidentId = relatedIncidentId(item);
   const candidates = item.kind === "uncertain_duplicate" ? candidateIncidentIds(item.evidenceRefs) : [];
   const reasons = [...new Set(item.reasons.map(reviewReasonText).filter((r): r is string => !!r))];
-  const noteRequired = item.actions.some((a) => NEEDS_NOTE.has(a as ReviewActionName));
+  const noteRequired = item.actions.some((a) => a !== "set_type" && NEEDS_NOTE.has(a as ReviewActionName));
+  // `set_type` se hace desde el detalle y `reassign` no se ofrece en el MVP: si no queda otra, la tarjeta no muestra controles.
+  const actionable = item.actions.some((a) => QUEUE_ACTIONS.has(a as ReviewActionName) && (a !== "link" || candidates.length > 0));
 
-  function request(resolution: ResolveAction) {
+  /** La nota obligatoria se valida al pedir y otra vez al enviar: pudo borrarse mientras se mostraba la confirmación. */
+  function missingNote(resolution: ResolveAction): boolean {
+    if (!NEEDS_NOTE.has(resolution.action) || note.trim().length >= NOTE_MIN) return false;
+    setConfirming(null);
+    setNoteError(true);
+    setError(`Para «${REVIEW_ACTION[resolution.action]}» escribí una nota de al menos ${NOTE_MIN} caracteres.`);
+    noteRef.current?.focus();
+    return true;
+  }
+
+  function request(resolution: ResolveAction, opener: HTMLElement) {
     setError(null);
-    if (NEEDS_NOTE.has(resolution.action) && note.trim().length < NOTE_MIN) {
-      setError(`Para «${REVIEW_ACTION[resolution.action]}» escribí una nota de al menos ${NOTE_MIN} caracteres.`);
-      noteRef.current?.focus();
-      return;
-    }
+    setNoteError(false);
+    if (missingNote(resolution)) return;
     if (NEEDS_CONFIRM.has(resolution.action)) {
+      openerRef.current = opener;
       setConfirming(resolution);
       return;
     }
     void submit(resolution);
   }
 
+  function cancelConfirm() {
+    setConfirming(null);
+    openerRef.current?.focus();
+  }
+
   async function submit(resolution: ResolveAction) {
+    if (missingNote(resolution)) return;
+    // Mientras se aplica, los botones quedan deshabilitados (y el de confirmar desaparece): el foco queda en el título.
+    titleRef.current?.focus();
     setConfirming(null);
     setError(null);
+    setNoteError(false);
     const trimmed = note.trim();
     const signature = JSON.stringify([resolution, trimmed]);
-    if (attempt.current?.signature !== signature) attempt.current = { signature, key: crypto.randomUUID() };
+    if (attempt.current?.signature !== signature) attempt.current = { signature, key: newIdempotencyKey() };
     const body: ResolveBody = { resolution, idempotencyKey: attempt.current.key, ...(trimmed ? { note: trimmed } : {}) };
     setBusy(true);
     try {
@@ -299,7 +368,7 @@ function ReviewCard({
   }
 
   return (
-    <li className="ops-item px-4 py-3.5" aria-labelledby={`${uid}-title`}>
+    <li className="ops-item px-4 py-3.5" aria-labelledby={titleId}>
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <PriorityBadge band={item.priorityBand} />
@@ -310,7 +379,7 @@ function ReviewCard({
         <span className="text-ink-2">Hace {age(item.createdAt, now)}</span>
       </div>
 
-      <h3 id={`${uid}-title`} className="text-lg font-semibold leading-snug">{item.title}</h3>
+      <h3 id={titleId} ref={titleRef} tabIndex={-1} className="text-lg font-semibold leading-snug">{item.title}</h3>
       {reasons.length > 0 && (
         <p className="mt-0.5 text-warn">
           <span className="font-semibold">Motivo:</span> {reasons.join(" · ")}
@@ -332,7 +401,7 @@ function ReviewCard({
                   {incidentName(cid, titles)}
                 </Link>
                 {has("link") && (
-                  <button type="button" className="btn" disabled={busy} onClick={() => request({ action: "link", incidentId: cid })}>
+                  <button type="button" className="btn" disabled={busy} onClick={(e) => request({ action: "link", incidentId: cid }, e.currentTarget)}>
                     {REVIEW_ACTION.link}
                     <span className="sr-only"> {incidentName(cid, titles)}</span>
                   </button>
@@ -344,56 +413,70 @@ function ReviewCard({
       )}
 
       <div className="mt-2.5 flex flex-col gap-2 border-t border-line pt-2.5">
-        <label className="flex flex-col gap-1">
-          <span className="font-medium">Nota{noteRequired ? " (obligatoria para descartar o corregir)" : " (opcional)"}</span>
-          <textarea
-            ref={noteRef}
-            className="field"
-            rows={2}
-            maxLength={NOTE_MAX}
-            value={note}
-            disabled={busy}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </label>
+        {actionable ? (
+          <>
+            <label className="flex flex-col gap-1">
+              <span className="font-medium">Nota{noteRequired ? " (obligatoria para descartar o corregir)" : " (opcional)"}</span>
+              <textarea
+                ref={noteRef}
+                className="field"
+                rows={2}
+                maxLength={NOTE_MAX}
+                value={note}
+                disabled={busy}
+                aria-invalid={error && noteError ? true : undefined}
+                aria-describedby={error ? errorId : undefined}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </label>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {has("allow_dispatch") && (
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => request({ action: "allow_dispatch" })}>
-              <Icon name="check" /> {REVIEW_ACTION.allow_dispatch}
-            </button>
-          )}
-          {has("retry") && (
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => request({ action: "retry" })}>
-              <Icon name="refresh" /> {REVIEW_ACTION.retry}
-            </button>
-          )}
-          {has("create_incident") && (
-            <button type="button" className="btn" disabled={busy} onClick={() => request({ action: "create_incident" })}>
-              <Icon name="add" /> {REVIEW_ACTION.create_incident}
-            </button>
-          )}
-          {has("set_severity") && (
-            <fieldset className="flex flex-wrap items-center gap-1.5">
-              <legend className="sr-only">{REVIEW_ACTION.set_severity}</legend>
-              <span aria-hidden className="font-medium text-ink-2">{REVIEW_ACTION.set_severity}:</span>
-              {SEVERITIES.map((s) => (
-                <button key={s} type="button" className="btn" disabled={busy} onClick={() => request({ action: "set_severity", severity: s })}>
-                  {SEVERITY[s]}
+            <div className="flex flex-wrap items-center gap-2">
+              {has("allow_dispatch") && (
+                <button type="button" className="btn btn-primary" disabled={busy} onClick={(e) => request({ action: "allow_dispatch" }, e.currentTarget)}>
+                  <Icon name="check" /> {REVIEW_ACTION.allow_dispatch}
                 </button>
-              ))}
-            </fieldset>
-          )}
-          {has("dismiss") && (
-            <button type="button" className="btn text-danger" disabled={busy} onClick={() => request({ action: "dismiss" })}>
-              <Icon name="block" /> {REVIEW_ACTION.dismiss}
-            </button>
-          )}
-        </div>
-        {has("set_type") && incidentId && (
+              )}
+              {has("retry") && (
+                <button type="button" className="btn btn-primary" disabled={busy} onClick={(e) => request({ action: "retry" }, e.currentTarget)}>
+                  <Icon name="refresh" /> {REVIEW_ACTION.retry}
+                </button>
+              )}
+              {has("create_incident") && (
+                <button type="button" className="btn" disabled={busy} onClick={(e) => request({ action: "create_incident" }, e.currentTarget)}>
+                  <Icon name="add" /> {REVIEW_ACTION.create_incident}
+                </button>
+              )}
+              {has("set_severity") && (
+                <fieldset className="flex flex-wrap items-center gap-1.5">
+                  <legend className="sr-only">{REVIEW_ACTION.set_severity}</legend>
+                  <span aria-hidden className="font-medium text-ink-2">{REVIEW_ACTION.set_severity}:</span>
+                  {SEVERITIES.map((s) => (
+                    <button key={s} type="button" className="btn" disabled={busy} onClick={(e) => request({ action: "set_severity", severity: s }, e.currentTarget)}>
+                      {SEVERITY[s]}
+                    </button>
+                  ))}
+                </fieldset>
+              )}
+              {has("dismiss") && (
+                <button type="button" className="btn text-danger" disabled={busy} onClick={(e) => request({ action: "dismiss" }, e.currentTarget)}>
+                  <Icon name="block" /> {REVIEW_ACTION.dismiss}
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-ink-2">Este ítem no tiene acciones disponibles desde la cola.</p>
+        )}
+        {has("set_type") && (
           <p className="text-ink-2">
-            Para corregir el tipo, abrí el{" "}
-            <Link href={incidentHref(incidentId, territorySlug)} className="font-semibold text-accent hover:underline">detalle del incidente</Link>.
+            {incidentId ? (
+              <>
+                Para corregir el tipo, abrí el{" "}
+                <Link href={incidentHref(incidentId, territorySlug)} className="font-semibold text-accent hover:underline">detalle del incidente</Link>.
+              </>
+            ) : (
+              "El tipo se corrige desde el detalle del incidente."
+            )}
           </p>
         )}
 
@@ -403,14 +486,14 @@ function ReviewCard({
             <button ref={confirmRef} type="button" className="btn btn-primary" disabled={busy} onClick={() => void submit(confirming)}>
               Sí, {REVIEW_ACTION[confirming.action].toLocaleLowerCase("es")}
             </button>
-            <button type="button" className="btn ops-btn-ghost" onClick={() => setConfirming(null)}>
+            <button type="button" className="btn ops-btn-ghost" onClick={cancelConfirm}>
               Volver
             </button>
           </div>
         )}
 
         {busy && <p className="text-ink-2" aria-hidden>Aplicando…</p>}
-        {error && <p role="alert" className="rounded-[10px] bg-danger-soft px-3 py-2 text-danger">{error}</p>}
+        {error && <p id={errorId} role="alert" className="rounded-[10px] bg-danger-soft px-3 py-2 text-danger">{error}</p>}
       </div>
     </li>
   );
