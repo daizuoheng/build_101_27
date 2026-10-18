@@ -1,6 +1,7 @@
 /**
  * Marca única de Radar Urbano (radar sobre el acento), en todas las pantallas. Decorativa: siempre va junto al
- * logotipo. La misma figura, con los colores fijos del tema, es el favicon (src/app/icon.svg).
+ * logotipo. La misma figura, con los colores fijos del tema, es el favicon (src/app/icon.svg); favicon.ico y
+ * apple-icon.png son su versión rasterizada: si cambia la marca, regenerarlos.
  */
 export function BrandMark({ size = 36 }: { size?: number }) {
   return (
