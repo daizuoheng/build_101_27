@@ -21,6 +21,7 @@ export function OpsSidebar({ info }: { info: SidebarInfo }) {
   const items: NavItem[] = [
     { href: `/operacion${q}`, label: "Centro de Operaciones", short: "Centro", icon: "dashboard", match: (p) => p === "/operacion" },
     { href: `/operacion/plan${q}`, label: "Plan de atención", short: "Plan", icon: "list", match: (p) => p.startsWith("/operacion/plan") },
+    { href: `/operacion/revision${q}`, label: "Cola de revisión", short: "Revisión", icon: "help", match: (p) => p.startsWith("/operacion/revision") },
   ];
   if (territory) items.push({ href: `/reportar/${encodeURIComponent(territory)}`, label: "Reportar problema", short: "Reportar", icon: "add", match: () => false });
 
@@ -40,7 +41,7 @@ export function OpsSidebar({ info }: { info: SidebarInfo }) {
             <ThemeToggle compact />
           </div>
         </div>
-        <nav aria-label="Consola de operación" className="grid grid-cols-3 gap-1 px-3 pb-3 lg:mt-4 lg:flex lg:flex-col lg:pb-0">
+        <nav aria-label="Consola de operación" className="grid grid-cols-2 gap-1 px-3 pb-3 sm:grid-cols-4 lg:mt-4 lg:flex lg:flex-col lg:pb-0">
           {items.map((it) => {
             const active = it.match(pathname);
             return (
