@@ -109,6 +109,7 @@ describe("agrupación automática", () => {
 
     const assess = await pool.query("select entity_revision from jobs where kind = 'assess_incident' and entity_id = $1", [bache]);
     expect(assess.rows).toEqual([{ entity_revision: 2 }]);
+    expect((await pool.query("select 1 from jobs where kind = 'plan' and dedupe_key like $1", [`%:report:${reportId}`])).rows).toHaveLength(1);
   });
 
   it("dos same ⇒ reporte en revisión, sin incidente nuevo y candidatos con despacho bloqueado", async () => {
@@ -144,6 +145,7 @@ describe("agrupación automática", () => {
     expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("linked");
     const created = (await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows[0].incident_id;
     expect((await pool.query("select entity_revision from jobs where kind = 'textgen' and entity_id = $1", [created])).rows).toEqual([{ entity_revision: 1 }]);
+    expect((await pool.query("select 1 from jobs where kind = 'plan' and dedupe_key like $1", [`%:report:${reportId}`])).rows).toHaveLength(1);
   });
 
   it("si los candidatos cambian mientras Jev compara, se compara de nuevo antes de escribir", async () => {
@@ -219,7 +221,7 @@ describe("agrupación automática", () => {
     expect((await pool.query("select active, deactivation_reason from report_incident_links where report_id = $1", [reportId])).rows[0]).toEqual({ active: false, deactivation_reason: "no corresponde" });
     // La orden cancelada queda en events, se replanifica el territorio y el ítem del incidente archivado se descarta.
     expect(await count(pool, "select count(*)::int as n from events where entity_type = 'assignment' and entity_id = $1 and kind = 'cancelled'", [asg.rows[0].id])).toBe(1);
-    expect(await count(pool, "select count(*)::int as n from jobs where kind = 'plan' and entity_id = $1", [t])).toBe(1);
+    expect(await count(pool, "select count(*)::int as n from jobs where kind = 'plan' and entity_id = $1 and dedupe_key like '%:archived:%'", [t])).toBe(1);
     expect((await pool.query("select status from review_items where entity_id = $1", [incidentId])).rows[0].status).toBe("dismissed");
     // El reporte no queda huérfano: va a revisión pendiente de asociación.
     expect((await pool.query("select grouping from reports where id = $1", [reportId])).rows[0].grouping).toBe("review");
@@ -245,6 +247,7 @@ describe("agrupación automática", () => {
     expect((await pool.query("select processing, outcome from reports where id = $1", [reportId])).rows[0]).toEqual({ processing: "done", outcome: "applicable" });
     expect((await pool.query("select incident_id from report_incident_links where report_id = $1 and active", [reportId])).rows).toEqual([{ incident_id: target }]);
     expect(await count(pool, "select count(*)::int as n from incidents")).toBe(1);
+    expect((await pool.query("select 1 from jobs where kind = 'plan' and dedupe_key like $1", [`%:report:${reportId}`])).rows).toHaveLength(1);
   });
 
   it("reprocesar con vínculo manual igual abre la revisión de la evaluación y marca la discrepancia si no aplica", async () => {
