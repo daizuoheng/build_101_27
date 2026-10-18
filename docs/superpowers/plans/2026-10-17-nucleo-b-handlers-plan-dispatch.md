@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Estado (17 oct, noche, `main` = `60de192`):** Task 1 hecha (#18, y #21 la condiciona al handler). **Tasks 2 y 3: el registro de los handlers lo hizo Operación** en #22: `handlers.ts` ya tiene `plan: planHandler(buildPlan)` y `dispatch → applyPlan`, y `tests/db/dispatch.test.ts` cubre concurrencia, capacidad y obsolescencia. Lo que quedaba de Núcleo (Step 3b de Task 2: `plan` inmediato desde `process_report`; y el recorrido completo de Task 3) **pasó al plan D** (`2026-10-17-nucleo-d-cierre-pipeline.md`, Task 1). Este plan queda como registro; no ejecutar sus Tasks 2–4.
+
 **Goal:** Que los jobs `plan` y `dispatch` que el pipeline ya encola tengan handler (hoy fallan tras sus intentos sin efecto) y que el worker dispare la replanificación periódica (`enqueuePeriodicPlans` existe y nadie la llama).
 
 **Architecture:** `handlers.ts` suma dos entradas: `plan: planHandler(buildPlan)` con el `buildPlan` puro de Operación (`src/server/planning/build-plan.ts`) y `dispatch`, que llama a `applyPlan(pool, planRunId)` de Operación (`src/server/dispatch/apply-plan.ts`, contrato `ApplyPlan` en `src/server/contracts.ts`). `runWorker` gana una opción `periodic` que ejecuta una función cada N ms entre jobs; `src/worker/index.ts` la usa para `enqueuePeriodicPlans`. Sin `onFailed` para `plan` ni `dispatch`: un plan fallido lo cubre el periódico siguiente y un despacho pendiente lo reemplaza el plan siguiente (`superseded_by`).
