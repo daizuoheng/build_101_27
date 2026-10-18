@@ -183,6 +183,9 @@ Ambos comandos conservan las unidades existentes y sus capacidades, estado, cupo
 ni cambian contraseñas. Las posiciones son simuladas y no se marcan vigentes: para una demo con despacho por distancia,
 ejecutar explícitamente `pnpm cli refresh-demo-positions --territory montevideo`.
 `seed-demo` sigue siendo el comando separado para crear cuentas de demo y la cuadrilla de la presentación en vivo.
+Las bases simuladas del seed se distribuyen entre Centro (limpieza y oficina de alumbrado), Montevideo Shopping
+(fuego), Carrasco (vialidad), Prado (arbolado), Unión (señalización), Cerro (drenaje) y Colón (accesibilidad).
+Un reseed no reubica unidades existentes: moverlas requiere una acción explícita y auditada sobre las unidades de demo.
 
 Las migraciones corren solas en el pre-deploy; los seeds no. Si el merge tocó `seeds/`, después del deploy, con
 `DATABASE_URL` de Supabase como en el paso 2:
