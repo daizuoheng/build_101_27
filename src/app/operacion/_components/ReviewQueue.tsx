@@ -373,7 +373,12 @@ function ReviewCard({
         return;
       }
       if (unknownOutcome) outcomeUnknown.current = true;
-      else attempt.current = null;
+      else {
+        // Una respuesta definitiva que no es `review_item_closed` muestra que el ítem seguía abierto: ningún intento
+        // anterior lo cerró, así que un 409 posterior sí es de otro operador.
+        attempt.current = null;
+        outcomeUnknown.current = false;
+      }
       setError(
         unknownOutcome
           ? `${errorMessage(err)} Podés reintentar «${REVIEW_ACTION[resolution.action]}»: se reenvía igual que antes (con la misma nota) y no se aplica dos veces.`
