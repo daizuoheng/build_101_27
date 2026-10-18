@@ -244,6 +244,17 @@ body {
   border: 0;
 }
 
+/* Orden o incidente que acaba de llegar con la pantalla abierta: borde de acento y un pulso breve. */
+.ru-fresh {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  animation: ru-fresh-pulse 1.1s ease-out 3;
+}
+@keyframes ru-fresh-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  100% { box-shadow: 0 0 0 18px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;

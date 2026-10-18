@@ -15,7 +15,9 @@ const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
   loading: () => <div className="h-[420px] animate-pulse rounded-[var(--radius)] bg-surface-2" aria-hidden />,
 });
 
-const REFRESH_MS = 10000;
+const REFRESH_MS = 3000;
+/** Cuánto queda resaltado un incidente que entró con la consola abierta. */
+const FRESH_MS = 15000;
 
 type Filters = { areaId: string; problemType: string; priorityBand: string; status: string; sort: "priority" | "recent" | "reports" };
 const EMPTY: Filters = { areaId: "", problemType: "", priorityBand: "", status: "", sort: "priority" };
@@ -70,6 +72,9 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
   const router = useRouter();
   // Solo la última carga pedida escribe el estado: una respuesta lenta de un pedido anterior no pisa a una más nueva.
   const latest = useRef(0);
+  // Incidentes ya vistos con estos filtros (null tras cambiarlos: esa carga no resalta) y los que acaban de entrar.
+  const seen = useRef<{ key: string; ids: Set<string> } | null>(null);
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
 
   const filtered = Object.entries(filters).some(([k, v]) => k !== "sort" && v);
 
@@ -81,6 +86,11 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
     try {
       const d = await api<IncidentListResponse>(`/api/operacion/incidents?${qs}`, { signal: withTimeout(signal) });
       if (stale()) return;
+      const key = JSON.stringify(filters);
+      const prev = seen.current?.key === key ? seen.current.ids : null;
+      const arrived = prev ? d.incidents.filter((i) => !prev.has(i.id)).map((i) => i.id) : [];
+      seen.current = { key, ids: new Set([...(prev ?? []), ...d.incidents.map((i) => i.id)]) };
+      if (arrived.length > 0) setFresh((f) => new Set([...f, ...arrived]));
       setData(d);
       setError(null);
       setUpdatedAt(Date.now());
@@ -114,6 +124,12 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
       clearInterval(t);
     };
   }, [load]);
+
+  useEffect(() => {
+    if (fresh.size === 0) return;
+    const t = setTimeout(() => setFresh(new Set()), FRESH_MS);
+    return () => clearTimeout(t);
+  }, [fresh]);
 
   const set = (k: keyof Filters) => (e: React.ChangeEvent<HTMLSelectElement>) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const areaLabel = data?.territory.areaLabel ?? "Área";
@@ -216,7 +232,7 @@ export function IncidentBoard({ territorySlug }: { territorySlug: string }) {
           {data && incidents.length === 0 && <p className="card p-4 text-ink-2">No hay incidentes con estos filtros.</p>}
           <ul className="flex flex-col gap-2.5">
             {incidents.map((i) => (
-              <IncidentRow key={i.id} item={i} now={updatedAt ?? 0} areaLabel={areaLabel} selected={selected === i.id} onSelect={() => setSelected(i.id)} />
+              <IncidentRow key={i.id} item={i} now={updatedAt ?? 0} areaLabel={areaLabel} fresh={fresh.has(i.id)} selected={selected === i.id} onSelect={() => setSelected(i.id)} />
             ))}
           </ul>
         </section>
@@ -245,11 +261,12 @@ function footerStatus(item: IncidentListItem): { text: string; icon: IconName; c
 }
 
 function IncidentRow({
-  item, now, areaLabel, selected, onSelect,
+  item, now, areaLabel, fresh, selected, onSelect,
 }: {
   item: IncidentListItem;
   now: number;
   areaLabel: string;
+  fresh: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -257,7 +274,7 @@ function IncidentRow({
   const area = areaDisplay(item.area?.name);
   const place = [area ? `${areaLabel} ${area}` : `${areaLabel} sin determinar`, item.locationText].filter(Boolean).join(" · ");
   return (
-    <li id={`inc-${item.id}`} className="ops-item px-4 py-3.5" data-selected={selected}>
+    <li id={`inc-${item.id}`} className={`ops-item px-4 py-3.5 ${fresh ? "ru-fresh" : ""}`} data-selected={selected}>
       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           <PriorityBadge band={item.priorityBand} />

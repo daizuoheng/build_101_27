@@ -14,13 +14,37 @@ const LeafletMap = dynamic(() => import("@/app/_components/LeafletMap"), {
   loading: () => <div className="h-[180px] animate-pulse rounded-[var(--radius)] bg-surface-2" aria-hidden />,
 });
 
-const POLL_MS = 10_000;
+const POLL_MS = 3_000;
+/** Cuánto queda resaltada una orden que llegó con la bandeja abierta. */
+const FRESH_MS = 15_000;
 type UnitAction = Exclude<AssignmentAction, "cancel">;
 type Notice = { tone: "ok" | "warn" | "error"; text: string } | null;
 
+/** Aviso de orden nueva: vibración y un tono corto. El navegador puede bloquearlos sin un toque previo; no es crítico. */
+function alertNewOrder() {
+  try {
+    navigator.vibrate?.([200, 100, 200]);
+  } catch {}
+  try {
+    const ctx = new AudioContext();
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.connect(ctx.destination);
+    [880, 1175].forEach((hz, i) => {
+      const osc = ctx.createOscillator();
+      osc.frequency.value = hz;
+      osc.connect(gain);
+      osc.start(ctx.currentTime + i * 0.18);
+      osc.stop(ctx.currentTime + i * 0.18 + 0.15);
+    });
+    setTimeout(() => void ctx.close(), 1000);
+  } catch {}
+}
+
 /**
- * Bandeja de la unidad: órdenes activas, de la más urgente a la menos. Se actualiza sola cada 10 s (con la pestaña
+ * Bandeja de la unidad: órdenes activas, de la más urgente a la menos. Se actualiza sola cada 3 s (con la pestaña
  * visible). Solo muestra las acciones que el servidor permite; si la orden cambió mientras tanto (409), recarga.
+ * Una orden que llega con la bandeja abierta se resalta y avisa (vibración, tono y título de la pestaña).
  */
 export function UnitInbox() {
   const [inbox, setInbox] = useState<UnitInboxResponse | null>(null);
@@ -35,6 +59,9 @@ export function UnitInbox() {
   const generation = useRef(0);
   // Mientras hay una acción en curso no se lanzan cargas: su respuesta ya trae la bandeja posterior a la acción.
   const acting = useRef(false);
+  // Órdenes ya vistas (null hasta la primera carga, que no avisa) y las recién llegadas, que se resaltan.
+  const seen = useRef<Set<string> | null>(null);
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   const router = useRouter();
 
   const load = useCallback(async () => {
@@ -43,6 +70,13 @@ export function UnitInbox() {
     try {
       const data = await api<UnitInboxResponse>("/api/unidad/assignments");
       if (gen !== generation.current) return;
+      const arrived = seen.current ? data.assignments.filter((a) => !seen.current!.has(a.id)) : [];
+      seen.current = new Set([...(seen.current ?? []), ...data.assignments.map((a) => a.id)]);
+      if (arrived.length > 0) {
+        setFresh((f) => new Set([...f, ...arrived.map((a) => a.id)]));
+        setNotice({ tone: "ok", text: arrived.length === 1 ? "Llegó una orden nueva." : `Llegaron ${arrived.length} órdenes nuevas.` });
+        alertNewOrder();
+      }
       setInbox(data);
       setLoadError(null);
       setNow(Date.now());
@@ -76,6 +110,18 @@ export function UnitInbox() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load]);
+
+  // Mientras haya órdenes recién llegadas, la pestaña lo dice; el resaltado se apaga a los FRESH_MS de la última.
+  useEffect(() => {
+    if (fresh.size === 0) return;
+    const original = document.title;
+    document.title = `● Nueva orden · ${original}`;
+    const t = setTimeout(() => setFresh(new Set()), FRESH_MS);
+    return () => {
+      clearTimeout(t);
+      document.title = original;
+    };
+  }, [fresh]);
 
   async function act(card: UnitAssignmentCard, action: UnitAction, reason?: string) {
     // Misma clave para reintentos de la misma acción sobre la misma versión: el servidor no la aplica dos veces.
@@ -187,7 +233,7 @@ export function UnitInbox() {
           <ul className="grid gap-5 lg:grid-cols-2">
             {inbox.assignments.map((a) => (
               <li key={a.id}>
-                <AssignmentCard card={a} now={now} busy={busyId === a.id} disabled={busyId !== null} onAction={act} />
+                <AssignmentCard card={a} now={now} fresh={fresh.has(a.id)} busy={busyId === a.id} disabled={busyId !== null} onAction={act} />
               </li>
             ))}
           </ul>
@@ -200,12 +246,14 @@ export function UnitInbox() {
 function AssignmentCard({
   card,
   now,
+  fresh,
   busy,
   disabled,
   onAction,
 }: {
   card: UnitAssignmentCard;
   now: number;
+  fresh: boolean;
   busy: boolean;
   disabled: boolean;
   onAction: (c: UnitAssignmentCard, a: UnitAction, reason?: string) => void;
@@ -227,7 +275,7 @@ function AssignmentCard({
   }
 
   return (
-    <article aria-labelledby={titleId} className={`card flex h-full flex-col gap-4 p-4 sm:p-5 ${i.activeHazard ? "border-2 border-danger-line" : ""}`}>
+    <article aria-labelledby={titleId} className={`card flex h-full flex-col gap-4 p-4 sm:p-5 ${i.activeHazard ? "border-2 border-danger-line" : ""} ${fresh ? "ru-fresh" : ""}`}>
       <div className="flex flex-wrap items-center gap-2">
         <span className={`badge ${prio.className}`}>
           <span aria-hidden>{prio.symbol}</span> {prio.label}
