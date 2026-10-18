@@ -62,11 +62,12 @@ async function waitFor(label, fn, { timeoutMs = 90_000, everyMs = 1000 } = {}) {
   }
 }
 
-for (let i = 0; i < 60; i++) {
+for (let i = 0; ; i++) {
   try {
     await fetch(base + "/api/health");
     break;
   } catch {
+    if (i >= 60) throw new Error(`no responde ${base}: levantar web y worker antes de correr el recorrido`);
     await sleep(1000);
   }
 }

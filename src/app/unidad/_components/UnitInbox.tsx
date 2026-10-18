@@ -62,21 +62,29 @@ export function UnitInbox() {
   // Órdenes ya vistas (null hasta la primera carga, que no avisa) y las recién llegadas, que se resaltan.
   const seen = useRef<Set<string> | null>(null);
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  // Una carga a la vez: con red lenta, una carga nueva descartaría la anterior y la bandeja no se actualizaría nunca.
+  const loading = useRef(false);
   const router = useRouter();
 
+  /** Registra la bandeja recibida (por carga o por acción) y resalta y avisa las órdenes que no se habían visto. */
+  const receive = useCallback((data: UnitInboxResponse) => {
+    const arrived = seen.current ? data.assignments.filter((a) => !seen.current!.has(a.id)).map((a) => a.id) : [];
+    seen.current = new Set([...(seen.current ?? []), ...data.assignments.map((a) => a.id)]);
+    if (arrived.length > 0) {
+      setFresh((f) => new Set([...f, ...arrived]));
+      alertNewOrder();
+    }
+    setInbox(data);
+  }, []);
+
   const load = useCallback(async () => {
-    if (acting.current) return;
+    if (acting.current || loading.current) return;
+    loading.current = true;
     const gen = ++generation.current;
     try {
       const data = await api<UnitInboxResponse>("/api/unidad/assignments");
       if (gen !== generation.current) return;
-      const arrived = seen.current ? data.assignments.filter((a) => !seen.current!.has(a.id)) : [];
-      seen.current = new Set([...(seen.current ?? []), ...data.assignments.map((a) => a.id)]);
-      if (arrived.length > 0) {
-        setFresh((f) => new Set([...f, ...arrived.map((a) => a.id)]));
-        alertNewOrder();
-      }
-      setInbox(data);
+      receive(data);
       setLoadError(null);
       setNow(Date.now());
     } catch (err) {
@@ -90,8 +98,10 @@ export function UnitInbox() {
         return;
       }
       setLoadError(errorMessage(err));
+    } finally {
+      loading.current = false;
     }
-  }, [router]);
+  }, [router, receive]);
 
   useEffect(() => {
     // Carga inicial + polling; los setState ocurren al resolver la promesa, no dentro del efecto.
@@ -140,8 +150,7 @@ export function UnitInbox() {
         json: { action, expectedVersion: card.version, idempotencyKey: keys.current.get(k), reason: reason || undefined },
       });
       acting.current = false;
-      seen.current = new Set([...(seen.current ?? []), ...res.inbox.assignments.map((a) => a.id)]);
-      setInbox(res.inbox);
+      receive(res.inbox);
       setNow(Date.now());
       setNotice({ tone: "ok", text: ACTION[action].done });
     } catch (err) {

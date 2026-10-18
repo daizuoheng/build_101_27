@@ -118,7 +118,8 @@ try {
   check(true, `la orden le llegó sola a la cuadrilla, ${((Date.now() - confirmedAt) / 1000).toFixed(1)}s después de enviar`);
   check(await unit.getByText("Contenedor con fuego").first().isVisible(), "la orden muestra el incidente");
   check(await unit.locator("article.ru-fresh").count() === 1, "la orden nueva queda resaltada");
-  check((await unit.title()).includes("Nueva orden"), "la pestaña avisa «Nueva orden»");
+  await unit.waitForFunction(() => document.title.includes("Nueva orden"), null, { timeout: 5000 });
+  check(true, "la pestaña avisa «Nueva orden»");
   await unit.screenshot({ path: `${out}/3-unidad-orden.png`, fullPage: true });
 
   await accept.click();
@@ -130,7 +131,8 @@ try {
   await unit.screenshot({ path: `${out}/3-unidad-completada.png`, fullPage: true });
   await citizen.waitForTimeout(5000);
   await citizen.screenshot({ path: `${out}/4-ciudadano-final.png`, fullPage: true });
-  await ops.waitForTimeout(11_000);
+  await ops.locator("li", { hasText: "Resuelto" }).first().waitFor({ timeout: 15_000 });
+  check(true, "/operacion muestra el incidente resuelto, sin recargar");
   await ops.screenshot({ path: `${out}/4-operacion-final.png` });
 } catch (e) {
   failed = true;
